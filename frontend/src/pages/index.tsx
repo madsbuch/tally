@@ -329,9 +329,7 @@ export default function MarketingPage() {
         className="py-12 px-8 text-center"
         style={{ backgroundColor: "#2a2a2a", color: "#ffffff" }}
       >
-        <p className="opacity-70 text-sm">
-          &copy; 2025 Tally. Simplicity is the name of the game.
-        </p>
+        <p className="opacity-70 text-sm">&copy; 2025 Tally.</p>
       </footer>
 
       <style>{`
