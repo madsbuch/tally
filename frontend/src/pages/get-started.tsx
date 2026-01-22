@@ -78,17 +78,30 @@ export default function WelcomePage() {
 
   if (checkingSetup) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#fdfdf8' }}>
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: "#fdfdf8" }}
+      >
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 mx-auto" style={{ borderColor: '#2d5f3f' }}></div>
-          <p className="mt-2" style={{ color: '#2a2a2a' }}>Setting up...</p>
+          <div
+            className="animate-spin rounded-full h-8 w-8 border-b-2 mx-auto"
+            style={{ borderColor: "#2d5f3f" }}
+          ></div>
+          <p className="mt-2" style={{ color: "#2a2a2a" }}>
+            Setting up...
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(to bottom right, #fdfdf8, #f8f9f5)' }}>
+    <div
+      className="min-h-screen flex items-center justify-center p-4"
+      style={{
+        background: "linear-gradient(to bottom right, #fdfdf8, #f8f9f5)",
+      }}
+    >
       <div
         className="max-w-md w-full space-y-8 p-8 bg-white rounded-2xl shadow-lg border"
         style={{ borderColor: "rgba(45, 95, 63, 0.1)" }}
@@ -137,7 +150,7 @@ export default function WelcomePage() {
             <label
               htmlFor="apiKey"
               className="block text-sm font-medium mb-2"
-              style={{ color: '#2a2a2a' }}
+              style={{ color: "#2a2a2a" }}
             >
               Beta Code
             </label>
@@ -147,14 +160,14 @@ export default function WelcomePage() {
               type="password"
               required
               className="w-full px-4 py-3 border rounded-lg shadow-sm placeholder-gray-400 focus:outline-none transition-all"
-              style={{ borderColor: '#d1d5db' }}
+              style={{ borderColor: "#d1d5db" }}
               onFocus={(e) => {
-                e.target.style.borderColor = '#2d5f3f';
-                e.target.style.boxShadow = '0 0 0 2px rgba(45, 95, 63, 0.2)';
+                e.target.style.borderColor = "#2d5f3f";
+                e.target.style.boxShadow = "0 0 0 2px rgba(45, 95, 63, 0.2)";
               }}
               onBlur={(e) => {
-                e.target.style.borderColor = '#d1d5db';
-                e.target.style.boxShadow = 'none';
+                e.target.style.borderColor = "#d1d5db";
+                e.target.style.boxShadow = "none";
               }}
               placeholder="Beta Code"
               value={apiKey}
@@ -194,10 +207,6 @@ export default function WelcomePage() {
             )}
           </button>
         </form>
-
-        <p className="text-xs text-center" style={{ color: 'rgba(42, 42, 42, 0.5)' }}>
-          Your API key is stored locally and never leaves your device.
-        </p>
       </div>
     </div>
   );
