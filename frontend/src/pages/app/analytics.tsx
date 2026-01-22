@@ -35,7 +35,7 @@ export function getStartOfMonth(date: Date): Date {
 function filterEntriesByDateRange(
   entries: JournalEntry[],
   startDate: Date,
-  endDate: Date
+  endDate: Date,
 ): JournalEntry[] {
   return entries.filter((entry) => {
     const entryDate = new Date(entry.insertedAt);
@@ -59,7 +59,7 @@ ChartJS.register(
   LineElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
 );
 
 // Animated Macro Background Component
@@ -140,7 +140,7 @@ function ProgressCard({
   // Calculate total days in range
   daysSoFarInPeriod = Math.ceil(
     // This approach works across months
-    (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+    (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24),
   );
 
   // Find unique days with entries
@@ -154,13 +154,13 @@ function ProgressCard({
 
   const caloriesConsumerSoFar = entries.reduce(
     (sum, entry) => sum + (entry.energyInKCals > 0 ? entry.energyInKCals : 0),
-    0
+    0,
   );
 
   const CaloriesBurnedSoFar = entries.reduce(
     (sum, entry) =>
       sum + (entry.energyInKCals < 0 ? Math.abs(entry.energyInKCals) : 0),
-    0
+    0,
   );
 
   const net = caloriesConsumerSoFar - CaloriesBurnedSoFar;
@@ -169,11 +169,11 @@ function ProgressCard({
 
   const protein = entries.reduce(
     (sum, entry) => sum + (entry.proteinInGrams ?? 0),
-    0
+    0,
   );
   const carbs = entries.reduce(
     (sum, entry) => sum + (entry.carbsInGrams ?? 0),
-    0
+    0,
   );
   const fat = entries.reduce((sum, entry) => sum + (entry.fatInGrams ?? 0), 0);
 
@@ -212,8 +212,8 @@ function ProgressCard({
           {remainingCalories > 0
             ? "calories remaining"
             : remainingCalories < 0
-            ? `${Math.abs(Math.round(remainingCalories))} calories over budget`
-            : "budget met"}
+              ? `${Math.abs(Math.round(remainingCalories))} calories over budget`
+              : "budget met"}
         </div>
       </div>
 
@@ -427,7 +427,7 @@ export default function AnalyticsPage() {
       const oldestDate = new Date(oldestEntry.insertedAt);
       const today = new Date();
       const daysDiff = Math.floor(
-        (today.getTime() - oldestDate.getTime()) / (1000 * 60 * 60 * 24)
+        (today.getTime() - oldestDate.getTime()) / (1000 * 60 * 60 * 24),
       );
       actualDays = Math.min(7, daysDiff + 1); // +1 to include today
     }
@@ -436,7 +436,7 @@ export default function AnalyticsPage() {
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(
-      endDate.getDate() - (actualDays > 0 ? actualDays - 1 : 0)
+      endDate.getDate() - (actualDays > 0 ? actualDays - 1 : 0),
     );
 
     // Generate array of dates and calculate metrics
@@ -535,7 +535,7 @@ export default function AnalyticsPage() {
         const todayEntries = filterEntriesByDateRange(
           journalEntries,
           todayStart,
-          todayEnd
+          todayEnd,
         );
         return (
           <ProgressCard
@@ -557,7 +557,7 @@ export default function AnalyticsPage() {
         const weekEntries = filterEntriesByDateRange(
           journalEntries,
           weekStart,
-          weekEnd
+          weekEnd,
         );
 
         return (
@@ -581,7 +581,7 @@ export default function AnalyticsPage() {
         const monthEntries = filterEntriesByDateRange(
           journalEntries,
           monthStart,
-          monthEnd
+          monthEnd,
         );
         // Calculate days in current month so far
         const totalDaysInThisMonth = totalDaysInMonth(today);
@@ -689,8 +689,8 @@ export default function AnalyticsPage() {
                   bodyFont: { size: 13 },
                   callbacks: {
                     label: (context) =>
-                      `${context.dataset.label}: ${Math.round(
-                        context.parsed.y
+                      `${context.dataset.label ?? ""}: ${Math.round(
+                        context.parsed.y,
                       )} kcal`,
                   },
                 },
@@ -808,7 +808,7 @@ export default function AnalyticsPage() {
                   callbacks: {
                     label: (context) =>
                       `${context.dataset.label}: ${Math.round(
-                        context.parsed.y
+                        context.parsed.y,
                       )}g`,
                   },
                 },
