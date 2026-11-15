@@ -415,7 +415,8 @@ export async function analyzePhoto(opts: AnalyzePhotoOptions): Promise<PhotoAnal
     `"confidence": "low" | "medium" | "high",`,
     `"nutrients": {${nutrientKeyDoc()}} (meal only; include keys you can estimate, omit the rest),`,
     `"calories_burned": number (workout only; kcal, read exactly when shown, else estimate),`,
-    `"duration_min": number | null (workout only; total minutes)}`,
+    `"duration_min": number | null (workout only; total minutes),`,
+    `"avg_hr": number | null (workout only; recorded average heart rate in bpm, preserving decimals; never estimate or substitute maximum/resting HR; null if unknown)}`,
     "If the image is ambiguous, pick the most likely kind and set confidence to \"low\".",
   ].join("\n");
 
@@ -464,8 +465,9 @@ export async function analyzeWorkout(opts: AnalyzeWorkoutOptions): Promise<Worko
     `"description": string (1-2 sentences: activity, distance/pace/heart-rate details you can read),`,
     `"confidence": "low" | "medium" | "high",`,
     `"calories_burned": number (kcal, the active/total energy shown; estimate from activity + duration if not shown),`,
-    `"duration_min": number | null (total minutes)}`,
-    "Read the numbers exactly as displayed when visible; only estimate when missing.",
+    `"duration_min": number | null (total minutes),`,
+    `"avg_hr": number | null (recorded average heart rate in bpm, preserving decimals; null if unknown)}`,
+    "Read the numbers exactly as displayed when visible. Never estimate average heart rate or substitute maximum/resting HR; it must be stated or visible. Other missing values may be estimated as described above.",
   ].join("\n");
 
   const parts: ContentPart[] = [
@@ -618,7 +620,8 @@ export async function askAboutWorkoutEntry(
 ): Promise<z.infer<typeof WorkoutChatSchema>> {
   const system = [
     ...ENTRY_CHAT_RULES,
-    `Schema: {"reply": string, "entry": {"title": string (short, max 5 words), "description": string (1-2 sentences), "calories_burned": number (kcal), "duration_min": number (minutes, omit if unknown), "zone2_min": number | null (explicit Zone 2 minutes only; never infer from activity type or average heart rate; omit to preserve)}}`,
+    `Schema: {"reply": string, "entry": {"title": string (short, max 5 words), "description": string (1-2 sentences), "calories_burned": number (kcal), "duration_min": number (minutes, omit if unknown), "avg_hr": number | null (recorded average heart rate in bpm, preserving decimals; omit to preserve, null to clear; never estimate or substitute maximum/resting HR), "zone2_min": number | null (explicit Zone 2 minutes only; never infer from activity type or average heart rate; omit to preserve)}}`,
+    "A workout automatically counts as cardio when its recorded average heart rate is strictly above 125 bpm. The user can manually switch cardio on or off; that choice takes precedence and survives syncs and field edits. Unknown HR counts only when manually enabled. A cardio workout's full duration counts toward the default goal of 300 minutes per 7 days. Zone 2 minutes are a separate metric.",
     "`entry` is present ONLY when the entry should change. Omit the key otherwise - do not send an empty object.",
   ].join("\n");
   return WorkoutChatSchema.parse(extractJsonObject(await askAboutEntry(opts, system)));

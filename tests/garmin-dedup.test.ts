@@ -60,12 +60,13 @@ const allWorkouts = () => sqlite.query("SELECT * FROM workouts ORDER BY id").all
 describe("Garmin ↔ Health Connect dedup", () => {
   test("an activity attaches to the Health Connect workout, keeping user edits", async () => {
     await hcWorkout("hc-1", T, 45);
-    sqlite.run("UPDATE workouts SET cardio = 1, icon = 'run' WHERE external_id = 'hc-1'");
+    sqlite.run("UPDATE workouts SET cardio = 1, cardio_by_hand = 1, icon = 'run' WHERE external_id = 'hc-1'");
     const { a, raw } = activity("111", T + 20_000, 44.5);
     expect(await g.linkGarminActivity(a, raw)).toBe("time");
     const ws = allWorkouts();
     expect(ws.length).toBe(1);
-    expect(ws[0]!["cardio"]).toBe(1);
+    expect(ws[0]!["cardio"]).toBe(1); // A deliberate choice survives missing HR and resync.
+    expect(ws[0]!["cardio_by_hand"]).toBe(1);
     expect(ws[0]!["icon"]).toBe("run");
     const details = await g.garminDetailsForWorkouts([ws[0]!["id"] as number]);
     expect(details.get(ws[0]!["id"] as number)?.aerobicTe).toBe(3.2);

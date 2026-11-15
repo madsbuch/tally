@@ -8,6 +8,18 @@ export function zone2Minutes(value: number | null | undefined, duration: number 
 
 export const DEFAULT_ZONE2_TARGET = 300;
 
+/** Cardio uses a strict lower bound on the measured session average. */
+export const CARDIO_MIN_AVG_HR = 125;
+
+export function normalizeAverageHeartRate(value: number | null | undefined): number | null {
+  return value != null && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export function countsAsCardio(avgHr: number | null | undefined): boolean {
+  const hr = normalizeAverageHeartRate(avgHr);
+  return hr != null && hr > CARDIO_MIN_AVG_HR;
+}
+
 /**
  * Fraction (0–1) of an activity's heart-rate time spent in Zone 2, from
  * Garmin's seconds in zones 1–5. Null when there's no HR time to divide by.
@@ -20,16 +32,6 @@ export function zone2Share(zoneSecs: readonly number[] | null | undefined): numb
   const z2 = zoneSecs[1]!;
   if (total <= 0 || !Number.isFinite(z2) || z2 < 0) return null;
   return z2 / total;
-}
-
-/** Whether an activity clears the Zone 2 rule; `sharePct` null = rule off. */
-export function countsAsZone2Cardio(
-  zoneSecs: readonly number[] | null | undefined,
-  sharePct: number | null,
-): boolean {
-  if (sharePct == null) return false;
-  const share = zone2Share(zoneSecs);
-  return share != null && share * 100 >= sharePct;
 }
 
 export function exerciseProgress(workouts: DiaryWorkout[], target: number) {

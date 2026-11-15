@@ -96,6 +96,7 @@ import {
   loadGoalSettings,
 } from "../lib/goals";
 import type { DayGoal, PeriodGoal } from "../lib/goals";
+import { CARDIO_MIN_AVG_HR } from "../lib/exerciseGoals";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -420,6 +421,7 @@ function AddSheet({
   // Workout-specific state.
   const [calStr, setCalStr] = useState("");
   const [durStr, setDurStr] = useState("");
+  const [avgHrStr, setAvgHrStr] = useState("");
   const [zone2Str, setZone2Str] = useState("");
 
   const [saving, setSaving] = useState(false);
@@ -480,6 +482,7 @@ function AddSheet({
     const nutrients: Nutrients = {};
     let cal = 0;
     let dur: number | null = null;
+    let avgHr: number | null = null;
     let zone2: number | null = null;
     if (kind === "meal") {
       for (const k of NUTRIENT_KEYS) {
@@ -505,6 +508,13 @@ function AddSheet({
         durStr.trim() && isFinite(durParsed) && durParsed > 0
           ? Math.round(durParsed)
           : null;
+      if (avgHrStr.trim()) {
+        avgHr = Number(avgHrStr);
+        if (!Number.isFinite(avgHr) || avgHr <= 0) {
+          setError("Average heart rate must be a number greater than zero.");
+          return;
+        }
+      }
       if (zone2Str.trim()) {
         zone2 = Number(zone2Str);
         if (!Number.isFinite(zone2) || zone2 < 0 || (dur != null && zone2 > dur)) {
@@ -537,6 +547,7 @@ function AddSheet({
           photo_path: photoPath,
           calories_burned: cal,
           duration_min: dur,
+          avg_hr: avgHr,
           zone2_min: zone2,
           model_id: null,
           icon,
@@ -729,6 +740,9 @@ function AddSheet({
                   />
                 </div>
               </div>
+              <label className="label" htmlFor="workout-avg-hr">Average heart rate (bpm)</label>
+              <input id="workout-avg-hr" className="input" type="number" min="0" step="any" inputMode="decimal" placeholder="Unknown" value={avgHrStr} onChange={(e) => setAvgHrStr(e.target.value)} />
+              <p className="faint small">Above {CARDIO_MIN_AVG_HR} bpm automatically counts the full duration as cardio. You can change Cardio on the workout page. Leave empty if unknown.</p>
               <label className="label" htmlFor="workout-zone2">Zone 2 (min)</label>
               <input id="workout-zone2" className="input" type="number" min="0" step="any" inputMode="decimal" placeholder="Unknown" value={zone2Str} onChange={(e) => setZone2Str(e.target.value)} />
               <p className="faint small">Minutes spent in Zone 2. Leave empty if unknown.</p>

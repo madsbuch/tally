@@ -19,9 +19,9 @@
  * A correction moves room between days inside the period, nothing more.
  */
 import { getSetting, listDayGoalAdjustments, todayStr } from "./db";
+import { countsAsCardio } from "./exerciseGoals";
 import {
   DEFAULT_CARDIO_TARGET_MIN,
-  DEFAULT_CARDIO_ZONE2_SHARE_PCT,
   DEFAULT_PROTEIN_TARGET_G,
   SETTING_KEYS,
 } from "./types";
@@ -90,20 +90,18 @@ export async function getCardioTarget(): Promise<number> {
   return Number.isFinite(n) && n >= 1 && n <= 10080 ? n : DEFAULT_CARDIO_TARGET_MIN;
 }
 
-/**
- * The Zone 2 share (percent of an activity's HR time) at which a Garmin
- * activity counts as cardio by itself; null = the rule is off.
- */
-export async function getCardioZone2Share(): Promise<number | null> {
-  const raw = await getSetting(SETTING_KEYS.cardioZone2Share).catch(() => null);
-  if (raw === "off") return null;
-  const n = raw != null ? Number(raw) : NaN;
-  return Number.isFinite(n) && n > 0 && n <= 100 ? n : DEFAULT_CARDIO_ZONE2_SHARE_PCT;
-}
-
-/** Minutes of the workouts switched on as cardio; one without a duration adds nothing. */
-export function cardioMinutes(ws: { cardio: boolean; duration_min: number | null }[]): number {
-  return ws.reduce((a, w) => a + (w.cardio && w.duration_min != null && w.duration_min > 0 ? w.duration_min : 0), 0);
+/** Manual choices take precedence; otherwise average HR must be above 125 bpm. */
+export function cardioMinutes(ws: {
+  avg_hr: number | null;
+  duration_min: number | null;
+  cardio: boolean;
+  cardio_by_hand: boolean;
+}[]): number {
+  return ws.reduce((a, w) => a + (
+    (w.cardio_by_hand ? w.cardio : countsAsCardio(w.avg_hr)) &&
+      w.duration_min != null && Number.isFinite(w.duration_min) && w.duration_min > 0
+      ? w.duration_min : 0
+  ), 0);
 }
 
 export async function loadGoalSettings(): Promise<GoalSettings> {

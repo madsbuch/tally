@@ -85,6 +85,7 @@ function diffWorkout(before: Workout, after: Workout): string[] {
     changed("Title", before.title, after.title),
     changed("Burned", before.calories_burned, after.calories_burned, "kcal"),
     changed("Duration", before.duration_min, after.duration_min, "min"),
+    changed("Average heart rate", before.avg_hr, after.avg_hr, "bpm"),
     changed("Zone 2", before.zone2_min, after.zone2_min, "min"),
   ]) {
     if (c) changes.push(c);
@@ -208,6 +209,7 @@ export async function sendEntryMessage(
           description: entry.description,
           calories_burned: entry.calories_burned,
           duration_min: entry.duration_min,
+          avg_hr: entry.avg_hr,
           zone2_min: entry.zone2_min,
         },
       }),
@@ -224,6 +226,7 @@ export async function sendEntryMessage(
           answer.entry.duration_min === undefined
             ? entry.duration_min
             : answer.entry.duration_min,
+        avg_hr: answer.entry.avg_hr === undefined ? entry.avg_hr : answer.entry.avg_hr,
         zone2_min: answer.entry.zone2_min === undefined ? entry.zone2_min : answer.entry.zone2_min,
         model_id: model,
       };

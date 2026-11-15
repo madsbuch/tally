@@ -79,7 +79,7 @@ import type { ExperimentArm, ExperimentMeasure, TrialRatings } from "./schemas";
 import { SETTING_KEYS } from "./types";
 import { sanitizeNutrients } from "./nutrients";
 import { dayOf, stampOf } from "./daystamp";
-import { zone2Minutes } from "./exerciseGoals";
+import { CARDIO_MIN_AVG_HR, countsAsCardio, normalizeAverageHeartRate, zone2Minutes } from "./exerciseGoals";
 import { isTaggingStatus, stateKey, stateTitle } from "./states";
 import { isGlucoseUnit, isReadingKind } from "./readings";
 import type { GlucoseUnit } from "./readings";
@@ -333,8 +333,9 @@ function toWorkout(r: WorkoutRow): Workout {
     photo_path: r.photoPath,
     calories_burned: r.caloriesBurned,
     duration_min: r.durationMin,
+    avg_hr: normalizeAverageHeartRate(r.avgHr),
     zone2_min: zone2Minutes(r.zone2Min, r.durationMin),
-    cardio: r.cardio === 1,
+    cardio: r.cardioByHand === 1 ? r.cardio === 1 : countsAsCardio(r.avgHr),
     cardio_by_hand: r.cardioByHand === 1,
     model_id: r.modelId,
     icon: r.icon,
@@ -348,12 +349,17 @@ function toWorkout(r: WorkoutRow): Workout {
 /** Manual/agent entries omit `source`/`external_id` — they default to null. */
 export type NewWorkout = Omit<
   Workout,
-  "id" | "source" | "external_id" | "day" | "tz_offset_min" | "zone2_min" | "cardio" | "cardio_by_hand"
+  "id" | "source" | "external_id" | "day" | "tz_offset_min" | "zone2_min" | "cardio" | "cardio_by_hand" | "avg_hr"
 > &
-  Partial<Pick<Workout, "source" | "external_id" | "zone2_min" | "cardio">>;
+  Partial<Pick<Workout, "source" | "external_id" | "zone2_min" | "cardio" | "cardio_by_hand" | "avg_hr">>;
 
 export async function addWorkout(w: NewWorkout): Promise<number> {
   const stamp = stampOf(w.performed_at);
+  const avgHr = normalizeAverageHeartRate(w.avg_hr);
+  // A supplied choice is manual unless a restored entry explicitly says it
+  // was automatic. This also preserves an explicit manual off.
+  const cardioByHand = w.cardio_by_hand ?? (w.cardio !== undefined);
+  const cardio = cardioByHand ? w.cardio === true : countsAsCardio(avgHr);
   const rows = await db
     .insert(workouts)
     .values({
@@ -365,10 +371,10 @@ export async function addWorkout(w: NewWorkout): Promise<number> {
       photoPath: w.photo_path,
       caloriesBurned: w.calories_burned,
       durationMin: w.duration_min,
+      avgHr,
       zone2Min: zone2Minutes(w.zone2_min, w.duration_min),
-      cardio: w.cardio ? 1 : 0,
-      // An entry made switched on (an undo restoring one) keeps it as theirs.
-      cardioByHand: w.cardio ? 1 : 0,
+      cardio: cardio ? 1 : 0,
+      cardioByHand: cardioByHand ? 1 : 0,
       modelId: w.model_id,
       icon: w.icon,
       source: w.source ?? null,
@@ -384,8 +390,9 @@ export async function addWorkout(w: NewWorkout): Promise<number> {
  * upstream edits (e.g. corrected calories in Garmin) flow through.
  */
 export async function upsertExternalWorkout(
-  w: Omit<Workout, "id" | "day" | "tz_offset_min" | "zone2_min" | "cardio" | "cardio_by_hand"> & {
+  w: Omit<Workout, "id" | "day" | "tz_offset_min" | "zone2_min" | "cardio" | "cardio_by_hand" | "avg_hr"> & {
     zone2_min?: number | null;
+    avg_hr?: number | null;
     external_id: string;
     /** Offset the source recorded it in; falls back to here. */
     tz_offset_min?: number | null;
@@ -397,6 +404,15 @@ export async function upsertExternalWorkout(
   // synced a week later from another continent keeps the day it was run on.
   const tzOffsetMin = w.tz_offset_min ?? stampOf(w.performed_at).tz_offset_min;
   const day = dayOf(w.performed_at, tzOffsetMin);
+  // A Health Connect session may lack HR even when the attached Garmin
+  // activity has it, including a Garmin workout Health Connect just adopted.
+  const avgHr = sql<number | null>`coalesce(${normalizeAverageHeartRate(w.avg_hr)}, (
+    select ${garminActivities.avgHr} from ${garminActivities}
+    inner join ${workouts} on ${workouts.id} = ${garminActivities.workoutId}
+    where ${workouts.externalId} = ${w.external_id} and ${garminActivities.avgHr} > 0
+    limit 1
+  ))`;
+  const cardio = sql<number>`case when ${avgHr} > ${CARDIO_MIN_AVG_HR} then 1 else 0 end`;
   await db
     .insert(workouts)
     .values({
@@ -408,6 +424,9 @@ export async function upsertExternalWorkout(
       photoPath: w.photo_path,
       caloriesBurned: w.calories_burned,
       durationMin: w.duration_min,
+      avgHr,
+      cardio,
+      cardioByHand: 0,
       zone2Min: zone2Minutes(w.zone2_min, w.duration_min),
       modelId: w.model_id,
       icon: w.icon,
@@ -426,6 +445,8 @@ export async function upsertExternalWorkout(
         description: w.description,
         caloriesBurned: w.calories_burned,
         durationMin: w.duration_min,
+        avgHr,
+        cardio: sql`case when ${workouts.cardioByHand} = 1 then ${workouts.cardio} else ${cardio} end`,
         // Whole-session marks follow a corrected duration; explicit off and
         // partial Zone 2 minutes survive a re-sync unchanged.
         zone2Min: sql`case when ${workouts.zone2Min} > 0
@@ -439,6 +460,7 @@ export async function upsertExternalWorkout(
 }
 
 export async function updateWorkout(w: Workout): Promise<void> {
+  const avgHr = normalizeAverageHeartRate(w.avg_hr);
   await db
     .update(workouts)
     .set({
@@ -449,21 +471,26 @@ export async function updateWorkout(w: Workout): Promise<void> {
       photoPath: w.photo_path,
       caloriesBurned: w.calories_burned,
       durationMin: w.duration_min,
+      avgHr,
       zone2Min: zone2Minutes(w.zone2_min, w.duration_min),
-      // cardio is left out on purpose: only the switch sets it
-      // (setWorkoutCardio), so an edit or an undo can't flip it.
+      // Use the current stored choice, including when an edit/undo started
+      // before the user changed the switch.
+      cardio: sql`case when ${workouts.cardioByHand} = 1 then ${workouts.cardio}
+        else ${countsAsCardio(avgHr) ? 1 : 0} end`,
       modelId: w.model_id,
       icon: w.icon,
     })
     .where(eq(workouts.id, w.id));
 }
 
-/**
- * The per-workout cardio switch. A synced re-import leaves it alone, and once
- * flipped by hand so does the Zone 2 rule (applyZone2Cardio).
- */
-export async function setWorkoutCardio(id: number, cardio: boolean): Promise<void> {
-  await db.update(workouts).set({ cardio: cardio ? 1 : 0, cardioByHand: 1 }).where(eq(workouts.id, id));
+/** Explicit on/off takes precedence; null returns to the automatic HR rule. */
+export async function setWorkoutCardio(id: number, cardio: boolean | null): Promise<void> {
+  await db.update(workouts).set({
+    cardio: cardio == null
+      ? sql`case when ${workouts.avgHr} > ${CARDIO_MIN_AVG_HR} then 1 else 0 end`
+      : cardio ? 1 : 0,
+    cardioByHand: cardio == null ? 0 : 1,
+  }).where(eq(workouts.id, id));
 }
 
 /** A deliberate toggle wins over text recognition, including an explicit off (0). */

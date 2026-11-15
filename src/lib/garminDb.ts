@@ -13,7 +13,7 @@ import {
   parseStoredZoneSecs,
 } from "./schemas";
 import type { GarminLoadBalance } from "./schemas";
-import { countsAsZone2Cardio } from "./exerciseGoals";
+import { CARDIO_MIN_AVG_HR, countsAsCardio, normalizeAverageHeartRate } from "./exerciseGoals";
 
 // ---------------------------------------------------------------------------
 // Storage for the Garmin Connect sync (lib/garmin.ts), and the two halves of
@@ -108,13 +108,36 @@ function detailValues(a: ActivityIn, raw: Record<string, unknown>) {
 
 function workoutValuesFor(a: ActivityIn) {
   const durationMin = a.durationSec != null ? Math.round(a.durationSec / 60) : null;
+  const avgHr = normalizeAverageHeartRate(a.avgHr);
   return {
     performedAt: iso(a.startMs),
     title: a.name?.trim() || (a.typeKey ? TITLE_CASE(a.typeKey) : "Workout"),
     description: describe(a),
     caloriesBurned: Math.round(a.activeCalories ?? 0),
     durationMin: durationMin != null && durationMin > 0 ? durationMin : null,
+    avgHr,
+    cardio: countsAsCardio(avgHr) ? 1 : 0,
   };
+}
+
+/** Sync updates retain both manual on and manual off choices. */
+function workoutUpdatesFor(a: ActivityIn) {
+  const values = workoutValuesFor(a);
+  return {
+    ...values,
+    cardio: sql<number>`case when ${workouts.cardioByHand} = 1 then ${workouts.cardio}
+      else ${values.cardio} end`,
+  };
+}
+
+/** Refresh the measured average without erasing Health Connect HR when Garmin lacks it. */
+async function updateLinkedWorkoutHeartRate(workoutId: number, value: number | null) {
+  const avgHr = sql<number | null>`coalesce(${normalizeAverageHeartRate(value)}, ${workouts.avgHr})`;
+  await db.update(workouts).set({
+    avgHr,
+    cardio: sql`case when ${workouts.cardioByHand} = 1 then ${workouts.cardio}
+      when ${avgHr} > ${CARDIO_MIN_AVG_HR} then 1 else 0 end`,
+  }).where(eq(workouts.id, workoutId));
 }
 
 /**
@@ -145,9 +168,11 @@ export async function linkGarminActivity(
     if (w) {
       await db.update(garminActivities).set(details).where(eq(garminActivities.activityId, a.id));
       // A row Garmin made (and Health Connect hasn't taken over) follows
-      // edits made in Garmin Connect; never the icon, cardio or Zone 2 marks.
+      // edits made in Garmin Connect; never the icon, manual cardio choice or Zone 2 marks.
       if (w.externalId?.startsWith("garmin:")) {
-        await db.update(workouts).set(workoutValuesFor(a)).where(eq(workouts.id, w.id));
+        await db.update(workouts).set(workoutUpdatesFor(a)).where(eq(workouts.id, w.id));
+      } else {
+        await updateLinkedWorkoutHeartRate(w.id, a.avgHr);
       }
       return "updated";
     }
@@ -180,7 +205,7 @@ export async function linkGarminActivity(
         source: "Garmin",
         externalId: `garmin:${a.id}`,
       })
-      .onConflictDoUpdate({ target: workouts.externalId, set: values })
+      .onConflictDoUpdate({ target: workouts.externalId, set: workoutUpdatesFor(a) })
       .returning({ id: workouts.id });
     workoutId = row?.id ?? null;
     outcome = "created";
@@ -205,6 +230,7 @@ export async function linkGarminActivity(
         ...details,
       },
     });
+  if (match) await updateLinkedWorkoutHeartRate(match.id, a.avgHr);
   return outcome;
 }
 
@@ -275,32 +301,6 @@ export async function adoptGarminSleep(hcId: string, span: Span): Promise<void> 
   );
   if (!hit) return;
   await db.update(sleepSessions).set({ externalId: hcId }).where(eq(sleepSessions.id, hit.id));
-}
-
-/**
- * The Zone 2 rule: a workout with a Garmin activity attached counts as cardio
- * when at least `sharePct` percent of its heart-rate time was in Zone 2 (null
- * = rule off), and stops counting when it no longer does, but only while the
- * user hasn't flipped its switch themselves. Local and idempotent: run after
- * every Garmin sync and whenever the threshold changes. Returns how many
- * workouts changed.
- */
-export async function applyZone2Cardio(sharePct: number | null): Promise<number> {
-  const rows = await db
-    .select({ id: workouts.id, cardio: workouts.cardio, zoneSecs: garminActivities.zoneSecs })
-    .from(garminActivities)
-    .innerJoin(workouts, eq(workouts.id, garminActivities.workoutId))
-    .where(and(eq(workouts.cardioByHand, 0), isNotNull(garminActivities.zoneSecs)));
-  const on: number[] = [];
-  const off: number[] = [];
-  for (const r of rows) {
-    const want = countsAsZone2Cardio(parseStoredZoneSecs(r.zoneSecs), sharePct);
-    if (want && r.cardio !== 1) on.push(r.id);
-    else if (!want && r.cardio === 1) off.push(r.id);
-  }
-  if (on.length) await db.update(workouts).set({ cardio: 1 }).where(inArray(workouts.id, on));
-  if (off.length) await db.update(workouts).set({ cardio: 0 }).where(inArray(workouts.id, off));
-  return on.length + off.length;
 }
 
 /** Recent activities still without laps, newest first. */

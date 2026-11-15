@@ -1020,8 +1020,10 @@ export async function executeAssistantTool(
           description: w.description,
           calories_burned: round(w.calories_burned, 0),
           duration_min: round(w.duration_min, 0),
+          avg_hr: w.avg_hr,
           zone2_min: diaryZone2Minutes(w),
-          cardio: w.cardio || undefined,
+          cardio: w.cardio,
+          cardio_by_hand: w.cardio_by_hand,
           source: w.source ?? "manual",
           coach_notes: notes.get(w.id),
           garmin: garminForCoach(garmin.get(w.id)),
@@ -1777,7 +1779,7 @@ export async function executeAssistantTool(
 
 export const DB_SCHEMA_DOC = `Tables (SQLite; all timestamps ISO-8601 UTC strings like "2026-07-20T06:30:00.000Z"):
 - food_entries(id, eaten_at, day /* local "YYYY-MM-DD" */, tz_offset_min /* minutes east of UTC where it was logged */, title, description, nutrients /* JSON: calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, … */, fast_ok_note /* why it doesn't break a fast; NULL = it counts as eating */)
-- workouts(id, performed_at, day, tz_offset_min, title, description, calories_burned /* kcal; summed per day this is burned_workouts */, duration_min, zone2_min /* explicitly recorded minutes, NULL = unknown */, cardio /* 1 = counts as cardio (its duration_min counts toward the cardio goal): switched on by them, or by the Garmin Zone 2 rule while cardio_by_hand = 0 */, cardio_by_hand /* 1 = they flipped the switch themselves */, source /* "Garmin", "Health Connect" or NULL = manual */, external_id)
+- workouts(id, performed_at, day, tz_offset_min, title, description, calories_burned /* kcal; summed per day this is burned_workouts */, duration_min, avg_hr /* recorded average heart rate in bpm; NULL = unknown */, zone2_min /* explicitly recorded minutes, NULL = unknown */, cardio /* 1 = counts toward the cardio goal: automatically avg_hr > 125 unless manually overridden. The full positive duration_min counts, default goal 300 min per 7 days. Unknown HR counts only when manually enabled */, cardio_by_hand /* 1 = manual cardio on/off choice; takes precedence over average HR and persists through sync and field edits */, source /* "Garmin", "Health Connect" or NULL = manual */, external_id)
 - sleep_sessions(id, started_at, ended_at, day /* the morning it ended on */, tz_offset_min, duration_min, deep_min, rem_min, light_min, awake_min, source)
 - health_metrics(day /* local "YYYY-MM-DD" */, steps, resting_hr, hrv_ms, spo2_pct, weight_kg, vo2_max, calories_total /* kcal, the watch's whole-day burn incl. resting and workouts = burned_total */, updated_at)
 - supplements(id, name, dose_amount, dose_unit, nutrients /* JSON per dose */, notes, archived)

@@ -139,7 +139,7 @@ export interface CoachDigest {
     avgNet: number | null;
     avgProteinG: number | null;
     workouts: number;
-    /** Minutes of workouts switched on as cardio, over the 7 days ending today (today included). */
+    /** Full cardio workout minutes over the 7 days ending today; manual choices override average HR. */
     cardioMin: number;
     /** The cardio goal, minutes per 7 days. */
     cardioTarget: number;
@@ -403,7 +403,7 @@ export function renderCoachDigest(d: CoachDigest): string {
       ? [`Days they marked as incomplete tracking (last 7 days): ${d.week.incompleteDays.join(", ")}.`]
       : []),
     `Cardio, last 7 days incl. today: ${d.week.cardioMin} of a ${d.week.cardioTarget} min goal per 7 days ` +
-      "(workouts they switched on as cardio, full duration).",
+      "(full workout duration; automatically cardio above 125 bpm average heart rate, with manual on/off choices taking precedence. Unknown HR counts only when manually enabled).",
   ];
   if (d.weight) {
     lines.push(

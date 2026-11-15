@@ -9,7 +9,7 @@
  * line opens a sheet for that one thing when you tap it. Nothing is a form
  * until you ask it to be.
  */
-import { diaryZone2Minutes } from "../lib/exerciseGoals";
+import { CARDIO_MIN_AVG_HR, diaryZone2Minutes } from "../lib/exerciseGoals";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
@@ -238,6 +238,7 @@ type Editing =
   | { field: "nutrient"; key: NutrientKey }
   | { field: "calories_burned" }
   | { field: "duration" }
+  | { field: "avg_hr" }
   | { field: "zone2" }
   | { field: "amount" }
   | { field: "reading" }
@@ -581,6 +582,11 @@ export default function EntryPage() {
                 workout.duration_min != null ? `${Math.round(workout.duration_min)} min` : "–"
               }
               onClick={() => setEditing({ field: "duration" })}
+            />
+            <InfoRow
+              label="Average heart rate"
+              value={workout.avg_hr != null ? `${workout.avg_hr} bpm` : "–"}
+              onClick={() => setEditing({ field: "avg_hr" })}
             />
             <WorkoutCardioToggle workout={workout} onSaved={afterChange} />
             {(diaryZone2Minutes(workout) ?? 0) > 0 && diaryZone2Minutes(workout) !== workout.duration_min && (
@@ -1016,6 +1022,9 @@ function FieldEditor({
     if (editing.field === "duration") {
       return workout?.duration_min != null ? numToInput(workout.duration_min) : "";
     }
+    if (editing.field === "avg_hr") {
+      return workout?.avg_hr != null ? String(workout.avg_hr) : "";
+    }
     if (editing.field === "zone2") {
       const minutes = workout ? diaryZone2Minutes(workout) : null;
       return minutes != null ? numToInput(minutes) : "";
@@ -1093,6 +1102,11 @@ function FieldEditor({
         if (patch.duration_min != null && (patch.zone2_min ?? 0) > patch.duration_min) {
           throw new Error("Duration cannot be shorter than the recorded Zone 2 time. Correct Zone 2 first.");
         }
+      } else if (editing.field === "avg_hr") {
+        patch.avg_hr = parseNum(false);
+        if (patch.avg_hr != null && patch.avg_hr <= 0) {
+          throw new Error("Average heart rate must be greater than zero.");
+        }
       } else if (editing.field === "zone2") {
         patch.zone2_min = parseNum(false);
         if (patch.duration_min != null && (patch.zone2_min ?? 0) > patch.duration_min) {
@@ -1153,6 +1167,8 @@ function FieldEditor({
         ? "When"
         : editing.field === "calories_burned"
           ? "Calories burned"
+          : editing.field === "avg_hr"
+            ? "Average heart rate"
           : editing.field === "duration" || editing.field === "zone2"
             ? (editing.field === "zone2" ? "Zone 2" : "Duration")
             : editing.field === "amount"
@@ -1174,6 +1190,8 @@ function FieldEditor({
       ? NUTRIENT_DEFS.find((d) => d.key === editing.key)?.unit
       : editing.field === "calories_burned"
         ? "kcal"
+        : editing.field === "avg_hr"
+          ? "bpm"
         : editing.field === "duration" || editing.field === "zone2"
           ? "min"
           : editing.field === "reading" && reading
@@ -1261,6 +1279,7 @@ function FieldEditor({
       {(editing.field === "nutrient" ||
         editing.field === "calories_burned" ||
         editing.field === "duration" ||
+        editing.field === "avg_hr" ||
         editing.field === "zone2" ||
         editing.field === "amount" ||
         editing.field === "reading") && (
@@ -1277,6 +1296,7 @@ function FieldEditor({
             onChange={(e) => setNum(e.target.value)}
           />
           {editing.field === "zone2" && <p className="faint small">Normally read from your diary entry. Set a value to override it, or leave empty to use the diary description.</p>}
+          {editing.field === "avg_hr" && <p className="faint small">Above {CARDIO_MIN_AVG_HR} bpm automatically counts the full workout as cardio. A manual Cardio choice takes precedence. Leave empty if unknown.</p>}
           {editing.field === "nutrient" && (
             <p className="faint small" style={{ margin: "6px 2px 0" }}>
               Leave it empty to record nothing for this one.

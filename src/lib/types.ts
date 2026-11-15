@@ -177,14 +177,16 @@ export interface Workout {
   /** Energy burned — subtracted from the day's calorie total. */
   calories_burned: number;
   duration_min: number | null;
+  /** Measured session average in bpm; null means unknown. */
+  avg_hr: number | null;
   /** Explicitly recorded Zone 2 minutes; null means unknown. */
   zone2_min: number | null;
   /**
-   * Counts as cardio: its duration counts toward the cardio goal. Switched by
-   * the user, or by the Zone 2 rule until they do (see `cardio_by_hand`).
+   * Effective cardio choice: manual override, else avg_hr > 125.
+   * Its full duration counts toward the goal when true.
    */
   cardio: boolean;
-  /** The user flipped the cardio switch themselves; the Zone 2 rule won't touch it. */
+  /** The user classified it themselves; edits and syncs preserve their choice. */
   cardio_by_hand: boolean;
   model_id: string | null;
   /** Icon key shown when there's no photo (see lib/icons.ts); null = guess it. */
@@ -531,6 +533,7 @@ export interface WorkoutAnalysis {
   confidence: "low" | "medium" | "high";
   calories_burned: number;
   duration_min: number | null;
+  avg_hr: number | null;
 }
 
 /** OpenRouter model listing entry (subset of the /models response). */
@@ -561,11 +564,6 @@ export const SETTING_KEYS = {
   zone2WeeklyTarget: "zone2_weekly_target",
   /** Cardio goal in minutes per 7 days (DEFAULT_CARDIO_TARGET_MIN when absent). */
   cardioWeeklyTarget: "cardio_weekly_target_min",
-  /**
-   * Percent of a Garmin activity's heart-rate time in Zone 2 at which it counts
-   * as cardio on its own (DEFAULT_CARDIO_ZONE2_SHARE_PCT when absent, "off" = never).
-   */
-  cardioZone2Share: "cardio_zone2_share_pct",
   /** Daily protein goal in grams (DEFAULT_PROTEIN_TARGET_G when absent). */
   proteinTarget: "protein_target_g",
   healthConnectLastSyncAt: "health_connect_last_sync_at",
@@ -626,8 +624,6 @@ export const DEFAULT_VISION_MODEL = "google/gemini-2.5-flash";
 export const DEFAULT_FAST_HOURS = 16;
 /** Cardio goal, minutes per 7 days, until another is stored. */
 export const DEFAULT_CARDIO_TARGET_MIN = 300;
-/** A Garmin activity with at least this share of its HR time in Zone 2 counts as cardio. */
-export const DEFAULT_CARDIO_ZONE2_SHARE_PCT = 50;
 /** Daily protein goal, in grams, until another is stored. */
 export const DEFAULT_PROTEIN_TARGET_G = 150;
 /** Daily net-carb budget (g) that keeps most people in ketosis. */

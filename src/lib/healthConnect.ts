@@ -97,7 +97,8 @@ const SYNC_OVERLAP_MS = 48 * 3_600_000;
  * (e.g. the switch from summing raw step records to deduplicated aggregates).
  * A mismatch forces one full-window resync so stale values get overwritten.
  */
-const RESYNC_VERSION = "3";
+// Version 4 recovers full-precision average HR for older workout rows.
+const RESYNC_VERSION = "4";
 
 export async function getHealthConnectStatus(): Promise<HealthConnectStatus> {
   try {
@@ -274,6 +275,7 @@ async function runSync(): Promise<HealthConnectSyncResult> {
       photo_path: null,
       calories_burned: Math.round(s.calories ?? 0),
       duration_min: durationMin > 0 ? durationMin : null,
+      avg_hr: s.avgHeartRate ?? null,
       model_id: null,
       // Left unset: the timeline derives an icon from the activity title, and
       // a re-sync must not overwrite one the user picked by hand.

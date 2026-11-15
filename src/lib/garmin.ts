@@ -3,10 +3,8 @@ import { deleteSetting, getSetting, setSetting, todayStr } from "./db";
 import { SETTING_KEYS } from "./types";
 import { notifyDiaryChanged } from "./agent";
 import { shiftDay } from "./daystamp";
-import { getCardioZone2Share } from "./goals";
 import {
   activitiesMissingLaps,
-  applyZone2Cardio,
   earliestGarminActivityAt,
   fillHealthMetricsFromGarmin,
   fillSleepFromGarmin,
@@ -178,8 +176,6 @@ export interface GarminSyncResult {
   days: number;
   /** Nights added from Garmin where no synced night existed. */
   nights: number;
-  /** Workouts the Zone 2 rule switched on or off as cardio. */
-  zone2Cardio: number;
   /** How far back wellness history reaches now, and whether that's all of it. */
   wellnessBackTo: string | null;
   backfillDone: boolean;
@@ -236,7 +232,7 @@ async function runSync(manual: boolean, newWorkout: boolean): Promise<GarminSync
   try {
     const result = await syncAll(status);
     await setSetting(SETTING_KEYS.garminLastSyncAt, new Date().toISOString());
-    if (result.linkedExact + result.linkedByTime + result.created + result.days + result.nights + result.zone2Cardio > 0) {
+    if (result.linkedExact + result.linkedByTime + result.created + result.updated + result.days + result.nights > 0) {
       notifyDiaryChanged();
     }
     return result;
@@ -272,7 +268,6 @@ async function syncAll(status: GarminStatus): Promise<GarminSyncResult> {
     laps: 0,
     days: 0,
     nights: 0,
-    zone2Cardio: 0,
     wellnessBackTo: null,
     backfillDone: false,
     extrasError: null,
@@ -360,8 +355,6 @@ async function syncAll(status: GarminStatus): Promise<GarminSyncResult> {
   // --- Fill Health Connect's gaps from what Garmin has.
   await fillHealthMetricsFromGarmin();
   result.nights = await fillSleepFromGarmin();
-  // --- Workouts mostly in Zone 2 count as cardio, now their zones are in.
-  result.zone2Cardio = await applyZone2Cardio(await getCardioZone2Share());
   return result;
 }
 

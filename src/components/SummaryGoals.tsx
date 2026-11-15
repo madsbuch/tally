@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { exerciseTarget } from "../lib/exerciseGoals";
+import { CARDIO_MIN_AVG_HR, exerciseTarget } from "../lib/exerciseGoals";
 import { cardioMinutes, getCardioTarget, getDayGoal, getProteinTarget, loadGoalSettings } from "../lib/goals";
 import type { Workout } from "../lib/types";
 
@@ -158,6 +158,9 @@ export default function SummaryGoals({
             unit="min"
             limit="min"
           />
+          <p className="faint small" style={{ margin: 0 }}>
+            Cardio automatically counts workouts with average heart rate above {CARDIO_MIN_AVG_HR} bpm. Manual Cardio choices take precedence; included workouts count their full duration.
+          </p>
         </div>
       )}
     </section>

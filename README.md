@@ -28,15 +28,17 @@ lives in a SQLite database on the device — there is no backend.
   label nutrition instead of an estimate (missing micronutrients are still
   estimated by the model). Only the product name or barcode is sent — never
   photos or personal data.
-- **Summary** — a compact exercise and nutrition overview. Zone 2 progress
+- **Summary** — a compact exercise and nutrition overview. Cardio progress
   follows the shared Day, Last 7 days (default), and Last 24 days selector,
-  including date navigation. The editable 7-day target defaults to 300 minutes;
+  including date navigation. The 7-day target defaults to 300 minutes;
   the 24-day goal is four times that (1,200 minutes). Progress comes straight
-  from diary workouts, including older entries describing Zone 2 sessions or
-  minutes, with no second log. A **Zone 2 workout** switch on each workout's
-  detail page counts its full duration when on and excludes it when off.
-  Garmin re-syncs preserve that choice; average heart rate never turns it on.
-  Unknown intensity never counts as Zone 2. Nutrition shows per-day
+  from diary workouts: a workout automatically counts its full duration as
+  **cardio** when its average heart rate is above 125 bpm. Exactly 125 bpm or
+  an unknown average does not automatically count. The **Cardio** switch on
+  each workout always overrides the automatic rule, including after edits
+  and re-syncs; **Use automatic rule** clears that choice. Average heart rate
+  comes from synced workouts, diary captures, or the editable field on each
+  workout; Zone 2 minutes are tracked separately. Nutrition shows per-day
   averages over longer periods. Energy and macros stay visible, with keto,
   micronutrients, source filters, and other compounds under Nutrition details.
 - **Garmin / Health Connect sync** — workouts your watch records (calories,

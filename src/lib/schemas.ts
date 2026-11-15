@@ -183,6 +183,12 @@ const looseMinutes = z.unknown().optional().transform((v) => {
   return typeof n === "number" && isFinite(n) && n > 0 ? Math.round(n) : null;
 });
 
+/** A recorded average heart rate; retain decimals for the cardio threshold. */
+const looseAverageHeartRate = z.unknown().optional().transform((v) => {
+  const n = typeof v === "string" ? Number(v) : v;
+  return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : null;
+});
+
 /** Known nutrient keys only, finite non-negative amounts only. */
 const NutrientsField = z.unknown().optional().transform((v) => sanitizeNutrients(v));
 
@@ -199,6 +205,7 @@ export const WorkoutAnalysisSchema = z.object({
   confidence: ConfidenceSchema,
   calories_burned: looseKcal,
   duration_min: looseMinutes,
+  avg_hr: looseAverageHeartRate,
 });
 
 /**
@@ -255,6 +262,12 @@ const WorkoutEntryFields = z.object({
   description: keptText,
   calories_burned: keptKcal,
   duration_min: keptMinutes,
+  avg_hr: z.unknown().optional().transform((v) => {
+    if (v === undefined) return undefined;
+    if (v === null || v === "") return null;
+    const n = typeof v === "string" ? Number(v) : v;
+    return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : undefined;
+  }),
   zone2_min: z.unknown().optional().transform((v) => {
     if (v === undefined) return undefined;
     if (v === null || v === "") return null;
@@ -354,6 +367,8 @@ const WorkoutSnapshotSchema = z.object({
   photo_path: z.string().nullable(),
   calories_burned: z.number(),
   duration_min: z.number().nullable(),
+  // Older undo snapshots predate structured average heart rate.
+  avg_hr: z.number().positive().nullable().default(null),
   zone2_min: z.number().nonnegative().nullable().default(null),
   // Snapshots written before the cardio switch existed have no flag.
   cardio: z.boolean().default(false),
