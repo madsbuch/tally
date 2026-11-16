@@ -284,6 +284,10 @@ export default function App() {
         <Outlet />
       </main>
       <nav className="tabbar">
+        {/* Shown only on a wide window, where the tab bar is a sidebar. */}
+        <div className="tabbar-brand" aria-hidden="true">
+          Tally
+        </div>
         {TABS.map((t) => {
           // The Coach tab goes back to the conversation you left open. The
           // tab you're already in goes back to its top.

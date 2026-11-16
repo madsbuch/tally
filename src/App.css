@@ -2766,3 +2766,142 @@ textarea.manual-editor {
 .focus-off {
   opacity: 0.6;
 }
+
+/* Desktop ------------------------------------------------------------------
+ *
+ * On a wide window (the computer, or a tablet held sideways) the phone layout
+ * stretched edge to edge: rows half a metre long, tabs spread across the
+ * bottom of a monitor. Here the tab bar becomes a sidebar on the left, the
+ * page a centred column of reading width, and bottom sheets centred dialogs.
+ * Everything fixed to the window's edges is re-anchored to that column.
+ * The phone layout above is untouched: none of this applies under 900px.
+ */
+.tabbar-brand {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  :root {
+    --sidebar-w: 216px;
+    --content-w: 760px;
+    /* No bottom bar to clear. */
+    --tabbar-h: 0px;
+    /* Space either side of the column, inside the main area. */
+    --gutter: max(24px, calc((100vw - var(--sidebar-w) - var(--content-w)) / 2));
+  }
+
+  .app-main {
+    padding: 32px var(--gutter) 48px calc(var(--sidebar-w) + var(--gutter));
+  }
+
+  .app-main > * {
+    max-width: var(--content-w);
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .tabbar {
+    top: 0;
+    bottom: 0;
+    right: auto;
+    width: var(--sidebar-w);
+    height: auto;
+    flex-direction: column;
+    gap: 2px;
+    padding: 22px 12px;
+    border-top: none;
+    border-right: 1px solid var(--border);
+    background: var(--bg-elev, var(--card));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .tabbar-brand {
+    display: block;
+    font-family: var(--font-serif);
+    font-size: 26px;
+    color: var(--accent);
+    padding: 0 12px 20px;
+  }
+
+  .tab {
+    flex: 0 0 auto;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 14.5px;
+    letter-spacing: 0;
+  }
+
+  .tab-icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .tab-active {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+
+  /* Floating actions: at the column's right edge, near the bottom. */
+  .fab-stack {
+    right: calc(var(--gutter) - 8px);
+    bottom: 28px;
+  }
+
+  .page-with-fab {
+    padding-bottom: 96px;
+  }
+
+  /* The chat composer spans the main area; its field lines up with the column. */
+  .chat-composer {
+    left: var(--sidebar-w);
+    padding: 12px var(--gutter);
+  }
+
+  .toast {
+    left: calc(var(--sidebar-w) + (100vw - var(--sidebar-w)) / 2);
+  }
+
+  /* Bottom sheets become centred dialogs. */
+  .sheet-backdrop {
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+  }
+
+  .sheet {
+    width: min(560px, 100%);
+    max-height: min(86dvh, 900px);
+    border-radius: 18px;
+    border: 1px solid var(--border);
+    padding: 18px 22px 22px;
+    animation: fade-in 0.15s ease;
+  }
+
+  .sheet-handle {
+    display: none;
+  }
+}
+
+/* With a mouse: show what's clickable. */
+@media (hover: hover) and (pointer: fine) {
+  .tab:hover:not(.tab-active) {
+    color: var(--text);
+    background: color-mix(in srgb, var(--text) 6%, transparent);
+  }
+
+  .list-row:hover,
+  .card button.list-row:hover {
+    background: color-mix(in srgb, var(--text) 4%, var(--card));
+  }
+
+  .btn:hover:not(:disabled) {
+    filter: brightness(1.06);
+  }
+
+  .fab:hover {
+    filter: brightness(1.06);
+  }
+}
