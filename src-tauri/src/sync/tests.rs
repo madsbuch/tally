@@ -559,7 +559,7 @@ async fn joining_needs_an_empty_device_and_then_receives_everything() {
 
     // A device with data of its own is refused, and keeps it.
     exec(&b.pool, "INSERT INTO fasts (id, started_at, goal_hours) VALUES ('f', 'now', 16)").await;
-    assert!(engine::reset_for_join(&b.pool, "v", "new-b", None).await.is_err());
+    assert!(engine::reset_for_join(&b.pool, "v", "new-b", None, false).await.is_err());
     let n: i64 = sqlx::query_scalar("SELECT count(*) FROM fasts").fetch_one(&b.pool).await.unwrap();
     assert_eq!(n, 1);
 
@@ -568,7 +568,7 @@ async fn joining_needs_an_empty_device_and_then_receives_everything() {
     exec(&c.pool, "INSERT INTO settings (key, value) VALUES ('calorie_target_kcal', '1800')").await;
     let old_id = c.id.clone();
     let new_id = crate::sync::new_uuid();
-    engine::reset_for_join(&c.pool, "v", &new_id, None).await.unwrap();
+    engine::reset_for_join(&c.pool, "v", &new_id, None, false).await.unwrap();
     assert_ne!(new_id, old_id);
     let c = Device { id: new_id, ..c };
     engine::pull_all(&c.pool, &a.pool, 10, 1 << 20).await.unwrap();

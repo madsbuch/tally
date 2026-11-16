@@ -990,11 +990,20 @@ const JOIN_EXEMPT: &[&str] = &["settings", "achievements", "vault_devices", "sta
 /// Whether this device has nothing of its own to lose by joining a vault —
 /// the condition for joining at all. Returns the tables holding data if not.
 pub async fn data_tables(pool: &SqlitePool) -> Result<Vec<String>> {
+    Ok(held_data(pool).await?.into_iter().map(|(t, _)| t).collect())
+}
+
+/// The tables holding the person's data here, and how many rows each.
+pub async fn held_data(pool: &SqlitePool) -> Result<Vec<(String, i64)>> {
     let mut conn = pool.acquire().await.map_err(err)?;
-    data_tables_in(&mut conn).await
+    held_data_in(&mut conn).await
 }
 
 async fn data_tables_in(conn: &mut SqliteConnection) -> Result<Vec<String>> {
+    Ok(held_data_in(conn).await?.into_iter().map(|(t, _)| t).collect())
+}
+
+async fn held_data_in(conn: &mut SqliteConnection) -> Result<Vec<(String, i64)>> {
     let tables = synced_tables(conn).await?;
     let mut with_data = Vec::new();
     for t in tables.keys() {
@@ -1006,7 +1015,7 @@ async fn data_tables_in(conn: &mut SqliteConnection) -> Result<Vec<String>> {
             .await
             .map_err(err)?;
         if n > 0 {
-            with_data.push(t.clone());
+            with_data.push((t.clone(), n));
         }
     }
     Ok(with_data)
@@ -1015,14 +1024,21 @@ async fn data_tables_in(conn: &mut SqliteConnection) -> Result<Vec<String>> {
 /// Empties every synced table and the sync bookkeeping, and gives this device
 /// the id `new_id` and the vault's — ready to receive the vault's data.
 /// Refuses if any of the person's data is here, checked in the same
-/// transaction that empties it, so nothing written meanwhile can be lost.
-pub async fn reset_for_join(pool: &SqlitePool, vault_id: &str, new_id: &str, keys: Option<(&[u8], &[u8])>) -> Result<()> {
+/// transaction that empties it, so nothing written meanwhile can be lost —
+/// unless `replace`, for which the caller has saved a copy first.
+pub async fn reset_for_join(
+    pool: &SqlitePool,
+    vault_id: &str,
+    new_id: &str,
+    keys: Option<(&[u8], &[u8])>,
+    replace: bool,
+) -> Result<()> {
     let mut conn = pool.acquire().await.map_err(err)?.detach();
     sqlx::query("PRAGMA foreign_keys = OFF").execute(&mut conn).await.map_err(err)?;
     sqlx::query("BEGIN IMMEDIATE").execute(&mut conn).await.map_err(err)?;
     let result = async {
         let held = data_tables_in(&mut conn).await?;
-        if !held.is_empty() {
+        if !held.is_empty() && !replace {
             return Err(format!("this device already holds data ({}); joining needs an empty one", held.join(", ")));
         }
         sqlx::query("UPDATE sync_state SET applying = 1 WHERE id = 1").execute(&mut conn).await.map_err(err)?;

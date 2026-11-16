@@ -199,11 +199,20 @@ impl SyncService {
             .unwrap_or(false)
     }
 
-    pub async fn join(&self, app: &AppHandle, code: &str) -> Result<Outcome, String> {
+    /// Joins the vault behind `code`. With `replace`, a device that already
+    /// holds data joins too: a complete copy of its database is saved in the
+    /// app's `backups` folder first, and its path returned.
+    pub async fn join(&self, app: &AppHandle, code: &str, replace: bool) -> Result<JoinResult, String> {
         let pool = self.pool()?;
         let offer = PairingOffer::decode(code)?;
+        let backup = if replace && !engine::data_tables(pool).await?.is_empty() {
+            let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("backups");
+            Some(backup_before_join(pool, &dir).await?.to_string_lossy().into_owned())
+        } else {
+            None
+        };
         self.set_activity(app, |a| a.syncing = true);
-        let result = session::join(pool, &offer).await;
+        let result = session::join(pool, &offer, replace).await;
         self.set_activity(app, |a| {
             a.syncing = false;
             a.last_error = result.as_ref().err().cloned();
@@ -213,8 +222,29 @@ impl SyncService {
             // Everything changed: the frontend reloads whatever it shows.
             let _ = app.emit("sync-changed", o.received);
         }
-        result
+        result.map(|outcome| JoinResult { outcome, backup })
     }
+}
+
+#[derive(Debug, Serialize)]
+pub struct JoinResult {
+    pub outcome: Outcome,
+    /// Where the copy of this device's own data went, when it held any.
+    pub backup: Option<String>,
+}
+
+/// Saves a complete copy of the database in `dir` before a join replaces
+/// what's here — marked as a copy (instance.rs), so putting it back later is
+/// noticed. Returns its path.
+pub async fn backup_before_join(pool: &SqlitePool, dir: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let stamp: String = now_iso().chars().filter(|c| c.is_ascii_digit()).take(14).collect();
+    let path = dir.join(format!("tally-before-join-{stamp}.db"));
+    let _ = std::fs::remove_file(&path);
+    let target = path.to_string_lossy().replace('\'', "''");
+    sqlx::query(&format!("VACUUM INTO '{target}'")).execute(pool).await.map_err(|e| e.to_string())?;
+    super::instance::mark_copy(&path).await?;
+    Ok(path)
 }
 
 /// What one round found.
@@ -319,13 +349,27 @@ pub struct Status {
     pub devices: Vec<DeviceStatus>,
     /// True when this device holds none of the person's data, so it may join.
     pub can_join: bool,
+    /// What it holds when it does: (table, rows).
+    pub held: Vec<Held>,
     pub offer_active: bool,
     #[serde(flatten)]
     pub activity: Activity,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Held {
+    pub table: String,
+    pub rows: i64,
+}
+
 pub async fn status(pool: &SqlitePool, svc: &SyncService) -> Result<Status, String> {
     let me = session::identity(pool).await?;
+    let held: Vec<Held> = engine::held_data(pool)
+        .await?
+        .into_iter()
+        .map(|(table, rows)| Held { table, rows })
+        .collect();
     let rows: Vec<(String, String, String, Option<String>, Option<String>, Option<i64>)> = sqlx::query_as(
         "SELECT d.id, d.name, d.platform, p.last_sync_at, p.last_complete_at, p.complete
          FROM vault_devices d LEFT JOIN sync_peers p ON p.device_id = d.id
@@ -359,7 +403,8 @@ pub async fn status(pool: &SqlitePool, svc: &SyncService) -> Result<Status, Stri
         platform: me.platform,
         in_vault: me.vault_id.is_some(),
         devices,
-        can_join: engine::data_tables(pool).await?.is_empty(),
+        can_join: held.is_empty(),
+        held,
         offer_active: svc.offer_active(),
         activity: svc.activity(),
     })

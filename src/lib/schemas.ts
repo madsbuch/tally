@@ -1522,6 +1522,8 @@ export const SyncStatusSchema = z.object({
   inVault: z.boolean(),
   devices: z.array(SyncDeviceSchema),
   canJoin: z.boolean(),
+  /** What this device holds, when it holds anything: table and row count. */
+  held: z.array(z.object({ table: z.string(), rows: z.number() })),
   offerActive: z.boolean(),
   syncing: z.boolean(),
   lastError: z.string().nullable(),
@@ -1547,6 +1549,13 @@ const SyncOutcomeSchema = z.object({
 });
 export type SyncOutcome = z.infer<typeof SyncOutcomeSchema>;
 
-export function parseSyncOutcome(raw: unknown): SyncOutcome {
-  return SyncOutcomeSchema.parse(raw);
+const JoinResultSchema = z.object({
+  outcome: SyncOutcomeSchema,
+  /** Where the copy of this device's own data was saved, when it held any. */
+  backup: z.string().nullable(),
+});
+export type JoinResult = z.infer<typeof JoinResultSchema>;
+
+export function parseJoinResult(raw: unknown): JoinResult {
+  return JoinResultSchema.parse(raw);
 }

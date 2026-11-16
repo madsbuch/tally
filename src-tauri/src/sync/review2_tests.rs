@@ -31,7 +31,7 @@ async fn vault() -> (Device, SocketAddr, Device, PathBuf) {
     let phone = device().await;
     let path = phone._dir.0.join("tally.db");
     instance::check(&phone.pool, &path).await.unwrap();
-    session::join(&phone.pool, &offer).await.unwrap();
+    session::join(&phone.pool, &offer, false).await.unwrap();
     (host, addr, phone, path)
 }
 

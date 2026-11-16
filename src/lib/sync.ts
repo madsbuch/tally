@@ -6,10 +6,10 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { parseSyncOutcome, parseSyncStatus } from "./schemas";
-import type { SyncDevice, SyncOutcome, SyncStatus } from "./schemas";
+import { parseJoinResult, parseSyncStatus } from "./schemas";
+import type { JoinResult, SyncDevice, SyncOutcome, SyncStatus } from "./schemas";
 
-export type { SyncDevice, SyncOutcome, SyncStatus };
+export type { JoinResult, SyncDevice, SyncOutcome, SyncStatus };
 
 /** A backup older than this is worth a reminder. */
 export const STALE_BACKUP_MS = 3 * 24 * 3600_000;
@@ -35,9 +35,43 @@ export async function cancelPairing(): Promise<void> {
   await invoke("sync_cancel_offer");
 }
 
-/** Joins the vault the code came from; this device must be empty. */
-export async function joinVault(code: string): Promise<SyncOutcome> {
-  return parseSyncOutcome(await invoke("sync_join", { code }));
+/**
+ * Joins the vault the code came from. This device must be empty — unless
+ * `replace`: then a copy of what it holds is saved first, and replaced.
+ */
+export async function joinVault(code: string, replace = false): Promise<JoinResult> {
+  return parseJoinResult(await invoke("sync_join", { code, replace }));
+}
+
+const TABLE_LABELS: Record<string, [string, string]> = {
+  food_entries: ["meal", "meals"],
+  workouts: ["workout", "workouts"],
+  chats: ["chat", "chats"],
+  fasts: ["fast", "fasts"],
+  captures: ["capture", "captures"],
+  photos: ["photo", "photos"],
+  documents: ["document", "documents"],
+  sleep_sessions: ["night of sleep", "nights of sleep"],
+  health_metrics: ["day of health data", "days of health data"],
+  state_logs: ["observation", "observations"],
+  blood_readings: ["reading", "readings"],
+  coach_memory: ["coach memory", "coach memories"],
+  supplement_logs: ["supplement dose", "supplement doses"],
+  ai_usage: ["AI request", "AI requests"],
+};
+
+/** "12 meals, 3 chats and 40 other rows" — what a device holds, in words. */
+export function describeHeld(held: { table: string; rows: number }[]): string {
+  const named: string[] = [];
+  let other = 0;
+  for (const h of held) {
+    const label = TABLE_LABELS[h.table];
+    if (label) named.push(`${h.rows} ${h.rows === 1 ? label[0] : label[1]}`);
+    else other += h.rows;
+  }
+  if (other) named.push(`${other} other ${other === 1 ? "record" : "records"}`);
+  if (named.length <= 1) return named[0] ?? "nothing";
+  return `${named.slice(0, -1).join(", ")} and ${named[named.length - 1]}`;
 }
 
 export async function syncNow(): Promise<void> {

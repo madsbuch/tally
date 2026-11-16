@@ -434,9 +434,16 @@ fn sync_cancel_offer(svc: SyncState<'_>) {
     svc.cancel_offer();
 }
 
+/// Joins a vault. `replace`: this device holds data, and the person has
+/// agreed to have it replaced (a copy is saved first).
 #[tauri::command]
-async fn sync_join(app: tauri::AppHandle, svc: SyncState<'_>, code: String) -> Result<sync::session::Outcome, String> {
-    svc.join(&app, &code).await
+async fn sync_join(
+    app: tauri::AppHandle,
+    svc: SyncState<'_>,
+    code: String,
+    replace: bool,
+) -> Result<sync::service::JoinResult, String> {
+    svc.join(&app, &code, replace).await
 }
 
 #[tauri::command]

@@ -12,6 +12,7 @@ import {
   isAndroid,
   joinVault,
   onSyncStatus,
+  describeHeld,
   removeDevice,
   setDeviceName,
   syncNow,
@@ -117,6 +118,8 @@ export default function SyncPage() {
   const [joining, setJoining] = useState<"idle" | "scanning" | "working">("idle");
   const [pasted, setPasted] = useState("");
   const [joined, setJoined] = useState<string | null>(null);
+  /** The person agreed to replace what this device holds (a copy is saved first). */
+  const [replace, setReplace] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -165,12 +168,14 @@ export default function SyncPage() {
       setJoining("working");
       setError(null);
       try {
-        const outcome = await joinVault(c);
+        const { outcome, backup } = await joinVault(c, replace);
         setJoined(
-          outcome.complete
+          (outcome.complete
             ? `Joined ${outcome.peer_name}'s vault: everything is here.`
-            : `Joined ${outcome.peer_name}'s vault; the rest follows on the next sync.`,
+            : `Joined ${outcome.peer_name}'s vault; the rest follows on the next sync.`) +
+            (backup ? ` What this device held before is saved at ${backup}.` : ""),
         );
+        setReplace(false);
         void refresh();
       } catch (e) {
         setError(errMsg(e));
@@ -178,8 +183,22 @@ export default function SyncPage() {
         setJoining("idle");
       }
     },
-    [refresh],
+    [refresh, replace],
   );
+
+  function askToReplace() {
+    if (!status) return;
+    const what = describeHeld(status.held);
+    if (
+      !window.confirm(
+        `This device holds ${what}. Joining replaces all of it with the vault's data.\n\n` +
+          "A complete copy of this device's database is saved first, in Tally's backups folder, so nothing is lost. Continue?",
+      )
+    ) {
+      return;
+    }
+    setReplace(true);
+  }
 
   async function scan() {
     setError(null);
@@ -351,12 +370,19 @@ export default function SyncPage() {
               <p className="small" style={{ margin: 0 }}>
                 {joined}
               </p>
-            ) : !status.canJoin ? (
-              <p className="muted small" style={{ margin: 0 }}>
-                This device already holds a diary, so it can't join another
-                one: joining only ever fills an empty device. Show the pairing
-                code here, and scan it from the new device instead.
-              </p>
+            ) : !status.canJoin && !replace ? (
+              <>
+                <p className="muted small" style={{ margin: "0 0 10px" }}>
+                  This device holds {describeHeld(status.held)}, so joining
+                  would replace it. If this is the device with your diary, show
+                  the pairing code here and scan it from the other device
+                  instead. If what's here doesn't matter — left over from an
+                  earlier install, say — replace it: a copy is saved first.
+                </p>
+                <button className="btn btn-sm" onClick={askToReplace}>
+                  Replace this device's data and join…
+                </button>
+              </>
             ) : joining === "working" ? (
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <div className="spinner" />
@@ -365,8 +391,9 @@ export default function SyncPage() {
             ) : (
               <>
                 <p className="muted small" style={{ margin: "0 0 10px" }}>
-                  Scan the code the other device shows, on the same network.
-                  This device is empty, so it simply becomes a copy of it.
+                  {replace
+                    ? "Scan the code the other device shows, on the same network. What's here is saved to a backup, then replaced by the vault's data."
+                    : "Scan the code the other device shows, on the same network. This device is empty, so it simply becomes a copy of it."}
                 </p>
                 {joining === "scanning" && (
                   <div style={{ marginBottom: 10 }}>
@@ -386,6 +413,11 @@ export default function SyncPage() {
                   {joining === "scanning" && (
                     <button className="btn btn-ghost btn-sm" onClick={() => setJoining("idle")}>
                       Cancel
+                    </button>
+                  )}
+                  {replace && joining !== "scanning" && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => setReplace(false)}>
+                      Keep what's here
                     </button>
                   )}
                 </div>

@@ -85,7 +85,7 @@ mod tests {
         // The "phone" joins, then writes with the app "closed".
         let phone_dir = crate::photos::tests::Scratch::new();
         let phone = crate::photos::tests::migrated_db(&phone_dir).await;
-        session::join(&phone, &offer).await.unwrap();
+        session::join(&phone, &offer, false).await.unwrap();
         exec(&phone, "INSERT INTO food_entries (id, eaten_at, title, nutrients) VALUES ('bg', 'now', 'Snack', '{}')").await;
         phone.close().await;
 

@@ -73,7 +73,7 @@ async fn a_new_device_joins_with_the_code_and_gets_everything() {
     let o = offer_from(&h).await;
     let joiner = device().await;
 
-    let outcome = join(&joiner.pool, &PairingOffer::decode(&o.encode()).unwrap()).await.unwrap();
+    let outcome = join(&joiner.pool, &PairingOffer::decode(&o.encode()).unwrap(), false).await.unwrap();
     assert!(outcome.complete, "{:?}", outcome.differences);
     assert!(outcome.received.applied >= 27);
     assert_same(&h.device.pool, &joiner.pool).await;
@@ -102,8 +102,8 @@ async fn a_new_device_joins_with_the_code_and_gets_everything() {
 async fn a_code_works_once() {
     let h = host().await;
     let o = offer_from(&h).await;
-    join(&device().await.pool, &o).await.unwrap();
-    let err = join(&device().await.pool, &o).await.unwrap_err();
+    join(&device().await.pool, &o, false).await.unwrap();
+    let err = join(&device().await.pool, &o, false).await.unwrap_err();
     assert!(err.contains("expired or was already used"), "{err}");
     assert_eq!(count(&h.device.pool, "SELECT count(*) FROM vault_devices").await, 2);
 }
@@ -114,7 +114,7 @@ async fn an_expired_code_is_refused() {
     let o = offer_from(&h).await;
     h.slot.lock().unwrap().as_mut().unwrap().expires = Instant::now() - Duration::from_secs(1);
     let joiner = device().await;
-    let err = join(&joiner.pool, &o).await.unwrap_err();
+    let err = join(&joiner.pool, &o, false).await.unwrap_err();
     assert!(err.contains("expired"), "{err}");
     // Nothing on the joiner was touched.
     assert_eq!(identity(&joiner.pool).await.unwrap().vault_id, None);
@@ -128,7 +128,7 @@ async fn a_forged_code_is_refused_before_anything_is_touched() {
     o.host_key = wire::generate_keypair().1;
     let joiner = device().await;
     exec(&joiner.pool, "INSERT INTO settings (key, value) VALUES ('calorie_target_kcal', '1800')").await;
-    assert!(join(&joiner.pool, &o).await.is_err());
+    assert!(join(&joiner.pool, &o, false).await.is_err());
     assert_eq!(count(&joiner.pool, "SELECT count(*) FROM settings").await, 1);
     assert_eq!(identity(&joiner.pool).await.unwrap().vault_id, None);
 }
@@ -139,11 +139,11 @@ async fn a_device_with_data_cannot_join_and_keeps_its_data() {
     let o = offer_from(&h).await;
     let joiner = device().await;
     exec(&joiner.pool, "INSERT INTO food_entries (id, eaten_at, title, nutrients) VALUES ('mine', 'now', 'Oats', '{}')").await;
-    let err = join(&joiner.pool, &o).await.unwrap_err();
+    let err = join(&joiner.pool, &o, false).await.unwrap_err();
     assert!(err.contains("already holds data"), "{err}");
     assert_eq!(count(&joiner.pool, "SELECT count(*) FROM food_entries").await, 1);
     // And the code is still good for an empty one.
-    join(&device().await.pool, &o).await.unwrap();
+    join(&device().await.pool, &o, false).await.unwrap();
 }
 
 #[tokio::test]
@@ -159,6 +159,13 @@ async fn a_stranger_cannot_sync() {
     let before = dump(&h.device.pool).await;
     // Dropped straight after the handshake: it learns nothing, not even why.
     assert!(sync_now(&stranger.pool, h.addr).await.is_err());
+    // The host records it on its own task: give it a moment.
+    for _ in 0..100 {
+        if h.errors.lock().unwrap().iter().any(|e| e.contains("outside the vault")) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     assert!(h.errors.lock().unwrap().iter().any(|e| e.contains("outside the vault")));
     assert_eq!(dump(&h.device.pool).await, before);
     assert_eq!(count(&stranger.pool, "SELECT count(*) FROM food_entries").await, 0);
@@ -168,7 +175,7 @@ async fn a_stranger_cannot_sync() {
 async fn a_removed_device_is_refused_from_then_on() {
     let h = host().await;
     let joiner = device().await;
-    join(&joiner.pool, &offer_from(&h).await).await.unwrap();
+    join(&joiner.pool, &offer_from(&h).await, false).await.unwrap();
     let joiner_id = identity(&joiner.pool).await.unwrap().device_id;
     exec(&h.device.pool, &format!("DELETE FROM vault_devices WHERE id = '{joiner_id}'")).await;
     exec(&h.device.pool, "INSERT INTO food_entries (id, eaten_at, title, nutrients) VALUES ('secret', 'now', 'x', '{}')").await;
@@ -180,7 +187,7 @@ async fn a_removed_device_is_refused_from_then_on() {
 async fn different_versions_of_the_app_do_not_sync() {
     let h = host().await;
     let joiner = device().await;
-    join(&joiner.pool, &offer_from(&h).await).await.unwrap();
+    join(&joiner.pool, &offer_from(&h).await, false).await.unwrap();
     exec(&joiner.pool, "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) VALUES (999, 'future', 1, x'', 0)").await;
     let err = sync_now(&joiner.pool, h.addr).await.unwrap_err();
     assert!(err.contains("different version of Tally"), "{err}");
@@ -190,7 +197,7 @@ async fn different_versions_of_the_app_do_not_sync() {
 async fn edits_on_both_sides_meet_in_one_sync() {
     let h = host().await;
     let joiner = device().await;
-    join(&joiner.pool, &offer_from(&h).await).await.unwrap();
+    join(&joiner.pool, &offer_from(&h).await, false).await.unwrap();
     exec(&h.device.pool, "INSERT INTO chats (id, created_at, updated_at, title, messages) VALUES ('c', 'now', 'now', 'Plan', '[\"q1\"]')").await;
     sync_now(&joiner.pool, h.addr).await.unwrap();
     exec(&h.device.pool, "UPDATE chats SET messages = '[\"q1\",\"from the computer\"]'").await;
@@ -210,7 +217,7 @@ async fn edits_on_both_sides_meet_in_one_sync() {
 async fn the_last_sync_is_remembered_per_peer() {
     let h = host().await;
     let joiner = device().await;
-    join(&joiner.pool, &offer_from(&h).await).await.unwrap();
+    join(&joiner.pool, &offer_from(&h).await, false).await.unwrap();
     let host_id = identity(&h.device.pool).await.unwrap().device_id;
     let (complete, at, addr): (i64, Option<String>, Option<String>) =
         sqlx::query_as("SELECT complete, last_complete_at, last_addr FROM sync_peers WHERE device_id = ?")
@@ -269,7 +276,7 @@ async fn failed_connections_are_reported_by_the_listener() {
 async fn a_restored_copy_is_caught_at_the_start_of_a_sync_and_then_catches_up() {
     let h = host().await;
     let joiner = device().await;
-    join(&joiner.pool, &offer_from(&h).await).await.unwrap();
+    join(&joiner.pool, &offer_from(&h).await, false).await.unwrap();
     // A copy of the phone's database, taken now…
     let dir = crate::photos::tests::Scratch::new();
     let copy = dir.0.join("restored.db");
@@ -308,7 +315,7 @@ async fn a_restored_copy_is_caught_at_the_start_of_a_sync_and_then_catches_up() 
 async fn a_removed_device_is_refused_by_its_key_whatever_id_it_takes() {
     let h = host().await;
     let joiner = device().await;
-    join(&joiner.pool, &offer_from(&h).await).await.unwrap();
+    join(&joiner.pool, &offer_from(&h).await, false).await.unwrap();
     let joiner_id = identity(&joiner.pool).await.unwrap().device_id;
     crate::sync::service::remove_device(&h.device.pool, &joiner_id).await.unwrap();
     // A new id doesn't help: the key is what's revoked.
@@ -327,14 +334,14 @@ async fn a_busy_host_leaves_the_joiner_untouched_and_the_code_usable() {
     exec(&joiner.pool, "INSERT INTO settings (key, value) VALUES ('calorie_target_kcal', '1800')").await;
     {
         let _held = try_busy(&host_id).unwrap();
-        let err = join(&joiner.pool, &o).await.unwrap_err();
+        let err = join(&joiner.pool, &o, false).await.unwrap_err();
         assert!(err.contains("busy"), "{err}");
         // Nothing on the joiner changed.
         assert_eq!(identity(&joiner.pool).await.unwrap().vault_id, None);
         assert_eq!(count(&joiner.pool, "SELECT count(*) FROM settings").await, 1);
     }
     // The code wasn't used up.
-    join(&joiner.pool, &o).await.unwrap();
+    join(&joiner.pool, &o, false).await.unwrap();
 }
 
 #[tokio::test]
@@ -373,7 +380,7 @@ async fn a_failed_join_leaves_the_device_exactly_as_it_was() {
         // Nothing listens here.
         addrs: vec!["127.0.0.1:9".into()],
     };
-    assert!(join(&joiner.pool, &o).await.is_err());
+    assert!(join(&joiner.pool, &o, false).await.is_err());
     let after: (Option<Vec<u8>>, String) =
         sqlx::query_as("SELECT public_key, device_id FROM sync_state").fetch_one(&joiner.pool).await.unwrap();
     assert_eq!(before, after, "key and id untouched");
@@ -384,9 +391,40 @@ async fn a_device_answering_at_a_spoofed_address_is_not_trusted() {
     // Our vault, and a host of another vault that someone points us at.
     let ours = host().await;
     let joiner = device().await;
-    join(&joiner.pool, &offer_from(&ours).await).await.unwrap();
+    join(&joiner.pool, &offer_from(&ours).await, false).await.unwrap();
     let impostor = host().await;
     offer_from(&impostor).await;
     let err = sync_now(&joiner.pool, impostor.addr).await.unwrap_err();
     assert!(err.contains("outside the vault"), "{err}");
+}
+
+#[tokio::test]
+async fn a_device_with_data_can_join_by_replacing_it_after_a_copy_is_saved() {
+    let h = host().await;
+    with_some_data(&h.device.pool).await;
+    let o = offer_from(&h).await;
+    let joiner = device().await;
+    exec(&joiner.pool, "INSERT INTO food_entries (id, eaten_at, title, nutrients) VALUES ('mine', 'now', 'Old toast', '{}')").await;
+    exec(&joiner.pool, "INSERT INTO chats (id, created_at, updated_at, title, messages) VALUES ('c', 'now', 'now', 'Old chat', '[]')").await;
+    let held = engine::held_data(&joiner.pool).await.unwrap();
+    assert_eq!(held, vec![("chats".to_string(), 1), ("food_entries".to_string(), 1)]);
+
+    // Saved first…
+    let dir = crate::photos::tests::Scratch::new();
+    let backup = crate::sync::service::backup_before_join(&joiner.pool, &dir.0).await.unwrap();
+    // …then replaced by the vault's.
+    let outcome = join(&joiner.pool, &o, true).await.unwrap();
+    assert!(outcome.complete, "{:?}", outcome.differences);
+    assert_same(&h.device.pool, &joiner.pool).await;
+    assert_eq!(count(&joiner.pool, "SELECT count(*) FROM food_entries WHERE id = 'mine'").await, 0);
+
+    // The copy holds exactly what was there, and is marked as a copy.
+    let copy = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect_with(sqlx::sqlite::SqliteConnectOptions::new().filename(&backup))
+        .await
+        .unwrap();
+    assert_eq!(count(&copy, "SELECT count(*) FROM food_entries WHERE id = 'mine'").await, 1);
+    assert_eq!(count(&copy, "SELECT count(*) FROM chats WHERE title = 'Old chat'").await, 1);
+    let marker: String = sqlx::query_scalar("SELECT instance FROM sync_state").fetch_one(&copy).await.unwrap();
+    assert!(marker.starts_with("copy:"));
 }

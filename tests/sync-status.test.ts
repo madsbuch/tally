@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ago, backupLine, backupState, STALE_BACKUP_MS } from "../src/lib/sync";
+import { ago, backupLine, backupState, describeHeld, STALE_BACKUP_MS } from "../src/lib/sync";
 import type { SyncDevice, SyncStatus } from "../src/lib/sync";
 import { parseSyncStatus } from "../src/lib/schemas";
 
@@ -17,6 +17,7 @@ function status(devices: SyncDevice[], inVault = true): SyncStatus {
     inVault,
     devices: [device({ id: "me", name: "Phone", isSelf: true }), ...devices],
     canJoin: false,
+    held: [],
     offerActive: false,
     syncing: false,
     lastError: null,
@@ -70,6 +71,13 @@ describe("backup state", () => {
     expect(ago(new Date(NOW - 10_000).toISOString(), NOW)).toBe("just now");
     expect(ago(new Date(NOW - 5 * 60_000).toISOString(), NOW)).toBe("5 min ago");
     expect(ago(new Date(NOW - 86_400_000).toISOString(), NOW)).toBe("1 day ago");
+  });
+
+  test("what a device holds reads as words", () => {
+    expect(describeHeld([{ table: "food_entries", rows: 30 }])).toBe("30 meals");
+    expect(describeHeld([{ table: "workouts", rows: 1 }, { table: "food_entries", rows: 2 }, { table: "garmin_days", rows: 5 }, { table: "entry_notes", rows: 1 }])).toBe(
+      "1 workout, 2 meals and 6 other records",
+    );
   });
 
   test("the status from Rust is checked on the way in", () => {

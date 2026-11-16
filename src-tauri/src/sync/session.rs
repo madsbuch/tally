@@ -572,11 +572,13 @@ pub async fn offer(pool: &SqlitePool, slot: &PairingSlot, addrs: Vec<String>) ->
     })
 }
 
-/// Joins the vault `offer` came from: this device must hold none of the
-/// person's data. Ends with everything the host has.
-pub async fn join(pool: &SqlitePool, offer: &PairingOffer) -> Result<Outcome> {
+/// Joins the vault `offer` came from. Without `replace` this device must hold
+/// none of the person's data; with it, whatever it holds is replaced by the
+/// vault's (the caller saves a copy first — see `service::backup_before_join`).
+/// Ends with everything the host has.
+pub async fn join(pool: &SqlitePool, offer: &PairingOffer, replace: bool) -> Result<Outcome> {
     let held = engine::data_tables(pool).await?;
-    if !held.is_empty() {
+    if !held.is_empty() && !replace {
         return Err(format!(
             "this device already holds data ({}), so it can't join — only an empty device can",
             held.join(", ")
@@ -620,7 +622,7 @@ pub async fn join(pool: &SqlitePool, offer: &PairingOffer) -> Result<Outcome> {
             Msg::Welcome { vault_id } if vault_id == offer.vault_id => {}
             _ => return Err("the host didn't let this device in".into()),
         }
-        engine::reset_for_join(pool, &offer.vault_id, &new_id, Some((&secret, &public))).await?;
+        engine::reset_for_join(pool, &offer.vault_id, &new_id, Some((&secret, &public)), replace).await?;
         let me = identity(pool).await?;
         let hello = hello(pool, &me).await?;
         let host_key = offer.host_key.clone();
