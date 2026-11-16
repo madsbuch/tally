@@ -14,20 +14,20 @@ use rand::{Rng, SeedableRng};
 use sqlx::SqlitePool;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-struct Device {
-    pool: SqlitePool,
-    id: String,
+pub(crate) struct Device {
+    pub(crate) pool: SqlitePool,
+    pub(crate) id: String,
     _dir: Scratch,
 }
 
-async fn device() -> Device {
+pub(crate) async fn device() -> Device {
     let dir = Scratch::new();
     let pool = migrated_db(&dir).await;
     let id = engine::local_state(&pool).await.unwrap().device_id;
     Device { pool, id, _dir: dir }
 }
 
-async fn exec(pool: &SqlitePool, sql: &str) {
+pub(crate) async fn exec(pool: &SqlitePool, sql: &str) {
     sqlx::query(sql).execute(pool).await.unwrap_or_else(|e| panic!("{sql}: {e}"));
 }
 
@@ -50,7 +50,7 @@ async fn pull_some(into: &Device, from: &Device, batches: usize, rows: i64) {
 }
 
 /// Every synced table's rows, with their versions, as comparable text.
-async fn dump(pool: &SqlitePool) -> BTreeMap<String, Vec<String>> {
+pub(crate) async fn dump(pool: &SqlitePool) -> BTreeMap<String, Vec<String>> {
     let mut conn = pool.acquire().await.unwrap();
     let tables = engine::synced_tables(&mut conn).await.unwrap();
     let mut out = BTreeMap::new();

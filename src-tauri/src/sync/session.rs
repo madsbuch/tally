@@ -1,0 +1,640 @@
+//! One sync between two devices, and pairing a new device into a vault.
+//!
+//! A sync, after the encrypted handshake:
+//!
+//! ```text
+//! client                              server
+//!   Hello  ───────────────────────────▶       both check: same vault, same
+//!          ◀─────────────────────────── Hello  schema, a key the vault knows
+//!   Pull{since} ──────────────────────▶
+//!          ◀─────────────────────────── Batch  …until the batch says done
+//!   YourTurn ─────────────────────────▶
+//!          ◀─────────────────────────── Pull{since}
+//!   Batch ────────────────────────────▶        …until done
+//!          ◀─────────────────────────── Finished
+//!   Digest ───────────────────────────▶
+//!          ◀─────────────────────────── Digest  both record whether they match
+//! ```
+//!
+//! Pairing: the host shows a QR code ([`PairingOffer`]) holding its address,
+//! its key and a one-time token. The joiner connects with that token (Noise
+//! XXpsk3), checks the host is who the code said, empties itself, introduces
+//! itself (`Join`), and is added to the vault's device list under the key it
+//! proved in the handshake. The same connection then carries on as a sync,
+//! which brings everything over.
+
+use super::engine::{self, ApplyStats, Batch, Digest};
+use super::wire::{self, Channel, PURPOSE_PAIR, PURPOSE_SYNC};
+use base64::Engine as _;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest as _, Sha256};
+use sqlx::SqlitePool;
+use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::time::timeout;
+
+pub type Result<T> = std::result::Result<T, String>;
+
+pub const PROTOCOL: u32 = 1;
+/// Rows and bytes per batch over the wire: big enough to move along, small
+/// enough that one transaction never holds the database for long.
+const BATCH_ROWS: i64 = 500;
+const BATCH_BYTES: usize = 4 * 1024 * 1024;
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
+/// How long a QR code works.
+pub const PAIRING_TTL: Duration = Duration::from_secs(10 * 60);
+/// The TCP port tried first; any free one if it's taken.
+pub const PREFERRED_PORT: u16 = 47822;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Hello {
+    pub protocol: u32,
+    pub device_id: String,
+    pub name: String,
+    pub platform: String,
+    pub schema: i64,
+    pub vault_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Msg {
+    Hello(Hello),
+    Join { device_id: String, name: String, platform: String },
+    Welcome { vault_id: String },
+    Pull { since: i64 },
+    Batch(Batch),
+    YourTurn,
+    Finished,
+    Digest(Digest),
+    Refused { reason: String },
+}
+
+/// Who this device is, for sync.
+#[derive(Debug, Clone)]
+pub struct Identity {
+    pub device_id: String,
+    pub vault_id: Option<String>,
+    pub secret: Vec<u8>,
+    pub public: Vec<u8>,
+    pub name: String,
+    pub platform: String,
+}
+
+pub fn platform() -> &'static str {
+    if cfg!(target_os = "android") {
+        "android"
+    } else {
+        "desktop"
+    }
+}
+
+/// This device's identity, making its key pair the first time.
+pub async fn identity(pool: &SqlitePool) -> Result<Identity> {
+    let (device_id, vault_id, secret, public): (String, Option<String>, Option<Vec<u8>>, Option<Vec<u8>>) =
+        sqlx::query_as("SELECT device_id, vault_id, secret_key, public_key FROM sync_state WHERE id = 1")
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+    let (secret, public) = match (secret, public) {
+        (Some(s), Some(p)) => (s, p),
+        _ => {
+            let (s, p) = wire::generate_keypair();
+            sqlx::query("UPDATE sync_state SET secret_key = ?, public_key = ? WHERE id = 1")
+                .bind(&s)
+                .bind(&p)
+                .execute(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+            (s, p)
+        }
+    };
+    let name: Option<String> = sqlx::query_scalar("SELECT value FROM device_settings WHERE key = 'sync_device_name'")
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let name = name
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| if platform() == "android" { "Phone".into() } else { "Computer".into() });
+    Ok(Identity { device_id, vault_id, secret, public, name, platform: platform().into() })
+}
+
+async fn hello(pool: &SqlitePool, me: &Identity) -> Result<Hello> {
+    Ok(Hello {
+        protocol: PROTOCOL,
+        device_id: me.device_id.clone(),
+        name: me.name.clone(),
+        platform: me.platform.clone(),
+        schema: engine::schema_version(pool).await?,
+        vault_id: me.vault_id.clone(),
+    })
+}
+
+/// Whether `theirs` may sync with this device: the same vault, the same
+/// schema, and a device the vault lists under the key it proved — or, while
+/// joining (the device list is still empty here), the key the QR code named.
+async fn check_peer(pool: &SqlitePool, me: &Hello, theirs: &Hello, proven_key: &[u8], vouched: Option<&[u8]>) -> Result<()> {
+    if theirs.protocol != me.protocol {
+        return Err(format!("{} runs a different version of sync; update both devices", theirs.name));
+    }
+    if theirs.schema != me.schema {
+        return Err(format!(
+            "{} is on a different version of Tally ({} vs {}); update both devices",
+            theirs.name, theirs.schema, me.schema
+        ));
+    }
+    if me.vault_id.is_none() || theirs.vault_id != me.vault_id {
+        return Err("not in the same vault".into());
+    }
+    if let Some(k) = vouched {
+        return if k == proven_key { Ok(()) } else { Err("the host's key changed mid-pairing".into()) };
+    }
+    let key: Option<String> = sqlx::query_scalar("SELECT public_key FROM vault_devices WHERE id = ?")
+        .bind(&theirs.device_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    match key {
+        Some(k) if k == hex::encode(proven_key) => Ok(()),
+        Some(_) => Err(format!("{} presented a key the vault doesn't know it by", theirs.name)),
+        None => Err(format!("{} isn't (or is no longer) in this vault", theirs.name)),
+    }
+}
+
+/// What a finished sync did.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Outcome {
+    pub peer_id: String,
+    pub peer_name: String,
+    /// What this device took in.
+    pub received: Received,
+    /// Whether both devices ended holding exactly the same data.
+    pub complete: bool,
+    /// Tables that differed, when not.
+    pub differences: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize)]
+pub struct Received {
+    pub applied: usize,
+    pub conflicts: usize,
+    pub forks: usize,
+    pub unique_merges: usize,
+}
+
+impl Received {
+    fn add(&mut self, s: ApplyStats) {
+        self.applied += s.applied;
+        self.conflicts += s.conflicts;
+        self.forks += s.forks;
+        self.unique_merges += s.unique_merges;
+    }
+    pub fn changed_anything(&self) -> bool {
+        self.applied + self.conflicts + self.forks + self.unique_merges > 0
+    }
+}
+
+fn now_iso() -> String {
+    // RFC 3339 in UTC, to the millisecond, like the app's own timestamps.
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let secs = ms.div_euclid(1000);
+    let (days, rem) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
+    // Civil-from-days (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.{:03}Z",
+        rem / 3600,
+        rem % 3600 / 60,
+        rem % 60,
+        ms.rem_euclid(1000)
+    )
+}
+
+async fn record_outcome(pool: &SqlitePool, peer: &str, addr: Option<SocketAddr>, complete: bool) -> Result<()> {
+    let now = now_iso();
+    sqlx::query(
+        "INSERT INTO sync_peers (device_id, last_addr, last_sync_at, complete, last_complete_at)
+         VALUES (?1, ?2, ?3, ?4, CASE WHEN ?4 = 1 THEN ?3 END)
+         ON CONFLICT (device_id) DO UPDATE SET
+           last_addr = coalesce(excluded.last_addr, last_addr),
+           last_sync_at = excluded.last_sync_at,
+           complete = excluded.complete,
+           last_complete_at = CASE WHEN excluded.complete = 1 THEN excluded.last_sync_at ELSE last_complete_at END",
+    )
+    .bind(peer)
+    .bind(addr.map(|a| a.to_string()))
+    .bind(&now)
+    .bind(complete as i64)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+async fn expect(ch: &mut Channel) -> Result<Msg> {
+    match ch.recv::<Msg>().await? {
+        Msg::Refused { reason } => Err(reason),
+        m => Ok(m),
+    }
+}
+
+/// Pulls from the far side until it says it's done.
+async fn pull(ch: &mut Channel, pool: &SqlitePool, peer: &str) -> Result<Received> {
+    let mut got = Received::default();
+    loop {
+        let since = engine::pulled_from(pool, peer).await?;
+        ch.send(&Msg::Pull { since }).await?;
+        let Msg::Batch(batch) = expect(ch).await? else {
+            return Err("expected a batch".into());
+        };
+        match engine::apply(pool, peer, &batch).await {
+            Ok(s) => got.add(s),
+            Err(e) => {
+                let _ = ch.send(&Msg::Refused { reason: format!("couldn't apply: {e}") }).await;
+                return Err(e);
+            }
+        }
+        if batch.done {
+            return Ok(got);
+        }
+    }
+}
+
+/// Answers the far side's pulls until it hands the turn back with `end`.
+async fn serve_pulls(ch: &mut Channel, pool: &SqlitePool, peer: &str, end: &Msg) -> Result<()> {
+    loop {
+        match expect(ch).await? {
+            Msg::Pull { since } => {
+                let batch = engine::export(pool, since, peer, BATCH_ROWS, BATCH_BYTES).await?;
+                ch.send(&Msg::Batch(batch)).await?;
+            }
+            m if &m == end => return Ok(()),
+            other => return Err(format!("unexpected message: {other:?}")),
+        }
+    }
+}
+
+async fn compare_digests(pool: &SqlitePool, theirs: &Digest) -> Result<(bool, Vec<String>)> {
+    let mine = engine::digest(pool).await?;
+    let diff = engine::digest_differences(&mine, theirs);
+    Ok((diff.is_empty(), diff))
+}
+
+async fn client_session(
+    ch: &mut Channel,
+    pool: &SqlitePool,
+    me: &Hello,
+    addr: Option<SocketAddr>,
+    vouched: Option<&[u8]>,
+) -> Result<Outcome> {
+    ch.send(&Msg::Hello(me.clone())).await?;
+    let Msg::Hello(theirs) = expect(ch).await? else {
+        return Err("expected a hello".into());
+    };
+    check_peer(pool, me, &theirs, &ch.remote_key, vouched).await?;
+    let received = pull(ch, pool, &theirs.device_id).await?;
+    ch.send(&Msg::YourTurn).await?;
+    serve_pulls(ch, pool, &theirs.device_id, &Msg::Finished).await?;
+    ch.send(&Msg::Digest(engine::digest(pool).await?)).await?;
+    let Msg::Digest(their_digest) = expect(ch).await? else {
+        return Err("expected a digest".into());
+    };
+    let (complete, differences) = compare_digests(pool, &their_digest).await?;
+    record_outcome(pool, &theirs.device_id, addr, complete).await?;
+    engine::remove_orphans(pool).await?;
+    Ok(Outcome { peer_id: theirs.device_id, peer_name: theirs.name, received, complete, differences })
+}
+
+async fn server_session(ch: &mut Channel, pool: &SqlitePool, me: &Hello, theirs: Hello) -> Result<Outcome> {
+    if let Err(reason) = check_peer(pool, me, &theirs, &ch.remote_key, None).await {
+        let _ = ch.send(&Msg::Refused { reason: reason.clone() }).await;
+        return Err(reason);
+    }
+    ch.send(&Msg::Hello(me.clone())).await?;
+    serve_pulls(ch, pool, &theirs.device_id, &Msg::YourTurn).await?;
+    let received = pull(ch, pool, &theirs.device_id).await?;
+    ch.send(&Msg::Finished).await?;
+    let Msg::Digest(their_digest) = expect(ch).await? else {
+        return Err("expected a digest".into());
+    };
+    ch.send(&Msg::Digest(engine::digest(pool).await?)).await?;
+    let (complete, differences) = compare_digests(pool, &their_digest).await?;
+    record_outcome(pool, &theirs.device_id, None, complete).await?;
+    engine::remove_orphans(pool).await?;
+    Ok(Outcome { peer_id: theirs.device_id, peer_name: theirs.name, received, complete, differences })
+}
+
+// ---------------------------------------------------------------------------
+// One sync at a time, per process
+// ---------------------------------------------------------------------------
+
+/// Devices (by id) with a sync running in this process. Keyed by device
+/// rather than one lock for the process, so the tests can run two devices in
+/// one process; in the app there's one device, and the background sync on
+/// Android shares this with the app when both are alive.
+static BUSY: Mutex<std::collections::BTreeSet<String>> = Mutex::new(std::collections::BTreeSet::new());
+
+struct Busy(String);
+
+impl Drop for Busy {
+    fn drop(&mut self) {
+        if let Ok(mut b) = BUSY.lock() {
+            b.remove(&self.0);
+        }
+    }
+}
+
+fn try_busy(device: &str) -> Option<Busy> {
+    let mut b = BUSY.lock().ok()?;
+    b.insert(device.to_string()).then(|| Busy(device.to_string()))
+}
+
+/// Syncs with the device at `addr`. `Ok(None)` when a sync is already running
+/// here (it'll come round again).
+pub async fn sync_with(pool: &SqlitePool, addr: SocketAddr) -> Result<Option<Outcome>> {
+    let me = identity(pool).await?;
+    let Some(_guard) = try_busy(&me.device_id) else {
+        return Ok(None);
+    };
+    let stream = timeout(CONNECT_TIMEOUT, TcpStream::connect(addr))
+        .await
+        .map_err(|_| format!("{addr}: no answer"))?
+        .map_err(|e| format!("{addr}: {e}"))?;
+    let mut ch = Channel::initiate(stream, PURPOSE_SYNC, &me.secret, None).await?;
+    let hello = hello(pool, &me).await?;
+    match client_session(&mut ch, pool, &hello, Some(addr), None).await {
+        // The other side is mid-sync with someone (or just finishing with
+        // us): not a failure, just another time.
+        Err(e) if e == "busy" => Ok(None),
+        r => r.map(Some),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Pairing
+// ---------------------------------------------------------------------------
+
+/// What the QR code carries.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PairingOffer {
+    pub vault_id: String,
+    pub host_id: String,
+    pub host_name: String,
+    #[serde(with = "serde_bytes")]
+    pub host_key: Vec<u8>,
+    pub token: [u8; 32],
+    pub addrs: Vec<String>,
+}
+
+const OFFER_PREFIX: &str = "tally-pair:1:";
+
+impl PairingOffer {
+    pub fn encode(&self) -> String {
+        let bytes = rmp_serde::to_vec(self).expect("serializable");
+        format!("{OFFER_PREFIX}{}", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
+    }
+
+    pub fn decode(s: &str) -> Result<PairingOffer> {
+        let body = s.trim().strip_prefix(OFFER_PREFIX).ok_or("not a Tally pairing code")?;
+        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(body)
+            .map_err(|_| "the pairing code is damaged")?;
+        rmp_serde::from_slice(&bytes).map_err(|_| "the pairing code is damaged".into())
+    }
+}
+
+/// A QR code on screen, waiting to be scanned.
+#[derive(Clone)]
+pub struct PendingPairing {
+    pub token: [u8; 32],
+    pub expires: Instant,
+}
+
+pub type PairingSlot = Arc<Mutex<Option<PendingPairing>>>;
+
+/// Puts this device in a vault of its own if it isn't in one, listing itself
+/// as its first device.
+pub async fn ensure_vault(pool: &SqlitePool) -> Result<Identity> {
+    let me = identity(pool).await?;
+    if me.vault_id.is_some() {
+        // Make sure this device is listed (it would be, unless removed).
+        sqlx::query(
+            "INSERT INTO vault_devices (id, name, public_key, platform, added_at) VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT (id) DO NOTHING",
+        )
+        .bind(&me.device_id)
+        .bind(&me.name)
+        .bind(hex::encode(&me.public))
+        .bind(&me.platform)
+        .bind(now_iso())
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+        return Ok(me);
+    }
+    let vault = super::new_uuid();
+    sqlx::query("UPDATE sync_state SET vault_id = ? WHERE id = 1")
+        .bind(&vault)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    Box::pin(ensure_vault(pool)).await
+}
+
+/// Starts a pairing: a fresh one-time token, and the code to show.
+pub async fn offer(pool: &SqlitePool, slot: &PairingSlot, addrs: Vec<String>) -> Result<PairingOffer> {
+    let me = ensure_vault(pool).await?;
+    let token: [u8; 32] = rand::random();
+    *slot.lock().map_err(|e| e.to_string())? = Some(PendingPairing { token, expires: Instant::now() + PAIRING_TTL });
+    Ok(PairingOffer {
+        vault_id: me.vault_id.expect("ensured"),
+        host_id: me.device_id,
+        host_name: me.name,
+        host_key: me.public,
+        token,
+        addrs,
+    })
+}
+
+/// Joins the vault `offer` came from: this device must hold none of the
+/// person's data. Ends with everything the host has.
+pub async fn join(pool: &SqlitePool, offer: &PairingOffer) -> Result<Outcome> {
+    let held = engine::data_tables(pool).await?;
+    if !held.is_empty() {
+        return Err(format!(
+            "this device already holds data ({}), so it can't join — only an empty device can",
+            held.join(", ")
+        ));
+    }
+    let me = identity(pool).await?;
+    let Some(_guard) = try_busy(&me.device_id) else {
+        return Err("a sync is running; try again in a moment".into());
+    };
+    let mut last_error = String::from("the code holds no address");
+    for addr in &offer.addrs {
+        let Ok(addr) = addr.parse::<SocketAddr>() else { continue };
+        let stream = match timeout(CONNECT_TIMEOUT, TcpStream::connect(addr)).await {
+            Ok(Ok(s)) => s,
+            Ok(Err(e)) => {
+                last_error = format!("{addr}: {e}");
+                continue;
+            }
+            Err(_) => {
+                last_error = format!("{addr}: no answer");
+                continue;
+            }
+        };
+        let mut ch = match Channel::initiate(stream, PURPOSE_PAIR, &me.secret, Some(&offer.token)).await {
+            Ok(ch) => ch,
+            Err(_) => return Err("the code has expired or was already used; show a new one".into()),
+        };
+        if ch.remote_key != offer.host_key {
+            return Err("the device that answered isn't the one that showed the code".into());
+        }
+        // Past this point the host is who the code said: empty out and join.
+        let new_id = engine::reset_for_join(pool, &offer.vault_id).await?;
+        ch.send(&Msg::Join { device_id: new_id, name: me.name.clone(), platform: me.platform.clone() }).await?;
+        match expect(&mut ch).await? {
+            Msg::Welcome { vault_id } if vault_id == offer.vault_id => {}
+            _ => return Err("the host didn't let this device in".into()),
+        }
+        let me = identity(pool).await?;
+        let hello = hello(pool, &me).await?;
+        let host_key = offer.host_key.clone();
+        return client_session(&mut ch, pool, &hello, Some(addr), Some(&host_key)).await;
+    }
+    Err(format!("couldn't reach {}: {last_error}", offer.host_name))
+}
+
+// ---------------------------------------------------------------------------
+// The listening side
+// ---------------------------------------------------------------------------
+
+/// Handles one incoming connection: a sync, or a device joining with the
+/// code currently on screen.
+pub async fn serve(pool: &SqlitePool, mut stream: TcpStream, slot: &PairingSlot) -> Result<Outcome> {
+    let me = identity(pool).await?;
+    match Channel::purpose(&mut stream).await? {
+        PURPOSE_SYNC => {
+            let mut ch = Channel::respond(stream, &me.secret, None).await?;
+            let Msg::Hello(theirs) = expect(&mut ch).await? else {
+                return Err("expected a hello".into());
+            };
+            let Some(_guard) = try_busy(&me.device_id) else {
+                let _ = ch.send(&Msg::Refused { reason: "busy".into() }).await;
+                return Err("busy".into());
+            };
+            let hello = hello(pool, &me).await?;
+            server_session(&mut ch, pool, &hello, theirs).await
+        }
+        PURPOSE_PAIR => {
+            let token = {
+                let slot = slot.lock().map_err(|e| e.to_string())?;
+                match slot.as_ref() {
+                    Some(p) if p.expires > Instant::now() => p.token,
+                    _ => return Err("no pairing code is showing".into()),
+                }
+            };
+            let mut ch = Channel::respond(stream, &me.secret, Some(&token)).await?;
+            // The token is good for one device only.
+            {
+                let mut slot = slot.lock().map_err(|e| e.to_string())?;
+                match slot.as_ref() {
+                    Some(p) if p.token == token => *slot = None,
+                    _ => return Err("pairing code already used".into()),
+                }
+            }
+            let Msg::Join { device_id, name, platform } = expect(&mut ch).await? else {
+                return Err("expected a join".into());
+            };
+            let Some(_guard) = try_busy(&me.device_id) else {
+                let _ = ch.send(&Msg::Refused { reason: "busy; scan again in a moment".into() }).await;
+                return Err("busy".into());
+            };
+            let me = ensure_vault(pool).await?;
+            // Listed under the key it proved, whatever it claims.
+            sqlx::query(
+                "INSERT INTO vault_devices (id, name, public_key, platform, added_at) VALUES (?, ?, ?, ?, ?)
+                 ON CONFLICT (id) DO UPDATE SET name = excluded.name, public_key = excluded.public_key,
+                   platform = excluded.platform",
+            )
+            .bind(&device_id)
+            .bind(&name)
+            .bind(hex::encode(&ch.remote_key))
+            .bind(&platform)
+            .bind(now_iso())
+            .execute(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+            ch.send(&Msg::Welcome { vault_id: me.vault_id.clone().expect("ensured") }).await?;
+            let Msg::Hello(theirs) = expect(&mut ch).await? else {
+                return Err("expected a hello".into());
+            };
+            let hello = hello(pool, &me).await?;
+            server_session(&mut ch, pool, &hello, theirs).await
+        }
+        _ => Err("not a Tally connection".into()),
+    }
+}
+
+/// Listens for other devices, on [`PREFERRED_PORT`] if it's free. Each
+/// connection is handled on its own task; `on_outcome` hears how it went.
+pub async fn listen<F>(pool: SqlitePool, slot: PairingSlot, bind_ip: &str, on_outcome: F) -> Result<(u16, tokio::task::JoinHandle<()>)>
+where
+    F: Fn(Result<Outcome>) + Send + Sync + 'static,
+{
+    let listener = match TcpListener::bind((bind_ip, PREFERRED_PORT)).await {
+        Ok(l) => l,
+        Err(_) => TcpListener::bind((bind_ip, 0)).await.map_err(|e| e.to_string())?,
+    };
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let on_outcome = Arc::new(on_outcome);
+    let handle = tokio::spawn(async move {
+        loop {
+            let Ok((stream, _)) = listener.accept().await else { continue };
+            let (pool, slot, on_outcome) = (pool.clone(), slot.clone(), on_outcome.clone());
+            tokio::spawn(async move {
+                on_outcome(serve(&pool, stream, &slot).await);
+            });
+        }
+    });
+    Ok((port, handle))
+}
+
+/// This device's addresses on the local network, for the QR code.
+pub fn local_addrs(port: u16) -> Vec<String> {
+    let mut out: Vec<String> = if_addrs::get_if_addrs()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|i| !i.is_loopback())
+        .filter_map(|i| match i.ip() {
+            std::net::IpAddr::V4(v4) if v4.is_private() || v4.is_link_local() => Some(format!("{v4}:{port}")),
+            _ => None,
+        })
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// A short tag for the vault, for discovery: devices of other vaults on the
+/// same network ignore each other without learning the vault's id.
+pub fn vault_tag(vault_id: &str) -> String {
+    hex::encode(&Sha256::digest(format!("tally-vault:{vault_id}").as_bytes())[..8])
+}
+
+#[cfg(test)]
+mod tests;

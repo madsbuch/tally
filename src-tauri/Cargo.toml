@@ -44,6 +44,7 @@ rmp-serde = "1"
 serde_bytes = "0.11"
 hex = "0.4"
 tokio = { version = "1", features = ["net", "time", "sync", "io-util", "rt-multi-thread", "macros"] }
+if-addrs = "0.13"
 
 
 [dev-dependencies]

@@ -7,11 +7,14 @@
 //! - `service`: the app's side — Tauri commands, the background loop.
 //! - `snapshots`: the computer's daily copies of the database.
 
+pub mod discovery;
 pub mod engine;
+pub mod session;
+pub mod snapshots;
 pub mod wire;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 /// A random UUID (v4), for device and vault ids.
 pub fn new_uuid() -> String {
