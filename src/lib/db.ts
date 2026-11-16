@@ -1,6 +1,7 @@
 import Database from "@tauri-apps/plugin-sql";
 import { invoke } from "@tauri-apps/api/core";
 import { drizzle } from "drizzle-orm/sqlite-proxy";
+import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import {
   achievements,
@@ -142,6 +143,17 @@ export const db = drizzle(async (query, params, method) => {
   const values = rows.map((r) => Object.values(r));
   return { rows: method === "get" ? (values[0] ?? []) : values };
 });
+
+/**
+ * Rows whose current version was written on this device. Work waiting on a
+ * row — a capture to analyse, a document to read, an observation to tag — is
+ * done by the device that asked for it: with sync, the other devices see the
+ * same pending row, and doing it twice would log the meal twice.
+ */
+function writtenHere(table: string, pk: SQLiteColumn) {
+  return sql`EXISTS (SELECT 1 FROM sync_rows r, sync_state s
+    WHERE s.id = 1 AND r.tbl = ${table} AND r.pk = ${pk} AND r.origin = s.device_id)`;
+}
 
 /** The id an `INSERT … RETURNING id` handed back; throws if there was none. */
 function insertedId(rows: { id: string }[]): string {
@@ -822,7 +834,10 @@ export async function listCapturesForDay(day: string): Promise<Capture[]> {
 }
 
 export async function listPendingCaptures(): Promise<Capture[]> {
-  const rows = await db.select().from(captures).where(eq(captures.status, "pending"));
+  const rows = await db
+    .select()
+    .from(captures)
+    .where(and(eq(captures.status, "pending"), writtenHere("captures", captures.id)));
   return rows.map(toCapture);
 }
 
@@ -1471,7 +1486,7 @@ export async function listPendingDocuments(): Promise<LibraryDocument[]> {
   const rows = await db
     .select()
     .from(documents)
-    .where(eq(documents.status, "pending"))
+    .where(and(eq(documents.status, "pending"), writtenHere("documents", documents.id)))
     .orderBy(documents.createdAt);
   return rows.map(toDocument);
 }
@@ -2672,7 +2687,7 @@ export async function listStateLogsAwaitingTags(): Promise<StateLog[]> {
   const rows = await db
     .select()
     .from(stateLogs)
-    .where(eq(stateLogs.tagging, "pending"))
+    .where(and(eq(stateLogs.tagging, "pending"), writtenHere("state_logs", stateLogs.id)))
     .orderBy(stateLogs.id);
   return withTags(rows);
 }

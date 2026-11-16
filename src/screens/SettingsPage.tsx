@@ -34,6 +34,7 @@ import { exportDatabase } from "../lib/exportDb";
 import CoachSettings from "../components/CoachSettings";
 import CoachCostSettings from "../components/CoachCostSettings";
 import CostCenterLink from "../components/CostCenterLink";
+import SyncLink from "../components/SyncLink";
 import ModelRow, { modelSub } from "../components/ModelRow";
 import GarminConnectSettings from "../components/GarminConnectSettings";
 import FoodCountrySetting from "../components/FoodCountrySetting";
@@ -732,6 +733,15 @@ export default function SettingsPage() {
 
       {/* Garmin / Health Connect ------------------------------------------- */}
       <div className="section-title">Watch sync</div>
+      {!navigator.userAgent.includes("Android") ? (
+        <div className="card">
+          <p className="muted small" style={{ margin: 0 }}>
+            Watch data is read on the phone (Health Connect and Garmin
+            Connect) and arrives here through Sync & backup.
+          </p>
+        </div>
+      ) : (
+      <>
       <div className="card">
         <h2 className="card-title">Garmin watch sync</h2>
         <p className="muted small" style={{ margin: "0 0 10px" }}>
@@ -916,6 +926,8 @@ export default function SettingsPage() {
       </div>
 
       <GarminConnectSettings />
+      </>
+      )}
 
       {/* Coach -------------------------------------------------------------- */}
       <CoachSettings />
@@ -1028,6 +1040,7 @@ export default function SettingsPage() {
 
       {/* Your data --------------------------------------------------------- */}
       <div className="section-title">Your data</div>
+      <SyncLink />
       <div className="card">
         <h2 className="card-title">Export database</h2>
         <p className="muted small" style={{ margin: "0 0 10px" }}>

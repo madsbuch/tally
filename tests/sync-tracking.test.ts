@@ -7,7 +7,7 @@ import { LOCAL_TABLES } from "../scripts/sync-triggers";
 // Change tracking (migration 0039): every write to a synced table, whichever
 // code path makes it, leaves a version in sync_rows and a count in sync_vv.
 
-const { addFoodEntry, updateFoodEntry, deleteFoodEntry, getFoodEntry, setSetting } = await import("../src/lib/db");
+const { addFoodEntry, updateFoodEntry, deleteFoodEntry, getFoodEntry, setSetting, addCapture, listPendingCaptures } = await import("../src/lib/db");
 
 const rust = readFileSync(new URL("../src-tauri/src/lib.rs", import.meta.url), "utf8");
 const files = [...rust.matchAll(/include_str!\("\.\.\/migrations\/([^"]+)"\)/g)].map((m) => m[1]!);
@@ -107,6 +107,20 @@ describe("sync tracking", () => {
     sqlite.exec("PRAGMA foreign_keys = ON");
     sqlite.exec("DELETE FROM state_logs WHERE id = 'cascade-log'");
     expect(versionOf(sqlite, "state_log_tags", "cascade-tag")).toMatchObject({ deleted: 1 });
+  });
+});
+
+describe("work waiting on a row", () => {
+  test("is only picked up by the device that wrote it", async () => {
+    const mine = await addCapture({ created_at: "2026-11-16T08:00:00.000Z", day: "2026-11-16", note: "toast", photo_path: null });
+    // As if synced in from the phone: same table, another device's version.
+    sqlite.exec(`UPDATE sync_state SET applying = 1;
+      INSERT INTO captures (id, created_at, day, note, status) VALUES ('from-phone', '2026-11-16T08:00:00.000Z', '2026-11-16', 'eggs', 'pending');
+      INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq) VALUES ('captures', 'from-phone', '0000000000001.000000', 'the-phone', 0, 999999);
+      UPDATE sync_state SET applying = 0;`);
+    const pending = (await listPendingCaptures()).map((c) => c.id);
+    expect(pending).toContain(mine);
+    expect(pending).not.toContain("from-phone");
   });
 });
 

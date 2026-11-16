@@ -33,6 +33,13 @@ import type { TabRoot } from "../lib/navigation";
 import { syncHealthConnect, syncHealthConnectIfStale } from "../lib/healthConnect";
 import { syncGarminIfStale } from "../lib/garmin";
 import { scanAchievements } from "../lib/achievements";
+import { onSyncChanged, startSync } from "../lib/sync";
+import { notifyDiaryChanged } from "../lib/agent";
+import { notifyLibraryChanged } from "../lib/documents";
+import { notifyManualsChanged } from "../lib/manuals";
+import { notifyExperimentsChanged } from "../lib/experiments";
+import { notifyCoachInboxChanged } from "../lib/coachInbox";
+import { openAssistantChat } from "../lib/assistantRunner";
 import AchievementToast from "../components/AchievementToast";
 
 /**
@@ -133,6 +140,9 @@ export default function App() {
     getDb()
       .then(() =>
         Promise.all([
+          // Sync with the vault's other devices (src-tauri/src/sync). Needs
+          // the database migrated, which getDb has just made sure of.
+          startSync().catch((e) => console.warn("Sync didn't start", e)),
           resyncFastNotification(),
           resumePendingCaptures(),
           resumePendingDocuments(),
@@ -201,6 +211,22 @@ export default function App() {
       offLifecycle();
     };
   }, []);
+
+  // Another device's data arrived: every screen reloads what it shows, and
+  // an open conversation picks up turns written elsewhere.
+  useEffect(
+    () =>
+      onSyncChanged(() => {
+        notifyDiaryChanged();
+        notifyLibraryChanged();
+        notifyManualsChanged();
+        notifyExperimentsChanged();
+        notifyCoachInboxChanged();
+        const a = getAssistantState();
+        if (a.status !== "running" && a.chatId) void openAssistantChat(a.chatId);
+      }),
+    [],
+  );
 
   // Re-scan achievements when diary data changes, debounced — agent captures
   // often log several entries back-to-back.

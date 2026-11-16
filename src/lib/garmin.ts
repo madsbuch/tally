@@ -527,6 +527,8 @@ async function legacyDays(from: string, to: string): Promise<GarminDayRow[]> {
 export function syncGarminIfStale(
   hc?: { newWorkouts: number } | null,
 ): Promise<GarminSyncResult | null> {
+  // Garmin imports are the phone's; other devices get the data through sync.
+  if (!navigator.userAgent.includes("Android")) return Promise.resolve(null);
   return syncGarmin({ newWorkout: (hc?.newWorkouts ?? 0) > 0 });
 }
 

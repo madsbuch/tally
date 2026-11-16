@@ -19,6 +19,7 @@ export type Path =
   | `/nutrients/progress`
   | `/settings`
   | `/settings/costs`
+  | `/settings/sync`
 
 export type Params = {
   '/assistant/:chatId': { chatId: string }

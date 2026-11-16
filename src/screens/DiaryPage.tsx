@@ -97,6 +97,7 @@ import {
 } from "../lib/goals";
 import type { DayGoal, PeriodGoal } from "../lib/goals";
 import { CARDIO_MIN_AVG_HR } from "../lib/exerciseGoals";
+import BackupReminder from "../components/BackupReminder";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1295,6 +1296,8 @@ export default function DiaryPage() {
           <span className="page-sub">{day}</span>
         )}
       </header>
+
+      <BackupReminder />
 
       <div className="day-nav">
         <button

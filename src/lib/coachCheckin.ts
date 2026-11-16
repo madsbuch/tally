@@ -106,6 +106,10 @@ async function notify(chatId: string, title: string, body: string): Promise<void
 export async function runCoachCheckin(
   opts: { force?: boolean } = {},
 ): Promise<CheckinResult> {
+  // Check-ins are the phone's: with sync, every device would otherwise speak
+  // up about the same day, twice the messages and twice the spend. Asking
+  // from Settings still works anywhere.
+  if (!opts.force && !navigator.userAgent.includes("Android")) return { sent: false, reason: "nothing" };
   if (inFlight) return { sent: false, reason: "busy" };
   const now = Date.now();
   if (!opts.force && now - lastEvaluatedAt < MIN_EVALUATION_GAP_MS) {

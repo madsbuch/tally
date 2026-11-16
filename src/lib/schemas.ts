@@ -1499,3 +1499,54 @@ export function parseGarminWeights(raw: unknown): Map<string, number> {
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Sync (src-tauri/src/sync/service.rs, session.rs) — our own Rust, so strict.
+// ---------------------------------------------------------------------------
+
+export const SyncDeviceSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  platform: z.string(),
+  isSelf: z.boolean(),
+  lastSyncAt: z.string().nullable(),
+  lastCompleteAt: z.string().nullable(),
+  complete: z.boolean(),
+});
+export type SyncDevice = z.infer<typeof SyncDeviceSchema>;
+
+export const SyncStatusSchema = z.object({
+  deviceId: z.string(),
+  name: z.string(),
+  platform: z.string(),
+  inVault: z.boolean(),
+  devices: z.array(SyncDeviceSchema),
+  canJoin: z.boolean(),
+  offerActive: z.boolean(),
+  syncing: z.boolean(),
+  lastError: z.string().nullable(),
+  lastRoundAt: z.string().nullable(),
+});
+export type SyncStatus = z.infer<typeof SyncStatusSchema>;
+
+export function parseSyncStatus(raw: unknown): SyncStatus {
+  return SyncStatusSchema.parse(raw);
+}
+
+const SyncOutcomeSchema = z.object({
+  peer_id: z.string(),
+  peer_name: z.string(),
+  received: z.object({
+    applied: z.number(),
+    conflicts: z.number(),
+    forks: z.number(),
+    unique_merges: z.number(),
+  }),
+  complete: z.boolean(),
+  differences: z.array(z.string()),
+});
+export type SyncOutcome = z.infer<typeof SyncOutcomeSchema>;
+
+export function parseSyncOutcome(raw: unknown): SyncOutcome {
+  return SyncOutcomeSchema.parse(raw);
+}

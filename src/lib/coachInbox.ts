@@ -27,6 +27,11 @@ export interface UnreadCheckin {
   title: string;
 }
 
+/** Tells the tab bar's dot to look again (e.g. after a sync brought chats). */
+export function notifyCoachInboxChanged(): void {
+  announce();
+}
+
 function announce(): void {
   window.dispatchEvent(new CustomEvent(CHANGED_EVENT));
 }
