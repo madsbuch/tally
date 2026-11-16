@@ -107,6 +107,11 @@ export const workouts = sqliteTable(
      * exactly instead of by time, when it carries the activity id.
      */
     sourceRecordId: text("source_record_id"),
+    /**
+     * Fields of a synced workout the user changed by hand (WORKOUT_EDITED in
+     * lib/types.ts, one bit each): neither sync writes over those again.
+     */
+    editedByHand: integer("edited_by_hand").notNull().default(0),
   },
   (t) => [
     index("idx_workouts_performed_at").on(t.performedAt),
@@ -839,6 +844,29 @@ export const progressPhotos = sqliteTable(
     photoPath: text("photo_path").notNull(),
   },
   (t) => [index("idx_progress_photos_taken_at").on(t.takenAt)],
+);
+
+/**
+ * Synced workouts the user deleted. Health Connect re-reads the last two
+ * days on every sync and Garmin re-lists recent activities, so without this
+ * a deleted session came straight back — under the same id, or, on a new
+ * phone whose Health Connect names records afresh, under a new one. Both
+ * syncs skip a session that is one of these: by its id, or by its time (see
+ * lib/syncMatch.ts). Keyed by the deleted row's external id.
+ */
+export const deletedImports = sqliteTable(
+  "deleted_imports",
+  {
+    id: rowId(),
+    externalId: text("external_id").notNull(),
+    startedAt: text("started_at").notNull(),
+    endedAt: text("ended_at").notNull(),
+    deletedAt: text("deleted_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("idx_deleted_imports_external_id").on(t.externalId),
+    index("idx_deleted_imports_started_at").on(t.startedAt),
+  ],
 );
 
 /**

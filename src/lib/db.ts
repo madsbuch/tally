@@ -16,6 +16,7 @@ import {
   experimentTrials,
   coachRuns,
   dayGoalAdjustments,
+  deletedImports,
   deviceSettings,
   documents,
   entryMessages,
@@ -80,7 +81,7 @@ import type {
 import type { ChatMessage } from "./openrouter";
 import type { UsageRow } from "./aiCost";
 import type { ExperimentArm, ExperimentMeasure, TrialRatings } from "./schemas";
-import { DEVICE_SETTING_KEYS, SETTING_KEYS } from "./types";
+import { DEVICE_SETTING_KEYS, SETTING_KEYS, WORKOUT_EDITED } from "./types";
 import { sanitizeNutrients } from "./nutrients";
 import { dayOf, stampOf } from "./daystamp";
 import { CARDIO_MIN_AVG_HR, countsAsCardio, normalizeAverageHeartRate, zone2Minutes } from "./exerciseGoals";
@@ -448,10 +449,20 @@ export async function addWorkout(w: NewWorkout): Promise<string> {
   return insertedId(rows);
 }
 
+/** A column of the workouts row an upsert or update is writing, by name. */
+const workoutCol = (name: string) => sql.raw(`"workouts"."${name}"`);
+
+/** Whether the user changed `bit`'s field (WORKOUT_EDITED) of this row by hand. */
+export const editedByHand = (bit: number) => sql`(${workoutCol("edited_by_hand")} & ${bit}) <> 0`;
+
 /**
- * Insert-or-update a workout coming from an external system (Health Connect).
- * Keyed on `external_id`, so re-syncing the same window is idempotent and
- * upstream edits (e.g. corrected calories in Garmin) flow through.
+ * Insert-or-update a workout Health Connect has (keyed on `external_id`, so
+ * re-reading the same window is idempotent).
+ *
+ * What Health Connect says about a workout is provisional: it arrives first,
+ * but once the Garmin Connect sync has linked the activity, Garmin's own
+ * numbers stand (lib/garminDb.ts) and this leaves them alone. Either way a
+ * field changed by hand stays as the user left it.
  */
 export async function upsertExternalWorkout(
   w: Omit<Workout, "id" | "day" | "tz_offset_min" | "zone2_min" | "cardio" | "cardio_by_hand" | "avg_hr"> & {
@@ -468,15 +479,14 @@ export async function upsertExternalWorkout(
   // synced a week later from another continent keeps the day it was run on.
   const tzOffsetMin = w.tz_offset_min ?? stampOf(w.performed_at).tz_offset_min;
   const day = dayOf(w.performed_at, tzOffsetMin);
-  // A Health Connect session may lack HR even when the attached Garmin
-  // activity has it, including a Garmin workout Health Connect just adopted.
-  const avgHr = sql<number | null>`coalesce(${normalizeAverageHeartRate(w.avg_hr)}, (
-    select ${garminActivities.avgHr} from ${garminActivities}
-    inner join ${workouts} on ${workouts.id} = ${garminActivities.workoutId}
-    where ${workouts.externalId} = ${w.external_id} and ${garminActivities.avgHr} > 0
-    limit 1
-  ))`;
-  const cardio = sql<number>`case when ${avgHr} > ${CARDIO_MIN_AVG_HR} then 1 else 0 end`;
+  const avgHr = normalizeAverageHeartRate(w.avg_hr);
+  const E = WORKOUT_EDITED;
+  const linked = sql`EXISTS (SELECT 1 FROM garmin_activities g WHERE g.workout_id = ${workoutCol("id")})`;
+  /** Health Connect's value, unless Garmin's or the user's stands. */
+  const follow = (bit: number, name: string, value: string | number | null) =>
+    sql`CASE WHEN ${editedByHand(bit)} OR ${linked} THEN ${workoutCol(name)} ELSE ${value} END`;
+  const effAvgHr = follow(E.avgHr, "avg_hr", avgHr);
+  const effDuration = follow(E.duration, "duration_min", w.duration_min);
   await db
     .insert(workouts)
     .values({
@@ -491,7 +501,7 @@ export async function upsertExternalWorkout(
       caloriesBurned: w.calories_burned,
       durationMin: w.duration_min,
       avgHr,
-      cardio,
+      cardio: countsAsCardio(avgHr) ? 1 : 0,
       cardioByHand: 0,
       zone2Min: zone2Minutes(w.zone2_min, w.duration_min),
       modelId: w.model_id,
@@ -505,20 +515,23 @@ export async function upsertExternalWorkout(
       set: {
         // Only re-stamp when the source itself carries the zone: otherwise a
         // re-sync run abroad would drag an old session onto a foreign day.
-        ...(w.tz_offset_min != null ? { day, tzOffsetMin } : {}),
-        performedAt: w.performed_at,
-        title: w.title,
-        description: w.description,
-        caloriesBurned: w.calories_burned,
-        durationMin: w.duration_min,
-        avgHr,
-        cardio: sql`case when ${workouts.cardioByHand} = 1 then ${workouts.cardio} else ${cardio} end`,
+        ...(w.tz_offset_min != null
+          ? { day: follow(E.time, "day", day), tzOffsetMin: follow(E.time, "tz_offset_min", tzOffsetMin) }
+          : {}),
+        performedAt: follow(E.time, "performed_at", w.performed_at),
+        title: follow(E.title, "title", w.title),
+        description: follow(E.description, "description", w.description),
+        caloriesBurned: follow(E.calories, "calories_burned", w.calories_burned),
+        durationMin: effDuration,
+        avgHr: effAvgHr,
+        cardio: sql`CASE WHEN ${workoutCol("cardio_by_hand")} = 1 THEN ${workoutCol("cardio")}
+          WHEN (${effAvgHr}) > ${CARDIO_MIN_AVG_HR} THEN 1 ELSE 0 END`,
         // Whole-session marks follow a corrected duration; explicit off and
         // partial Zone 2 minutes survive a re-sync unchanged.
-        zone2Min: sql`case when ${workouts.zone2Min} > 0
-          and ${workouts.zone2Min} = ${workouts.durationMin}
-          and ${w.duration_min} > 0 then ${w.duration_min}
-          else ${workouts.zone2Min} end`,
+        zone2Min: sql`CASE WHEN ${workoutCol("zone2_min")} > 0
+          AND ${workoutCol("zone2_min")} = ${workoutCol("duration_min")}
+          AND (${effDuration}) > 0 THEN (${effDuration})
+          ELSE ${workoutCol("zone2_min")} END`,
         source: w.source,
         sourceRecordId: w.source_record_id ?? null,
       },
@@ -527,9 +540,25 @@ export async function upsertExternalWorkout(
 
 export async function updateWorkout(w: Workout): Promise<void> {
   const avgHr = normalizeAverageHeartRate(w.avg_hr);
+  const E = WORKOUT_EDITED;
+  // On a synced workout, what's changed here is the user's now: neither sync
+  // writes over it again. (Every expression sees the row as it was.)
+  const changed = (bit: number, name: string, value: string | number | null) =>
+    sql`CASE WHEN ${workoutCol(name)} IS NOT ${value} THEN ${bit} ELSE 0 END`;
+  const edited = sql`CASE WHEN ${workoutCol("external_id")} IS NULL THEN ${workoutCol("edited_by_hand")}
+    ELSE ${workoutCol("edited_by_hand")}
+      | ${changed(E.title, "title", w.title)}
+      | ${changed(E.description, "description", w.description)}
+      | ${changed(E.time, "performed_at", w.performed_at)}
+      | ${changed(E.calories, "calories_burned", w.calories_burned)}
+      | ${changed(E.duration, "duration_min", w.duration_min)}
+      | CASE WHEN (CASE WHEN ${workoutCol("avg_hr")} > 0 THEN ${workoutCol("avg_hr")} END) IS NOT ${avgHr}
+          THEN ${E.avgHr} ELSE 0 END
+    END`;
   await db
     .update(workouts)
     .set({
+      editedByHand: edited,
       day: dayOf(w.performed_at, w.tz_offset_min),
       performedAt: w.performed_at,
       title: w.title,
@@ -575,7 +604,35 @@ export async function getWorkout(id: string): Promise<Workout | null> {
   return row ? toWorkout(row) : null;
 }
 
+/**
+ * Delete a workout by hand. A synced one is remembered (`deleted_imports`):
+ * Health Connect re-reads the last days on every sync and Garmin re-lists
+ * recent activities, and either would otherwise bring it straight back.
+ */
 export async function deleteWorkout(id: string): Promise<void> {
+  const [w] = await db
+    .select({ externalId: workouts.externalId, performedAt: workouts.performedAt, durationMin: workouts.durationMin })
+    .from(workouts)
+    .where(eq(workouts.id, id));
+  if (w?.externalId) {
+    const startMs = Date.parse(w.performedAt);
+    await db
+      .insert(deletedImports)
+      .values({
+        // Named after the record, so two devices deleting it agree.
+        id: await derivedId("deleted_imports", w.externalId),
+        externalId: w.externalId,
+        startedAt: w.performedAt,
+        endedAt: new Date(startMs + (w.durationMin ?? 0) * 60_000).toISOString(),
+        deletedAt: new Date().toISOString(),
+      })
+      .onConflictDoNothing();
+  }
+  await removeWorkout(id);
+}
+
+/** Take a workout out, and what hangs off it. */
+async function removeWorkout(id: string): Promise<void> {
   await db.delete(workouts).where(eq(workouts.id, id));
   await deleteEntryMessages("workout", id);
   // A Garmin activity whose workout was deleted stays known, so the Garmin
@@ -612,7 +669,8 @@ export async function purgeSyncedDataNotFrom(
         sql`NOT EXISTS (SELECT 1 FROM ${garminActivities} WHERE ${garminActivities.workoutId} = ${workouts.id})`,
       ),
     );
-  for (const w of stale) await deleteWorkout(w.id);
+  // Not the user's deletion: other apps' rows, which aren't read any more.
+  for (const w of stale) await removeWorkout(w.id);
   await db
     .delete(sleepSessions)
     .where(

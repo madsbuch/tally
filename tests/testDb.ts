@@ -17,3 +17,22 @@ mock.module("@tauri-apps/plugin-sql", () => ({ default: {
     select: async (sql: string, params: never[] = []) => sqlite.query(sql).all(...params),
   }),
 } }));
+
+/**
+ * Tauri commands, as the tests want them answered: `tauriCommands[name] =
+ * (args) => result`. Unlisted ones fail, as they would outside the app.
+ * Shared by every test file (bun mocks a module once per process).
+ */
+export const tauriCommands: Record<string, (args: Record<string, unknown>) => unknown> = {
+  sync_check_instance: () => null,
+  import_photo_files: () => 0,
+};
+const tauriCore = await import("@tauri-apps/api/core");
+mock.module("@tauri-apps/api/core", () => ({
+  ...tauriCore,
+  invoke: async (cmd: string, args: Record<string, unknown> = {}) => {
+    const handler = tauriCommands[cmd];
+    if (!handler) throw new Error(`No Tauri command "${cmd}" in tests`);
+    return handler(args);
+  },
+}));

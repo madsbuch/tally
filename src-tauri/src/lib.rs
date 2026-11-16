@@ -267,6 +267,12 @@ fn migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0039_sync.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 41,
+            description: "garmin_first",
+            sql: include_str!("../migrations/0040_garmin_first.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

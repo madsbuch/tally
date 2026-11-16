@@ -161,11 +161,13 @@ export default function GarminConnectSettings() {
     <div className="card">
       <h2 className="card-title">Garmin Connect (direct)</h2>
       <p className="muted small" style={{ margin: "0 0 10px" }}>
-        Pulls what Health Connect doesn’t carry, straight from Garmin: Training
-        Effect, training load, HR-zone time, power and laps per activity;
-        Body Battery, stress, sleep score and HRV status per day. It attaches
-        to the workouts and nights Health Connect already synced instead of
-        duplicating them, and fills only the gaps Health Connect left.
+        Garmin’s own numbers, straight from Garmin, and what Health Connect
+        doesn’t carry: Training Effect, training load, HR-zone time, power and
+        laps per activity; Body Battery, stress, sleep score and HRV status per
+        day. Health Connect brings a workout, a night or today’s steps in
+        first; Garmin’s figures then replace its provisional ones, on the same
+        entry rather than a duplicate. What you change or delete by hand stays
+        that way.
       </p>
 
       {status === null ? (

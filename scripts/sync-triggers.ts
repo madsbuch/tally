@@ -2,7 +2,7 @@
 // record every insert, update and delete into `sync_rows` / `sync_vv`, and the
 // backfill that records the rows already there.
 //
-//   bun scripts/sync-triggers.ts                     # every table, as in migration 0039
+//   bun scripts/sync-triggers.ts                     # every table (how 0039 put them all under sync)
 //   bun scripts/sync-triggers.ts my_table            # a new table: backfill + triggers
 //   bun scripts/sync-triggers.ts --retrigger my_table  # a table that gained a column
 //
@@ -111,20 +111,21 @@ if (import.meta.main) {
   const root = new URL("..", import.meta.url);
   const rust = readFileSync(new URL("src-tauri/src/lib.rs", root), "utf8");
   const db = new Database(":memory:");
+  // Every migration's own part — what shapes the tables — up to where its
+  // generated part (the triggers this prints) begins, if it has one. A new
+  // migration's tables and columns are therefore already there: write its
+  // schema changes first, then append this script's output after a
+  // `-- @generated` line.
   for (const m of rust.matchAll(/include_str!\("\.\.\/migrations\/([^"]+)"\)/g)) {
-    if (m[1] === "0039_sync.sql") break;
-    db.exec(readFileSync(new URL(`src-tauri/migrations/${m[1]}`, root), "utf8"));
+    const sql = readFileSync(new URL(`src-tauri/migrations/${m[1]}`, root), "utf8");
+    db.exec(sql.split("-- @generated")[0]!);
   }
-  // The tables 0039 itself creates, up to where the generated part begins.
-  const own = readFileSync(new URL("src-tauri/migrations/0039_sync.sql", root), "utf8");
-  db.exec(own.split("-- @generated")[0]!);
 
   const retrigger = process.argv[2] === "--retrigger";
   const only = retrigger ? process.argv[3] : process.argv[2];
   if (retrigger) {
     if (!only) throw new Error("--retrigger needs a table");
-    // The table as it is after this migration's own changes: append the
-    // migration's SQL above this point to the database first if need be.
+    // The table as it is after the migrations' own changes (above).
     const { pk, columns } = shapeOf(db, only);
     const drops = ["ai", "au", "ad"].map((k) => `DROP TRIGGER IF EXISTS \`sync_${only}_${k}\`;`).join("--> statement-breakpoint\n");
     process.stdout.write(`${drops}--> statement-breakpoint\n${triggerSql(only, pk, columns)}\n`);

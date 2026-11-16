@@ -7,7 +7,7 @@ import { parseEntrySnapshot, parseGarminActivities, WorkoutAnalysisSchema, Worko
 
 const { addWorkout, getWorkout, updateWorkout, setWorkoutCardio, upsertExternalWorkout, listWorkoutsForRange } = await import("../src/lib/db");
 const { cardioMinutes, getCardioTarget } = await import("../src/lib/goals");
-const { adoptGarminWorkout, linkGarminActivity } = await import("../src/lib/garminDb");
+const { adoptSyncedWorkout, linkGarminActivity } = await import("../src/lib/garminDb");
 
 const workout = {
   performed_at: "2026-10-28T12:00:00Z", title: "Cycling", description: null,
@@ -185,7 +185,7 @@ describe("cardio from average heart rate", () => {
     }
   });
 
-  test("the latest measured Garmin or Health Connect HR updates one linked workout", async () => {
+  test("once Garmin has the activity its HR stands; Health Connect's no longer flips it", async () => {
     const external = { ...workout, source: "Garmin", external_id: "hc-linked", source_record_id: "8002" };
     await upsertExternalWorkout(external);
     const garmin = garminActivity(8002, 125.1);
@@ -193,15 +193,21 @@ describe("cardio from average heart rate", () => {
     let rows = await listWorkoutsForRange("2026-10-28", "2026-10-28");
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ avg_hr: 125.1, cardio: true });
+    // Health Connect re-reads it with its own average: Garmin's stays.
     await upsertExternalWorkout({ ...external, avg_hr: 125 });
-    expect(await getWorkout(rows[0]!.id)).toMatchObject({ avg_hr: 125, cardio: false });
+    expect(await getWorkout(rows[0]!.id)).toMatchObject({ avg_hr: 125.1, cardio: true });
     expect(await linkGarminActivity(garmin.activity, garmin.raw)).toBe("updated");
     rows = await listWorkoutsForRange("2026-10-28", "2026-10-28");
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ avg_hr: 125.1, cardio: true });
+    // Garmin without an average keeps the one there.
     const missing = garminActivity(8002, null);
     await linkGarminActivity(missing.activity, missing.raw);
     expect(await getWorkout(rows[0]!.id)).toMatchObject({ avg_hr: 125.1, cardio: true });
+    // Garmin's own correction does come through.
+    const corrected = garminActivity(8002, 125);
+    await linkGarminActivity(corrected.activity, corrected.raw);
+    expect(await getWorkout(rows[0]!.id)).toMatchObject({ avg_hr: 125, cardio: false });
   });
 
   test("Garmin linking and later refreshes preserve either manual choice on Health Connect rows", async () => {
@@ -222,7 +228,7 @@ describe("cardio from average heart rate", () => {
   test("Health Connect adoption with missing HR keeps the attached Garmin measurement", async () => {
     const garmin = garminActivity(8003, 125.1);
     await linkGarminActivity(garmin.activity, garmin.raw);
-    expect(await adoptGarminWorkout("hc-adopted", "8003", { startMs, endMs: startMs + 3_600_000 })).toBe("adopted");
+    expect(await adoptSyncedWorkout("hc-adopted", "8003", { startMs, endMs: startMs + 3_600_000 })).toBe("adopted");
     await upsertExternalWorkout({ ...workout, source: "Garmin", external_id: "hc-adopted", avg_hr: null });
     const rows = await listWorkoutsForRange("2026-10-28", "2026-10-28");
     expect(rows).toHaveLength(1);
@@ -237,7 +243,7 @@ describe("cardio from average heart rate", () => {
       const row = (await listWorkoutsForRange("2026-10-28", "2026-10-28")).find((w) => w.external_id === `garmin:${activityId}`)!;
       await setWorkoutCardio(row.id, choice);
       const hcId = `hc-adopt-manual-${choice}`;
-      expect(await adoptGarminWorkout(hcId, String(activityId), { startMs, endMs: startMs + 3_600_000 })).toBe("adopted");
+      expect(await adoptSyncedWorkout(hcId, String(activityId), { startMs, endMs: startMs + 3_600_000 })).toBe("adopted");
       await upsertExternalWorkout({ ...workout, source: "Garmin", external_id: hcId, avg_hr: null });
       await expectCardio(row.id, garmin.activity.avgHr, choice, true);
       await linkGarminActivity(garmin.activity, garmin.raw);

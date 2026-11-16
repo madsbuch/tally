@@ -52,6 +52,21 @@ change counter); anything written past it (Rust commands like `save_photo`)
 calls `notifyTablesChanged` itself. Forms that hold a draft (Settings) load
 once on open, so a sync never overwrites what you're typing.
 
+## Health data: Health Connect and Garmin
+
+Both carry the same watch (Health Connect only reads what the Garmin Connect
+app writes there), so they're one source arriving twice. Health Connect is
+the event bus: it has things first, so its rows go in at once, provisional,
+and its movement triggers a Garmin sync (`syncGarminIfStale`). Garmin's own
+numbers are the trusted ones: once Garmin has a day, an activity or a night,
+its values stand — `applyGarminMetrics`, `applyGarminToWorkout`,
+`applyGarminSleep` — and Health Connect's writes defer to them. Above both:
+a field changed by hand (`workouts.edited_by_hand`, `WORKOUT_EDITED`) and a
+session deleted by hand (`deleted_imports`). Rows are matched by time, not
+id (`lib/syncMatch.ts`): every phone's Health Connect names records afresh.
+See the header of `src/lib/garminDb.ts`; `tests/garmin-first.test.ts` drives
+the real Health Connect sync against a fake one.
+
 ## Data rules (sync-ready)
 
 The database is meant to sync between devices, so:

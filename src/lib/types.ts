@@ -543,6 +543,22 @@ export type { ORModel } from "./schemas";
 export type { DocumentValue } from "./schemas";
 
 /** Keys used in the `settings` table. */
+/**
+ * Fields of a synced workout the user changed by hand — the bits of
+ * `workouts.edited_by_hand`. Neither the Health Connect nor the Garmin
+ * Connect sync writes over a field marked here; the rest keep following the
+ * source (see lib/garminDb.ts for which source that is).
+ */
+export const WORKOUT_EDITED = {
+  title: 1,
+  description: 2,
+  /** When it was: performed_at with its day and zone. */
+  time: 4,
+  calories: 8,
+  duration: 16,
+  avgHr: 32,
+} as const;
+
 export const SETTING_KEYS = {
   openrouterApiKey: "openrouter_api_key",
   visionModel: "vision_model",

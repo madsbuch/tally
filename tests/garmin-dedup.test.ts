@@ -85,7 +85,7 @@ describe("Garmin ↔ Health Connect dedup", () => {
     expect(row["day"]).toBe("2026-10-02");
     expect(row["tz_offset_min"]).toBe(120);
 
-    await g.adoptGarminWorkout("hc-2", null, { startMs: start + 5_000, endMs: start + 30 * MIN });
+    await g.adoptSyncedWorkout("hc-2", null, { startMs: start + 5_000, endMs: start + 30 * MIN });
     await hcWorkout("hc-2", start + 5_000, 30);
     expect(allWorkouts().length).toBe(2);
     row = allWorkouts().find((w) => w["id"] === row["id"])!;
@@ -185,12 +185,12 @@ describe("Garmin ↔ Health Connect dedup", () => {
       sleepDeepMin: 80,
       fetchedAt: new Date().toISOString(),
     });
-    expect(await g.fillSleepFromGarmin()).toBe(1);
-    expect(await g.fillSleepFromGarmin()).toBe(0);
-    await g.adoptGarminSleep("hc-night", { startMs: start + 15 * MIN, endMs: end });
+    expect(await g.applyGarminSleep()).toBe(1);
+    expect(await g.applyGarminSleep()).toBe(0);
+    await g.adoptSyncedSleep("hc-night", { startMs: start + 15 * MIN, endMs: end });
     const rows = sqlite.query("SELECT external_id, day FROM sleep_sessions").all() as Record<string, unknown>[];
     expect(rows).toEqual([{ external_id: "hc-night", day: "2026-10-10" }]);
-    expect(await g.fillSleepFromGarmin()).toBe(0);
+    expect(await g.applyGarminSleep()).toBe(0);
   });
 
   test("a day's write merges: neither way in blanks out the other's columns", async () => {

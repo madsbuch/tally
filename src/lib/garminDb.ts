@@ -1,10 +1,10 @@
-import { and, eq, getTableColumns, gte, inArray, isNotNull, like, lte, sql } from "drizzle-orm";
+import { and, eq, getTableColumns, gte, inArray, isNotNull, lte, ne, or, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
-import { garminActivities, garminDays, healthMetrics, sleepSessions, workouts } from "../db/schema";
-import { db, upsertSleepSession } from "./db";
+import { deletedImports, garminActivities, garminDays, healthMetrics, sleepSessions, workouts } from "../db/schema";
+import { db, editedByHand, upsertSleepSession } from "./db";
 import { derivedId } from "./ids";
 import { dayOf, stampOf } from "./daystamp";
-import { bestSessionMatch, recordIdNames, sameNight } from "./syncMatch";
+import { bestSessionMatch, recordIdNames, sameNight, sameSession } from "./syncMatch";
 import type { Span } from "./syncMatch";
 import type { GarminActivity, GarminLap } from "./schemas";
 import {
@@ -15,15 +15,24 @@ import {
 } from "./schemas";
 import type { GarminLoadBalance } from "./schemas";
 import { CARDIO_MIN_AVG_HR, countsAsCardio, normalizeAverageHeartRate } from "./exerciseGoals";
+import { WORKOUT_EDITED } from "./types";
 
 // ---------------------------------------------------------------------------
-// Storage for the Garmin Connect sync (lib/garmin.ts), and the two halves of
-// keeping it and Health Connect from duplicating each other:
-//  - a Garmin activity attaches to the workout Health Connect already wrote
-//    (linkGarminActivity), and only gets a row of its own when there's none;
-//  - Health Connect, meeting a session the Garmin sync created first, takes
-//    that row over instead of adding another (adoptGarminWorkout/Sleep).
-// Health Connect stays the owner of the core rows; Garmin only adds detail.
+// Storage for the Garmin Connect sync (lib/garmin.ts), and how it and Health
+// Connect share the diary. Both carry the same watch's data — Health Connect
+// gets it from the Garmin Connect app — so they're one source arriving twice:
+//  - Health Connect is the event bus: it has a session (or a day's numbers)
+//    first, so its row goes in at once, provisional;
+//  - Garmin's own numbers are the ones trusted: once the Garmin sync has the
+//    activity it attaches to that row (linkGarminActivity) and its values
+//    replace Health Connect's, which from then on leaves them alone. A
+//    session Health Connect doesn't have gets a row of its own;
+//  - Health Connect, meeting a session already in the diary under another id
+//    (made by the Garmin sync, or read on another phone, whose Health Connect
+//    names records afresh), takes that row over instead of adding a twin
+//    (adoptSyncedWorkout/Sleep);
+//  - above both: a field changed by hand stays (WORKOUT_EDITED), and a
+//    session deleted by hand stays deleted (`deleted_imports`).
 // ---------------------------------------------------------------------------
 
 const DAY_MS = 24 * 3_600_000;
@@ -121,24 +130,69 @@ function workoutValuesFor(a: ActivityIn) {
   };
 }
 
-/** Sync updates retain both manual on and manual off choices. */
-function workoutUpdatesFor(a: ActivityIn) {
-  const values = workoutValuesFor(a);
-  return {
-    ...values,
-    cardio: sql<number>`case when ${workouts.cardioByHand} = 1 then ${workouts.cardio}
-      else ${values.cardio} end`,
-  };
+/**
+ * Garmin's numbers onto the workout an activity is linked to, whoever made
+ * the row: what Health Connect wrote there was provisional. A field changed
+ * by hand stays, and so does whatever Garmin has no value for.
+ */
+async function applyGarminToWorkout(workoutId: string, a: ActivityIn): Promise<void> {
+  const E = WORKOUT_EDITED;
+  const col = (name: string) => sql.raw(`"workouts"."${name}"`);
+  const follow = (bit: number, name: string, value: string | number | null) =>
+    sql`CASE WHEN ${editedByHand(bit)} THEN ${col(name)} ELSE coalesce(${value}, ${col(name)}) END`;
+  const minutes = a.durationSec != null ? Math.round(a.durationSec / 60) : null;
+  const avgHr = follow(E.avgHr, "avg_hr", normalizeAverageHeartRate(a.avgHr));
+  const duration = follow(E.duration, "duration_min", minutes != null && minutes > 0 ? minutes : null);
+  const startedAt = iso(a.startMs);
+  await db
+    .update(workouts)
+    .set({
+      title: follow(E.title, "title", a.name?.trim() || null),
+      description: follow(E.description, "description", describe(a)),
+      caloriesBurned: follow(
+        E.calories,
+        "calories_burned",
+        a.activeCalories != null ? Math.round(a.activeCalories) : null,
+      ),
+      durationMin: duration,
+      avgHr,
+      // The time only with the zone it was in, so the day is the one it was.
+      ...(a.offsetMin != null
+        ? {
+            performedAt: follow(E.time, "performed_at", startedAt),
+            day: follow(E.time, "day", dayOf(startedAt, a.offsetMin)),
+            tzOffsetMin: follow(E.time, "tz_offset_min", a.offsetMin),
+          }
+        : {}),
+      cardio: sql`CASE WHEN ${col("cardio_by_hand")} = 1 THEN ${col("cardio")}
+        WHEN (${avgHr}) > ${CARDIO_MIN_AVG_HR} THEN 1 ELSE 0 END`,
+      // Whole-session Zone 2 marks follow a corrected duration.
+      zone2Min: sql`CASE WHEN ${col("zone2_min")} > 0 AND ${col("zone2_min")} = ${col("duration_min")}
+        AND (${duration}) > 0 THEN (${duration}) ELSE ${col("zone2_min")} END`,
+    })
+    .where(eq(workouts.id, workoutId));
 }
 
-/** Refresh the measured average without erasing Health Connect HR when Garmin lacks it. */
-async function updateLinkedWorkoutHeartRate(workoutId: string, value: number | null) {
-  const avgHr = sql<number | null>`coalesce(${normalizeAverageHeartRate(value)}, ${workouts.avgHr})`;
-  await db.update(workouts).set({
-    avgHr,
-    cardio: sql`case when ${workouts.cardioByHand} = 1 then ${workouts.cardio}
-      when ${avgHr} > ${CARDIO_MIN_AVG_HR} then 1 else 0 end`,
-  }).where(eq(workouts.id, workoutId));
+/**
+ * Whether the user deleted this session from the diary (`deleted_imports`):
+ * by one of its ids, or — under an id it didn't have then, as a new phone's
+ * Health Connect gives — by its time.
+ */
+export async function deletedByHand(externalIds: string[], span: Span): Promise<boolean> {
+  const rows = await db
+    .select({ externalId: deletedImports.externalId, startedAt: deletedImports.startedAt, endedAt: deletedImports.endedAt })
+    .from(deletedImports)
+    .where(
+      or(
+        inArray(deletedImports.externalId, externalIds),
+        and(gte(deletedImports.startedAt, iso(span.startMs - DAY_MS)), lte(deletedImports.startedAt, iso(span.startMs + DAY_MS))),
+      ),
+    );
+  return rows.some(
+    (r) =>
+      externalIds.includes(r.externalId) ||
+      sameSession(span, { startMs: Date.parse(r.startedAt), endMs: Date.parse(r.endedAt) }),
+  );
 }
 
 /**
@@ -146,6 +200,7 @@ async function updateLinkedWorkoutHeartRate(workoutId: string, value: number | n
  * already belongs to, else the Health Connect row naming it (exact) or
  * recorded at the same time, else a new row — unless the user deleted its
  * workout before, in which case it is only ever re-attached, never re-made.
+ * Its numbers then replace the provisional ones on that row.
  */
 export async function linkGarminActivity(
   a: ActivityIn,
@@ -168,13 +223,9 @@ export async function linkGarminActivity(
       .where(eq(workouts.id, existing.workoutId));
     if (w) {
       await db.update(garminActivities).set(details).where(eq(garminActivities.activityId, a.id));
-      // A row Garmin made (and Health Connect hasn't taken over) follows
-      // edits made in Garmin Connect; never the icon, manual cardio choice or Zone 2 marks.
-      if (w.externalId?.startsWith("garmin:")) {
-        await db.update(workouts).set(workoutUpdatesFor(a)).where(eq(workouts.id, w.id));
-      } else {
-        await updateLinkedWorkoutHeartRate(w.id, a.avgHr);
-      }
+      // Follows edits made in Garmin Connect; never what was changed here by
+      // hand, the icon, the manual cardio choice or Zone 2 marks.
+      await applyGarminToWorkout(w.id, a);
       return "updated";
     }
   }
@@ -194,83 +245,90 @@ export async function linkGarminActivity(
 
   let workoutId: string | null = match?.id ?? null;
   let outcome: LinkOutcome = match?.how ?? "skipped";
-  if (!match && !existing?.dismissed) {
+  // Deleted by hand: its own row, or the Health Connect one it would have
+  // joined (that one's id is gone, but not when it was).
+  const deleted =
+    !match && (existing?.dismissed === 1 || (await deletedByHand([`garmin:${a.id}`], spanOfActivity(a))));
+  if (!match && !deleted) {
     const tzOffsetMin = a.offsetMin ?? stampOf(iso(a.startMs)).tz_offset_min;
     const values = workoutValuesFor(a);
-    const [row] = await db
+    const externalId = `garmin:${a.id}`;
+    await db
       .insert(workouts)
       .values({
         ...values,
         // Named after the activity, so two devices importing it agree on its id.
-        id: await derivedId("workouts", `garmin:${a.id}`),
+        id: await derivedId("workouts", externalId),
         day: dayOf(values.performedAt, tzOffsetMin),
         tzOffsetMin,
         source: "Garmin",
-        externalId: `garmin:${a.id}`,
+        externalId,
       })
-      .onConflictDoUpdate({ target: workouts.externalId, set: workoutUpdatesFor(a) })
-      .returning({ id: workouts.id });
+      .onConflictDoNothing();
+    const [row] = await db.select({ id: workouts.id }).from(workouts).where(eq(workouts.externalId, externalId));
     workoutId = row?.id ?? null;
     outcome = "created";
   }
 
   const linkedBy = outcome === "skipped" ? (existing?.linkedBy ?? null) : outcome;
+  const dismissed = workoutId == null && deleted ? 1 : 0;
   await db
     .insert(garminActivities)
-    .values({
-      activityId: a.id,
-      workoutId,
-      dismissed: workoutId == null ? (existing?.dismissed ?? 0) : 0,
-      linkedBy,
-      ...details,
-    })
+    .values({ activityId: a.id, workoutId, dismissed, linkedBy, ...details })
     .onConflictDoUpdate({
       target: garminActivities.activityId,
-      set: {
-        workoutId,
-        dismissed: workoutId == null ? (existing?.dismissed ?? 0) : 0,
-        linkedBy,
-        ...details,
-      },
+      set: { workoutId, dismissed, linkedBy, ...details },
     });
-  if (match) await updateLinkedWorkoutHeartRate(match.id, a.avgHr);
+  if (workoutId != null) await applyGarminToWorkout(workoutId, a);
   return outcome;
 }
 
 /**
- * Health Connect side: before writing session `hcId`, take over the row the
- * Garmin sync created for the same activity, if there is one, so the upsert
- * that follows updates it instead of adding a twin.
+ * Health Connect side: before writing session `hcId`, take over the synced
+ * row that is the same session under another id, if there is one, so the
+ * upsert that follows updates it instead of adding a twin. That's the row the
+ * Garmin sync made for it, or one read from Health Connect on another phone —
+ * every phone's Health Connect names records afresh. Rows named by sessions
+ * in this same read (`claimed`) are theirs, not up for taking.
  *
  * Says whether the session was already in the diary — its own row ("known"),
- * or one the Garmin sync made ("adopted") — or is new to it ("new").
+ * or one under another id ("adopted") — or is new to it ("new").
  */
-export async function adoptGarminWorkout(
+export async function adoptSyncedWorkout(
   hcId: string,
   clientRecordId: string | null | undefined,
   span: Span,
+  claimed: ReadonlySet<string> = new Set(),
 ): Promise<"known" | "adopted" | "new"> {
   const [own] = await db
     .select({ id: workouts.id })
     .from(workouts)
     .where(eq(workouts.externalId, hcId));
   if (own) return "known";
-  const rows = await db
-    .select({
-      id: workouts.id,
-      externalId: workouts.externalId,
-      performedAt: workouts.performedAt,
-      durationMin: workouts.durationMin,
-    })
-    .from(workouts)
-    .where(
-      and(
-        like(workouts.externalId, "garmin:%"),
-        gte(workouts.performedAt, iso(span.startMs - DAY_MS)),
-        lte(workouts.performedAt, iso(span.startMs + DAY_MS)),
-      ),
-    );
-  const exact = rows.find((r) => recordIdNames(clientRecordId, (r.externalId ?? "").slice(7)));
+  const rows = (
+    await db
+      .select({
+        id: workouts.id,
+        externalId: workouts.externalId,
+        sourceRecordId: workouts.sourceRecordId,
+        performedAt: workouts.performedAt,
+        durationMin: workouts.durationMin,
+      })
+      .from(workouts)
+      .where(
+        and(
+          isNotNull(workouts.externalId),
+          ne(workouts.externalId, hcId),
+          gte(workouts.performedAt, iso(span.startMs - DAY_MS)),
+          lte(workouts.performedAt, iso(span.startMs + DAY_MS)),
+        ),
+      )
+  ).filter((r) => !claimed.has(r.externalId ?? ""));
+  const exact = rows.find((r) =>
+    r.externalId?.startsWith("garmin:")
+      ? recordIdNames(clientRecordId, r.externalId.slice(7))
+      : clientRecordId != null && r.sourceRecordId === clientRecordId,
+  );
   const hit =
     exact ??
     bestSessionMatch(
@@ -282,28 +340,44 @@ export async function adoptGarminWorkout(
   return "adopted";
 }
 
-/** The same for a night: take over the Garmin-made session it overlaps. */
-export async function adoptGarminSleep(hcId: string, span: Span): Promise<void> {
+/**
+ * The same for a night: take over the synced session it is (overlapping it
+ * mostly), Garmin-made or from another phone's Health Connect. Says whether
+ * the night was new to the diary.
+ */
+export async function adoptSyncedSleep(
+  hcId: string,
+  span: Span,
+  claimed: ReadonlySet<string> = new Set(),
+): Promise<"known" | "adopted" | "new"> {
   const [own] = await db
     .select({ id: sleepSessions.id })
     .from(sleepSessions)
     .where(eq(sleepSessions.externalId, hcId));
-  if (own) return;
-  const rows = await db
-    .select({ id: sleepSessions.id, startedAt: sleepSessions.startedAt, endedAt: sleepSessions.endedAt })
-    .from(sleepSessions)
-    .where(
-      and(
-        like(sleepSessions.externalId, "garmin-sleep:%"),
-        lte(sleepSessions.startedAt, iso(span.endMs)),
-        gte(sleepSessions.endedAt, iso(span.startMs)),
-      ),
-    );
+  if (own) return "known";
+  const rows = (
+    await db
+      .select({
+        id: sleepSessions.id,
+        externalId: sleepSessions.externalId,
+        startedAt: sleepSessions.startedAt,
+        endedAt: sleepSessions.endedAt,
+      })
+      .from(sleepSessions)
+      .where(
+        and(
+          ne(sleepSessions.externalId, hcId),
+          lte(sleepSessions.startedAt, iso(span.endMs)),
+          gte(sleepSessions.endedAt, iso(span.startMs)),
+        ),
+      )
+  ).filter((r) => !claimed.has(r.externalId));
   const hit = rows.find((r) =>
     sameNight(span, { startMs: Date.parse(r.startedAt), endMs: Date.parse(r.endedAt) }),
   );
-  if (!hit) return;
+  if (!hit) return "new";
   await db.update(sleepSessions).set({ externalId: hcId }).where(eq(sleepSessions.id, hit.id));
+  return "adopted";
 }
 
 /** Recent activities still without laps, newest first. */
@@ -399,11 +473,20 @@ export async function applyGarminMetrics(): Promise<void> {
   void healthMetrics;
 }
 
-/**
- * Nights Garmin knows that no synced sleep session covers get a session of
- * their own (keyed `garmin-sleep:<id>`). Returns how many were added.
- */
-export async function fillSleepFromGarmin(): Promise<number> {
+/** A night as Garmin has it (the sleep columns of `garmin_days`). */
+export interface GarminNight {
+  sleepId: string;
+  startMs: number;
+  endMs: number;
+  tzOffsetMin: number | null;
+  deepMin: number | null;
+  remMin: number | null;
+  lightMin: number | null;
+  awakeMin: number | null;
+}
+
+/** Garmin's nights that ended from `fromMs` on. */
+export async function garminNightsSince(fromMs: number): Promise<GarminNight[]> {
   const rows = await db
     .select({
       sleepId: garminDays.sleepId,
@@ -420,30 +503,101 @@ export async function fillSleepFromGarmin(): Promise<number> {
       and(
         isNotNull(garminDays.sleepId),
         isNotNull(garminDays.sleepStartedAt),
-        isNotNull(garminDays.sleepEndedAt),
-        // Any session in that window — Health Connect's, or the one made
-        // here on an earlier sync — means the night is already there.
-        sql`NOT EXISTS (SELECT 1 FROM ${sleepSessions} WHERE ${sleepSessions.startedAt} < ${garminDays.sleepEndedAt} AND ${sleepSessions.endedAt} > ${garminDays.sleepStartedAt})`,
+        gte(garminDays.sleepEndedAt, iso(fromMs)),
       ),
     );
+  return rows.flatMap((r) => {
+    const startMs = Date.parse(r.startedAt ?? "");
+    const endMs = Date.parse(r.endedAt ?? "");
+    if (!r.sleepId || !(endMs > startMs)) return [];
+    return [{
+      sleepId: r.sleepId,
+      startMs,
+      endMs,
+      tzOffsetMin: r.tz,
+      deepMin: r.deep,
+      remMin: r.rem,
+      lightMin: r.light,
+      awakeMin: r.awake,
+    }];
+  });
+}
+
+const overlap = (a: Span, b: Span) => Math.min(a.endMs, b.endMs) - Math.max(a.startMs, b.startMs);
+
+/** Which of `nights` the night `span` is (see sameNight; the most overlap wins). */
+export function garminNightFor(span: Span, nights: GarminNight[]): GarminNight | null {
+  let best: GarminNight | null = null;
+  for (const n of nights) {
+    if (!sameNight(span, n)) continue;
+    if (best == null || overlap(span, n) > overlap(span, best)) best = n;
+  }
+  return best;
+}
+
+/**
+ * Garmin's nights into the diary. Over the session that is that night,
+ * whoever wrote it — Health Connect's times and stages were provisional — and
+ * as a session of its own (keyed `garmin-sleep:<id>`) where there's none. A
+ * stage Garmin has no number for keeps the one there. Only nights that differ
+ * are written. Returns how many were added.
+ */
+export async function applyGarminSleep(): Promise<number> {
+  const nights = await garminNightsSince(0);
+  if (nights.length === 0) return 0;
+  const sessions = await db
+    .select({
+      externalId: sleepSessions.externalId,
+      startedAt: sleepSessions.startedAt,
+      endedAt: sleepSessions.endedAt,
+      deep: sleepSessions.deepMin,
+      rem: sleepSessions.remMin,
+      light: sleepSessions.lightMin,
+      awake: sleepSessions.awakeMin,
+      tz: sleepSessions.tzOffsetMin,
+      sourceRecordId: sleepSessions.sourceRecordId,
+    })
+    .from(sleepSessions);
+  const spans = sessions.map((s) => ({ ...s, startMs: Date.parse(s.startedAt), endMs: Date.parse(s.endedAt) }));
   let added = 0;
-  for (const r of rows) {
-    if (!r.sleepId || !r.startedAt || !r.endedAt) continue;
-    const durationMin = Math.round((Date.parse(r.endedAt) - Date.parse(r.startedAt)) / 60_000);
-    if (durationMin <= 0) continue;
+  for (const n of nights) {
+    const near = spans.filter((s) => s.startMs < n.endMs && s.endMs > n.startMs);
+    let same: (typeof spans)[number] | null = null;
+    for (const s of near) {
+      if (sameNight(n, s) && (same == null || overlap(n, s) > overlap(n, same))) same = s;
+    }
+    // Something else is there (a nap across the edge of it, say): leave it.
+    if (!same && near.length > 0) continue;
+    const values = {
+      started_at: iso(n.startMs),
+      ended_at: iso(n.endMs),
+      duration_min: Math.round((n.endMs - n.startMs) / 60_000),
+      deep_min: n.deepMin ?? same?.deep ?? null,
+      rem_min: n.remMin ?? same?.rem ?? null,
+      light_min: n.lightMin ?? same?.light ?? null,
+      awake_min: n.awakeMin ?? same?.awake ?? null,
+    };
+    if (
+      same &&
+      same.startedAt === values.started_at &&
+      same.endedAt === values.ended_at &&
+      same.deep === values.deep_min &&
+      same.rem === values.rem_min &&
+      same.light === values.light_min &&
+      same.awake === values.awake_min &&
+      (n.tzOffsetMin == null || same.tz === n.tzOffsetMin)
+    ) {
+      continue;
+    }
+    if (values.duration_min <= 0) continue;
     await upsertSleepSession({
-      external_id: `garmin-sleep:${r.sleepId}`,
-      started_at: r.startedAt,
-      ended_at: r.endedAt,
-      duration_min: durationMin,
-      deep_min: r.deep,
-      rem_min: r.rem,
-      light_min: r.light,
-      awake_min: r.awake,
+      external_id: same?.externalId ?? `garmin-sleep:${n.sleepId}`,
+      ...values,
       source: "Garmin",
-      tz_offset_min: r.tz,
+      tz_offset_min: n.tzOffsetMin ?? same?.tz ?? null,
+      source_record_id: same?.sourceRecordId ?? null,
     });
-    added++;
+    if (!same) added++;
   }
   return added;
 }

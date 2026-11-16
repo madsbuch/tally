@@ -281,6 +281,13 @@
       "when": 1794856400140,
       "tag": "0039_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1794867259270,
+      "tag": "0040_garmin_first",
+      "breakpoints": true
     }
   ]
 }

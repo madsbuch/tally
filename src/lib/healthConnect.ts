@@ -4,13 +4,21 @@ import {
   getSetting,
   purgeSyncedDataNotFrom,
   setSetting,
+  todayStr,
   upsertExternalWorkout,
   upsertHealthMetric,
   upsertSleepSession,
 } from "./db";
 import { SETTING_KEYS } from "./types";
 import { dayOf } from "./daystamp";
-import { adoptGarminSleep, adoptGarminWorkout, applyGarminMetrics } from "./garminDb";
+import {
+  adoptSyncedSleep,
+  adoptSyncedWorkout,
+  applyGarminMetrics,
+  deletedByHand,
+  garminNightFor,
+  garminNightsSince,
+} from "./garminDb";
 
 // ---------------------------------------------------------------------------
 // Health Connect sync — pulls what the Garmin Connect app writes into Android
@@ -18,6 +26,12 @@ import { adoptGarminSleep, adoptGarminWorkout, applyGarminMetrics } from "./garm
 // exercise sessions → `workouts`, sleep → `sleep_sessions`, and daily wellness
 // aggregates (steps, resting HR, HRV, SpO2, weight, VO2 max, calories) →
 // `health_metrics`. Everything stays on-device.
+//
+// It's the event bus, not the authority: Health Connect has the watch's data
+// first and can be read on every return to the app, so what it brings goes
+// in at once and tells the Garmin Connect sync there's something to fetch
+// (see syncGarminIfStale) — and wherever Garmin's own numbers are in, they
+// stand over these (lib/garminDb.ts).
 //
 // Only Garmin's records are read. Health Connect otherwise blends in every
 // app that writes there (the phone's own step counter, the OEM health app,
@@ -165,8 +179,15 @@ export interface HealthConnectSyncResult {
   newWorkouts: number;
   /** Sleep sessions written. */
   sleep: number;
+  /** Of those, nights the diary had never seen. */
+  newNights: number;
   /** Days of wellness metrics written. */
   days: number;
+  /**
+   * Today's steps or total burn moved since the last read in this run of the
+   * app: the watch synced. Garmin has the new numbers too by now.
+   */
+  todayMoved: boolean;
 }
 
 const num = (v: number | null | undefined): number | null =>
@@ -175,6 +196,8 @@ const num = (v: number | null | undefined): number | null =>
 /** Returns to the foreground closer together than this don't read again. */
 const RESUME_SYNC_MIN_MS = 5 * 60_000;
 let lastSyncStartedAt = 0;
+/** Today's numbers as the last read found them ("day|steps|kcal"). */
+let lastToday: string | null = null;
 let syncInFlight: Promise<HealthConnectSyncResult> | null = null;
 
 /**
@@ -207,7 +230,7 @@ async function runSync(): Promise<HealthConnectSyncResult> {
   lastSyncStartedAt = Date.now();
   const status = await getHealthConnectStatus();
   if (status.availability !== "available" || !status.permissionsGranted) {
-    return { status, workouts: 0, newWorkouts: 0, sleep: 0, days: 0 };
+    return { status, workouts: 0, newWorkouts: 0, sleep: 0, newNights: 0, days: 0, todayMoved: false };
   }
 
   const now = Date.now();
@@ -261,11 +284,17 @@ async function runSync(): Promise<HealthConnectSyncResult> {
 
   let workoutCount = 0;
   let newWorkoutCount = 0;
+  // Rows named by these are theirs: not for another session to take over.
+  const claimed = new Set(sessions.map((s) => s.id));
   for (const s of sessions) {
     const durationMin = Math.round((s.endMs - s.startMs) / 60_000);
-    // A session the Garmin Connect sync got to first is taken over, not
+    const span = { startMs: s.startMs, endMs: s.endMs };
+    // Deleted from the diary by hand: it stays deleted.
+    if (await deletedByHand([s.id], span)) continue;
+    // A session already in the diary under another id — the Garmin Connect
+    // sync got to it first, or another phone read it — is taken over, not
     // written twice.
-    const seen = await adoptGarminWorkout(s.id, s.clientRecordId, { startMs: s.startMs, endMs: s.endMs });
+    const seen = await adoptSyncedWorkout(s.id, s.clientRecordId, span, claimed);
     if (seen === "new") newWorkoutCount++;
     await upsertExternalWorkout({
       performed_at: new Date(s.startMs).toISOString(),
@@ -290,21 +319,29 @@ async function runSync(): Promise<HealthConnectSyncResult> {
   }
 
   let sleepCount = 0;
+  let newNightCount = 0;
+  const claimedNights = new Set(sleepSessions.map((s) => s.id));
+  // Where Garmin has the night already, its times and stages are the ones
+  // written (as the Garmin sync would): Health Connect's only stand in.
+  const garminNights = await garminNightsSince(startMs - 48 * 3_600_000);
   for (const s of sleepSessions) {
-    const durationMin = Math.round((s.endMs - s.startMs) / 60_000);
-    if (durationMin <= 0) continue;
-    await adoptGarminSleep(s.id, { startMs: s.startMs, endMs: s.endMs });
+    if (s.endMs <= s.startMs) continue;
+    const span = { startMs: s.startMs, endMs: s.endMs };
+    if ((await adoptSyncedSleep(s.id, span, claimedNights)) === "new") newNightCount++;
+    const g = garminNightFor(span, garminNights);
+    const startMsNight = g?.startMs ?? s.startMs;
+    const endMsNight = g?.endMs ?? s.endMs;
     await upsertSleepSession({
       external_id: s.id,
-      started_at: new Date(s.startMs).toISOString(),
-      ended_at: new Date(s.endMs).toISOString(),
-      duration_min: durationMin,
-      deep_min: num(s.deepMin),
-      rem_min: num(s.remMin),
-      light_min: num(s.lightMin),
-      awake_min: num(s.awakeMin),
+      started_at: new Date(startMsNight).toISOString(),
+      ended_at: new Date(endMsNight).toISOString(),
+      duration_min: Math.round((endMsNight - startMsNight) / 60_000),
+      deep_min: g?.deepMin ?? num(s.deepMin),
+      rem_min: g?.remMin ?? num(s.remMin),
+      light_min: g?.lightMin ?? num(s.lightMin),
+      awake_min: g?.awakeMin ?? num(s.awakeMin),
       source: sourceLabel(s.sourcePackage),
-      tz_offset_min: num(s.endOffsetMin),
+      tz_offset_min: g?.tzOffsetMin ?? num(s.endOffsetMin),
       source_record_id: s.clientRecordId ?? null,
     });
     sleepCount++;
@@ -329,11 +366,24 @@ async function runSync(): Promise<HealthConnectSyncResult> {
   // wiped them.
   await applyGarminMetrics();
 
+  const today = days.find((d) => d.day === todayStr());
+  const todayKey = today ? `${today.day}|${num(today.steps)}|${num(today.caloriesTotal)}` : null;
+  const todayMoved = todayKey != null && todayKey !== lastToday;
+  lastToday = todayKey ?? lastToday;
+
   await setSetting(SETTING_KEYS.healthConnectLastSyncAt, new Date(now).toISOString());
   if (status.historyGranted) {
     await setSetting(SETTING_KEYS.healthConnectHistorySynced, "1");
   }
   await setSetting(SETTING_KEYS.healthConnectResyncVersion, RESYNC_VERSION);
   // Day metrics count too: the Diary's steps and total burn come from them.
-  return { status, workouts: workoutCount, newWorkouts: newWorkoutCount, sleep: sleepCount, days: dayCount };
+  return {
+    status,
+    workouts: workoutCount,
+    newWorkouts: newWorkoutCount,
+    sleep: sleepCount,
+    newNights: newNightCount,
+    days: dayCount,
+    todayMoved,
+  };
 }

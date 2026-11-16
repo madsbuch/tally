@@ -6,7 +6,7 @@ import {
   activitiesMissingLaps,
   earliestGarminActivityAt,
   applyGarminMetrics,
-  fillSleepFromGarmin,
+  applyGarminSleep,
   garminDayHasData,
   linkGarminActivity,
   setGarminLaps,
@@ -58,6 +58,15 @@ const AUTO_SYNC_MIN_MS = 3 * 3_600_000;
  * sync than this: enough to keep a burst of uploads to one round of requests.
  */
 const NEW_WORKOUT_SYNC_MIN_MS = 2 * 60_000;
+/**
+ * After Health Connect shows today's numbers moving (or a new night), sync no
+ * closer than this: Health Connect is the event bus, and Garmin's own numbers
+ * — the ones the diary shows — should follow it, not trail it by hours. Only
+ * the cheap part runs (see `light`). Further apart with the sign-in alone,
+ * where every day costs five requests.
+ */
+const MOVED_SYNC_MIN_MS = 15 * 60_000;
+const MOVED_SYNC_MIN_MS_SIGNIN = 60 * 60_000;
 /** Gap between consecutive requests. */
 const REQUEST_GAP_MS = 400;
 /** After a 429, leave Garmin alone this long. */
@@ -194,22 +203,57 @@ export async function getGarminPausedUntil(): Promise<string | null> {
 
 let inFlight: Promise<GarminSyncResult | null> | null = null;
 
+/** Why a sync is being asked for (see syncGarmin). */
+export interface SyncAsk {
+  manual: boolean;
+  newWorkout: boolean;
+  moved: boolean;
+}
+
+/**
+ * Whether a sync asked for now runs, and if so whether light (activities and
+ * recent days only: no laps, readiness or backfill). `sinceLast`: ms since
+ * the last sync of any kind; `sinceFull`: since the last full one.
+ */
+export function garminSyncPlan(
+  ask: SyncAsk,
+  personal: boolean,
+  sinceLast: number,
+  sinceFull: number,
+): { run: false } | { run: true; light: boolean } {
+  const minGap = ask.manual
+    ? 0
+    : ask.newWorkout
+      ? NEW_WORKOUT_SYNC_MIN_MS
+      : ask.moved
+        ? personal
+          ? MOVED_SYNC_MIN_MS
+          : MOVED_SYNC_MIN_MS_SIGNIN
+        : AUTO_SYNC_MIN_MS;
+  if (sinceLast < minGap) return { run: false };
+  // Brought on by Health Connect's numbers moving, and a full sync not due.
+  return { run: true, light: ask.moved && !ask.manual && !ask.newWorkout && sinceFull < AUTO_SYNC_MIN_MS };
+}
+/** When the last full sync (laps, readiness) finished, in this run of the app. */
+let lastFullSyncAt = 0;
+
 /**
  * Sync now. `manual` (the Settings button) skips the every-few-hours limit,
  * but never a rate-limit pause; so does `newWorkout` (Health Connect just
- * brought one in), silently. Null = skipped (not connected, too soon, or
- * paused). Concurrent calls join the running one.
+ * brought one in), silently, and — with a shorter limit of its own — `moved`
+ * (Health Connect's numbers for today moved). Null = skipped (not connected,
+ * too soon, or paused). Concurrent calls join the running one.
  */
 export function syncGarmin(
-  opts: { manual?: boolean; newWorkout?: boolean } = {},
+  opts: { manual?: boolean; newWorkout?: boolean; moved?: boolean } = {},
 ): Promise<GarminSyncResult | null> {
-  inFlight ??= runSync(opts.manual ?? false, opts.newWorkout ?? false).finally(() => {
+  inFlight ??= runSync(opts.manual ?? false, opts.newWorkout ?? false, opts.moved ?? false).finally(() => {
     inFlight = null;
   });
   return inFlight;
 }
 
-async function runSync(manual: boolean, newWorkout: boolean): Promise<GarminSyncResult | null> {
+async function runSync(manual: boolean, newWorkout: boolean, moved: boolean): Promise<GarminSyncResult | null> {
   const status = await getGarminStatus();
   if (!status.personal && !status.connected) return null;
   if (await getGarminPausedUntil()) {
@@ -225,14 +269,19 @@ async function runSync(manual: boolean, newWorkout: boolean): Promise<GarminSync
   // A workout just showed up in Health Connect: Garmin has it too by now
   // (Garmin Connect writes it there after its own upload), so fetch its
   // zones, Training Effect and laps while it's the one being looked at.
-  const minGap = manual ? 0 : newWorkout ? NEW_WORKOUT_SYNC_MIN_MS : AUTO_SYNC_MIN_MS;
-  if (last && Date.now() - Date.parse(last) < minGap) return null;
+  const plan = garminSyncPlan(
+    { manual, newWorkout, moved },
+    status.personal,
+    last ? Date.now() - Date.parse(last) : Infinity,
+    Date.now() - lastFullSyncAt,
+  );
+  if (!plan.run) return null;
+  const light = plan.light;
 
   try {
-    const result = await syncAll(status);
+    const result = await syncAll(status, light);
+    if (!light) lastFullSyncAt = Date.now();
     await setSetting(SETTING_KEYS.garminLastSyncAt, new Date().toISOString());
-    if (result.linkedExact + result.linkedByTime + result.created + result.updated + result.days + result.nights > 0) {
-    }
     return result;
   } catch (e) {
     if (e instanceof GarminError && e.code === "rate_limited") {
@@ -257,7 +306,8 @@ async function displayName(): Promise<string> {
   return name;
 }
 
-async function syncAll(status: GarminStatus): Promise<GarminSyncResult> {
+/** `light`: skip what can wait for the next full sync — laps and readiness. */
+async function syncAll(status: GarminStatus, light = false): Promise<GarminSyncResult> {
   const result: GarminSyncResult = {
     linkedExact: 0,
     linkedByTime: 0,
@@ -298,7 +348,7 @@ async function syncAll(status: GarminStatus): Promise<GarminSyncResult> {
   if (!backfilled) await setSetting(SETTING_KEYS.garminActivitiesBackfilled, "1");
 
   // --- Laps for recent activities, out of their FIT files, a few per sync.
-  for (const id of await activitiesMissingLaps(Date.now() - LAPS_WINDOW_MS, LAPS_PER_SYNC)) {
+  for (const id of light ? [] : await activitiesMissingLaps(Date.now() - LAPS_WINDOW_MS, LAPS_PER_SYNC)) {
     await paced();
     const laps = parseGarminLaps(await call("garmin_activity_laps", { activityId: id }));
     await setGarminLaps(id, laps);
@@ -322,7 +372,8 @@ async function syncAll(status: GarminStatus): Promise<GarminSyncResult> {
 
   // Ranges, oldest-first not needed — each day is written on its own.
   const ranges: [string, string][] = [[recentFrom, today]];
-  if (backfillFrom <= backfillTo) ranges.push([backfillFrom, backfillTo]);
+  const backfilling = !light && backfillFrom <= backfillTo;
+  if (backfilling) ranges.push([backfillFrom, backfillTo]);
 
   for (const [from, to] of ranges) {
     const rows = status.personal ? await personalDays(from, to) : await legacyDays(from, to);
@@ -334,7 +385,7 @@ async function syncAll(status: GarminStatus): Promise<GarminSyncResult> {
 
   // Readiness and training status exist only on the unofficial side: with a
   // key, the sign-in (when there is one) adds them for the recent days.
-  if (status.personal && status.connected) {
+  if (status.personal && status.connected && !light) {
     try {
       for (const day of daysBetween(recentFrom, today)) {
         await upsertGarminDay({ day, ...(await legacyExtras(day)), fetchedAt: new Date().toISOString() });
@@ -345,14 +396,14 @@ async function syncAll(status: GarminStatus): Promise<GarminSyncResult> {
   }
 
   await setSetting(SETTING_KEYS.garminWellnessThrough, today);
-  const reached = backfillFrom <= backfillTo ? backfillFrom : backTo;
+  const reached = backfilling ? backfillFrom : backTo;
   await setSetting(SETTING_KEYS.garminWellnessBackTo, reached);
   result.wellnessBackTo = reached;
   result.backfillDone = reached <= floor;
 
   // --- Garmin's daily numbers over Health Connect's; its nights in the gaps.
   await applyGarminMetrics();
-  result.nights = await fillSleepFromGarmin();
+  result.nights = await applyGarminSleep();
   return result;
 }
 
@@ -520,14 +571,19 @@ async function legacyDays(from: string, to: string): Promise<GarminDayRow[]> {
 
 /**
  * The same on the way back to the foreground, or after a Health Connect
- * sync: self-throttled, unless that sync brought in a new workout.
+ * sync: self-throttled, but sooner when that sync brought something — a new
+ * workout, a new night, today's numbers moving. Health Connect is the event
+ * bus; Garmin's numbers follow it.
  */
 export function syncGarminIfStale(
-  hc?: { newWorkouts: number } | null,
+  hc?: { newWorkouts: number; newNights?: number; todayMoved?: boolean } | null,
 ): Promise<GarminSyncResult | null> {
   // Garmin imports are the phone's; other devices get the data through sync.
   if (!navigator.userAgent.includes("Android")) return Promise.resolve(null);
-  return syncGarmin({ newWorkout: (hc?.newWorkouts ?? 0) > 0 });
+  return syncGarmin({
+    newWorkout: (hc?.newWorkouts ?? 0) > 0,
+    moved: (hc?.newNights ?? 0) > 0 || hc?.todayMoved === true,
+  });
 }
 
 /** Human-readable error for Settings. */
