@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  ANSWERING_ELSEWHERE_MS,
   COACH_CONTEXT_MARK,
   STALE_CONTEXT,
+  answeringElsewhereUntil,
+  awaitsAnswer,
   compactTranscript,
   isCoachContext,
   lastUserIndexOf,
@@ -66,5 +69,52 @@ describe("coach transcript", () => {
       { role: "tool", tool_call_id: "a", content: big },
     ];
     expect(compactTranscript(msgs)).toEqual(msgs);
+  });
+});
+
+describe("awaitsAnswer", () => {
+  const q: ChatMessage = { role: "user", content: "How did I sleep?" };
+  const note: ChatMessage = { role: "user", content: `${COACH_CONTEXT_MARK} digest` };
+  const ok = (id: string): ChatMessage => ({ role: "tool", tool_call_id: id, content: "Delivered." });
+
+  test("a question with nothing after it waits", () => {
+    expect(awaitsAnswer([{ role: "system", content: "p" }, note, q])).toBe(true);
+  });
+
+  test("so does one the coach is still working on", () => {
+    expect(awaitsAnswer([note, q, call("a", "query_sleep"), { role: "tool", tool_call_id: "a", content: "8h" }])).toBe(true);
+    expect(awaitsAnswer([q, { role: "assistant", content: "thinking", tool_calls: call("a", "run_sql").tool_calls }])).toBe(true);
+  });
+
+  test("a delivery answers it", () => {
+    expect(awaitsAnswer([q, call("a", "send_message"), ok("a")])).toBe(false);
+    expect(awaitsAnswer([q, call("a", "query_sleep"), ok("a"), call("b", "send_chart"), ok("b")])).toBe(false);
+    // Prose without tool calls reached them too.
+    expect(awaitsAnswer([q, { role: "assistant", content: "You slept 8h." }])).toBe(false);
+  });
+
+  test("only the last question counts", () => {
+    const answered = [q, call("a", "send_message"), ok("a")];
+    expect(awaitsAnswer([...answered, note, { role: "user", content: "And today?" }])).toBe(true);
+    // A context note after an answer isn't a question.
+    expect(awaitsAnswer([...answered, note])).toBe(false);
+  });
+
+  test("no question, nothing to wait for", () => {
+    expect(awaitsAnswer([])).toBe(false);
+    // A check-in: the coach spoke first.
+    expect(awaitsAnswer([{ role: "system", content: "p" }, { role: "assistant", content: "Morning!" }])).toBe(false);
+  });
+});
+
+describe("answeringElsewhereUntil", () => {
+  test("counts from the time in the clock value", () => {
+    expect(answeringElsewhereUntil("1763280000000.000042")).toBe(1763280000000 + ANSWERING_ELSEWHERE_MS);
+  });
+
+  test("a clock value that doesn't parse never waits", () => {
+    for (const bad of ["", "superseded", "1763280000000", "176328000000.000001", "x763280000000.000001"]) {
+      expect(answeringElsewhereUntil(bad)).toBe(0);
+    }
   });
 });

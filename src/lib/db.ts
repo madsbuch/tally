@@ -1198,22 +1198,27 @@ export async function updateChatMessages(
 }
 
 /**
- * The version of a chat row (src-tauri/src/sync): its clock value, and
- * whether that version is a deletion. Null for a chat sync hasn't recorded.
+ * The version of a chat row (src-tauri/src/sync): its clock value, whether
+ * that version is a deletion, whether this device wrote it, and if not, the
+ * name of the vault device that did (null when it isn't known). Null for a
+ * chat sync hasn't recorded.
  */
 export async function chatVersion(
   id: string,
-): Promise<{ hlc: string; deleted: boolean; mine: boolean } | null> {
+): Promise<{ hlc: string; deleted: boolean; mine: boolean; device: string | null } | null> {
   const rows = await db
     .select({
       hlc: syncRows.hlc,
       deleted: syncRows.deleted,
       mine: sql<number>`${syncRows.origin} = (SELECT device_id FROM sync_state WHERE id = 1)`,
+      device: sql<string | null>`(SELECT name FROM vault_devices WHERE id = ${syncRows.origin})`,
     })
     .from(syncRows)
     .where(and(eq(syncRows.tbl, "chats"), eq(syncRows.pk, id)));
   const r = rows[0];
-  return r ? { hlc: r.hlc, deleted: r.deleted !== 0, mine: r.mine === 1 } : null;
+  return r
+    ? { hlc: r.hlc, deleted: r.deleted !== 0, mine: r.mine === 1, device: r.device ?? null }
+    : null;
 }
 
 /**

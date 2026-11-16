@@ -32,7 +32,13 @@ import {
 } from "./db";
 import { runAssistantTurn, sanitizeChart } from "./assistant";
 import { buildCoachContext, buildCoachSystemPrompt, cacheCoachPromptPrefix } from "./coach";
-import { compactTranscript, isCoachContext, lastUserIndexOf } from "./coachTranscript";
+import {
+  answeringElsewhereUntil,
+  awaitsAnswer,
+  compactTranscript,
+  isCoachContext,
+  lastUserIndexOf,
+} from "./coachTranscript";
 import type { AssistantEvent, ChartSpec } from "./assistant";
 import type { ChatMessage } from "./openrouter";
 import { parseToolArgs } from "./schemas";
@@ -176,7 +182,13 @@ export type AssistantStatus =
   /** A turn stopped because the app was suspended — resumes on its own. */
   | "interrupted"
   /** A turn failed for a real reason; the user decides whether to retry. */
-  | "error";
+  | "error"
+  /**
+   * Their last question was asked on another device, which is answering it:
+   * the answer arrives through sync. Not to be asked again here meanwhile —
+   * that would answer it twice and split the chat.
+   */
+  | "elsewhere";
 
 export interface AssistantState {
   chatId: string | null;
@@ -186,6 +198,8 @@ export interface AssistantState {
   error: string | null;
   /** Tool the model is using right now, for the thinking row. */
   activeTool: string | null;
+  /** The device answering, while status is "elsewhere" (its name, if known). */
+  answeringOn: string | null;
   /**
    * True when the thread should offer "Try again": a turn stopped and there
    * is a user message to run again. Idle threads never offer it.
@@ -199,6 +213,9 @@ let items: UiItem[] = [];
 let status: AssistantStatus = "idle";
 let error: string | null = null;
 let activeTool: string | null = null;
+let answeringOn: string | null = null;
+/** Looks again once an answer expected from another device is overdue. */
+let overdueCheck: ReturnType<typeof setTimeout> | null = null;
 /** The in-flight turn, so a second one can't start on top of it. */
 let inFlight: Promise<void> | null = null;
 /**
@@ -222,6 +239,7 @@ let snapshot: AssistantState = {
   status: "idle",
   error: null,
   activeTool: null,
+  answeringOn: null,
   canRetry: false,
 };
 const listeners = new Set<() => void>();
@@ -234,6 +252,17 @@ const listeners = new Set<() => void>();
  */
 function hasUserTurn(): boolean {
   return transcript.some((m) => m.role === "user" && !isCoachContext(m));
+}
+
+/** No turn can start: one runs here, or another device is answering. */
+function held(): boolean {
+  return status === "running" || status === "elsewhere";
+}
+
+function setAnsweringOn(device: string | null): void {
+  answeringOn = device;
+  if (overdueCheck !== null) clearTimeout(overdueCheck);
+  overdueCheck = null;
 }
 
 /** Index of the last message they wrote; -1 when there is none. */
@@ -270,6 +299,7 @@ function emit(): void {
     status,
     error,
     activeTool,
+    answeringOn,
     canRetry:
       (status === "error" || status === "interrupted") && hasUserTurn(),
   };
@@ -299,13 +329,6 @@ let persistAgain = false;
  * running transcript is saved as a chat of its own rather than over theirs.
  */
 let basis: string | null = null;
-
-/** The basis after reading chat `id`: whatever version it was at. */
-async function versionRead(id: string): Promise<string | null> {
-  const v = await chatVersion(id).catch(() => null);
-  if (!v) return null;
-  return v.deleted ? "superseded" : v.hlc;
-}
 
 /**
  * The basis after writing chat `id`: the version this device just wrote. If
@@ -375,6 +398,7 @@ function run(): void {
   status = "running";
   error = null;
   activeTool = null;
+  setAnsweringOn(null);
   emit();
 
   const startedAt = Date.now();
@@ -508,16 +532,20 @@ export async function startAssistantChat(text: string): Promise<string | null> {
 /** Reply in the open conversation. Never throws — failures land in state. */
 export function sendAssistantMessage(text: string): void {
   const trimmed = text.trim();
-  if (!trimmed || status === "running") return;
+  if (!trimmed || held()) return;
 
   transcript.push({ role: "user", content: trimmed });
   items = [...items, { kind: "user", text: trimmed }];
+  // Saved now, not after the coach's first round: the question reaches their
+  // other devices while it's being answered (they show it as answered here),
+  // and survives the app dying before that round ends.
+  void persist();
   run();
 }
 
 /** Re-run the last user turn after a failure or an interruption. */
 export function retryAssistant(): void {
-  if (status === "running" || !hasUserTurn()) return;
+  if (held() || !hasUserTurn()) return;
   rewindToLastUserTurn();
   run();
 }
@@ -537,6 +565,7 @@ export function closeAssistantChat(): void {
   status = "idle";
   error = null;
   activeTool = null;
+  setAnsweringOn(null);
   emit();
 }
 
@@ -552,22 +581,43 @@ export async function openAssistantChat(
   const seq = ++openSeq;
   // The version first: a sync landing between the two reads then makes the
   // next save keep both, never overwrite.
-  const version = await versionRead(id);
+  const version = await chatVersion(id).catch(() => null);
   const saved = await getChatMessages(id);
   if (seq !== openSeq || isRunning()) return "skipped";
   if (!saved) return "missing";
   transcript = saved;
   chatId = id;
-  basis = version;
+  basis = version === null ? null : version.deleted ? "superseded" : version.hlc;
   items = transcriptToUi(saved);
   activeTool = null;
-  // A transcript ending on an unanswered user message is a turn that died
-  // with the app (killed while suspended, or mid-round). Offer it again
-  // rather than leaving the question hanging.
-  if (endsOnUnansweredTurn()) {
+  setAnsweringOn(null);
+  // The chat as another device last saved it, when that's what it is.
+  const theirs = version !== null && !version.mine && !version.deleted ? version : null;
+  const answeredBy = theirs && awaitsAnswer(saved) ? answeringElsewhereUntil(theirs.hlc) : 0;
+  if (Date.now() < answeredBy) {
+    // Asked on another device a moment ago: that one is answering, and its
+    // answer comes in with sync (which opens the chat again). Should it not
+    // come, it's offered here once overdue.
+    status = "elsewhere";
+    autoResumable = false;
+    error = null;
+    setAnsweringOn(theirs?.device ?? null);
+    overdueCheck = setTimeout(
+      () => {
+        overdueCheck = null;
+        if (seq === openSeq && status === "elsewhere") void openAssistantChat(id);
+      },
+      answeredBy - Date.now() + 1000,
+    );
+  } else if (endsOnUnansweredTurn()) {
+    // A transcript ending on an unanswered user message is a turn that died
+    // with the app (killed while suspended, or mid-round). Offer it again
+    // rather than leaving the question hanging.
     status = "interrupted";
     autoResumable = false; // an old chat shouldn't fire off a request on its own
-    error = "This turn never finished: the app was closed while it was running.";
+    error = theirs
+      ? `This question was never answered: ${theirs.device ?? "the device it was asked on"} stopped before it finished.`
+      : "This turn never finished: the app was closed while it was running.";
   } else {
     status = "idle";
     error = null;

@@ -70,12 +70,15 @@ export default function AssistantPage() {
   const chatId = parseChatId(rawChatId);
 
   const state = useSyncExternalStore(subscribeAssistant, getAssistantState);
-  const { status, error, activeTool, canRetry } = state;
+  const { status, error, activeTool, canRetry, answeringOn } = state;
   const busy = status === "running";
   const runnerChat = state.chatId;
   // The runner holds this very chat, so its thread, spinner and errors are
   // this page's to show.
   const live = chatId !== null && runnerChat === chatId;
+  // Another device is answering this chat's last question; replying here
+  // before its answer arrives would split the chat in two.
+  const waiting = live && status === "elsewhere";
 
   const go = useGo();
   const up = useUp();
@@ -221,7 +224,7 @@ export default function AssistantPage() {
 
   function send(textRaw?: string) {
     const text = (textRaw ?? input).trim();
-    if (!text || busy || (inChat && !live)) return;
+    if (!text || busy || waiting || (inChat && !live)) return;
     setInput("");
     if (inChat) {
       sendAssistantMessage(text);
@@ -402,6 +405,16 @@ export default function AssistantPage() {
               </div>
             </div>
           )}
+          {waiting && (
+            <div className="chat-msg chat-msg-assistant">
+              <div className="chat-bubble chat-thinking">
+                <div className="spinner" />
+                <span className="muted small">
+                  {answeringOn ? `Answering on ${answeringOn}…` : "Answering on your other device…"}
+                </span>
+              </div>
+            </div>
+          )}
           {/* An interruption is the OS suspending us, not a failure — it says
               so and resumes by itself, but the button is there to force it. */}
           {live && (status === "error" || status === "interrupted") && error && (
@@ -466,13 +479,13 @@ export default function AssistantPage() {
               send();
             }
           }}
-          disabled={busy || hasKey !== true || (inChat && !live)}
+          disabled={busy || waiting || hasKey !== true || (inChat && !live)}
         />
         <button
           className="btn btn-primary"
           style={{ flex: "0 0 auto" }}
           onClick={() => send()}
-          disabled={busy || !input.trim() || hasKey !== true || (inChat && !live)}
+          disabled={busy || waiting || !input.trim() || hasKey !== true || (inChat && !live)}
         >
           Send
         </button>

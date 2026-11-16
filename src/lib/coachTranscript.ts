@@ -35,6 +35,42 @@ export function lastUserIndexOf(messages: ChatMessage[]): number {
   return -1;
 }
 
+/**
+ * Whether their last question still has no answer: since they asked it,
+ * nothing reached them — no send_message, no send_chart, no prose reply.
+ * Work the coach did on the way (tool calls, reasoning) isn't an answer.
+ */
+export function awaitsAnswer(messages: ChatMessage[]): boolean {
+  const asked = lastUserIndexOf(messages);
+  if (asked < 0) return false;
+  for (const m of messages.slice(asked + 1)) {
+    if (m.role !== "assistant") continue;
+    const calls = m.tool_calls ?? [];
+    if (calls.length === 0 && typeof m.content === "string" && m.content.trim()) return false;
+    if (calls.some((c) => c.function.name === "send_message" || c.function.name === "send_chart")) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * How long a question another device saved, unanswered, counts as being
+ * answered there. A turn takes seconds to a few minutes; past this, that
+ * device most likely stopped (closed mid-answer) and it can be asked here.
+ */
+export const ANSWERING_ELSEWHERE_MS = 10 * 60_000;
+
+/**
+ * Until when (ms since the epoch) a question saved at sync clock value `hlc`
+ * ("<13-digit ms>.<counter>", src-tauri/src/sync) counts as being answered by
+ * the device that saved it. 0 for a clock value that doesn't parse.
+ */
+export function answeringElsewhereUntil(hlc: string): number {
+  const ms = /^(\d{13})\.\d{6}$/.exec(hlc)?.[1];
+  return ms ? Number(ms) + ANSWERING_ELSEWHERE_MS : 0;
+}
+
 /** Tool results this short are kept as they are. */
 export const KEEP_RESULT_CHARS = 600;
 

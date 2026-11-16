@@ -145,7 +145,12 @@ describe("saving a chat", () => {
       UPDATE chats SET messages = '[{"role":"user","content":"q1"},{"role":"user","content":"from the mac"}]' WHERE id = '${id}';
       UPDATE sync_rows SET hlc = '9999999999998.000000', origin = 'the-mac' WHERE tbl = 'chats' AND pk = '${id}';
       UPDATE sync_state SET applying = 0;`);
-    expect((await chatVersion(id))!.mine).toBe(false);
+    // Whose it is: a device of the vault by name, or unknown.
+    expect((await chatVersion(id))!).toMatchObject({ mine: false, device: null });
+    sqlite.exec(`UPDATE sync_state SET applying = 1;
+      INSERT INTO vault_devices (id, name, public_key, platform, added_at) VALUES ('the-mac', 'Studio Mac', 'k', 'macos', '2026-11-16T08:00:00.000Z');
+      UPDATE sync_state SET applying = 0;`);
+    expect((await chatVersion(id))!).toMatchObject({ mine: false, device: "Studio Mac" });
     // A save built on the old version doesn't touch theirs.
     expect(await updateChatMessagesIf(id, [{ role: "user", content: "stale" }], v2.hlc)).toBe(false);
     const row = sqlite.query("SELECT messages FROM chats WHERE id = ?").get(id) as { messages: string };
