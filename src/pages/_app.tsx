@@ -41,6 +41,7 @@ import { notifyExperimentsChanged } from "../lib/experiments";
 import { notifyCoachInboxChanged } from "../lib/coachInbox";
 import { openAssistantChat } from "../lib/assistantRunner";
 import AchievementToast from "../components/AchievementToast";
+import ConfirmHost from "../components/ConfirmHost";
 
 /**
  * Bottom tab bar. `to` is one of the tab roots in lib/navigation.ts, which are
@@ -322,6 +323,7 @@ export default function App() {
         })}
       </nav>
       <AchievementToast />
+      <ConfirmHost />
     </div>
   );
 }

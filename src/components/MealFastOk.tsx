@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { clearFastOk, setFoodEntryFastOk } from "../lib/db";
 import type { FoodEntry } from "../lib/types";
+import { confirmAction } from "../lib/confirm";
 
 /**
  * Whether this entry breaks a fast, with the reason when it doesn't. The
@@ -69,11 +70,11 @@ export default function MealFastOk({ meal, onSaved }: {
       <button
         className="info-row"
         disabled={saving}
-        onClick={() => {
+        onClick={async () => {
           if (note == null) {
             setDraft("");
             setEditing(true);
-          } else if (window.confirm(`Count "${meal.title}" as breaking a fast?`)) {
+          } else if (await confirmAction(`Count "${meal.title}" as breaking a fast?`, { confirmLabel: "It breaks the fast" })) {
             void run(() => clearFastOk(meal.id));
           }
         }}

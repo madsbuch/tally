@@ -32,6 +32,7 @@ import { chatPath, useGo } from "../lib/navigation";
 import { startAssistantChat } from "../lib/assistantRunner";
 import TrialCard, { formatMetric } from "../components/TrialCard";
 import type { AutoMetric } from "../lib/schemas";
+import { confirmAction } from "../lib/confirm";
 
 interface Loaded {
   e: Experiment;
@@ -202,13 +203,13 @@ export default function ExperimentPage() {
 
   async function setStatus(status: Experiment["status"]) {
     if (!data) return;
-    if (status === "dropped" && !window.confirm(`Stop “${data.e.title}” without a conclusion?`)) return;
+    if (status === "dropped" && !(await confirmAction(`Stop “${data.e.title}” without a conclusion?`, { confirmLabel: "Stop it" }))) return;
     await saveExperiment(data.e.id, { status });
   }
 
   async function remove() {
     if (!data) return;
-    if (!window.confirm(`Delete “${data.e.title}” and all its trials?`)) return;
+    if (!(await confirmAction(`Delete “${data.e.title}” and all its trials?`, { confirmLabel: "Delete", danger: true }))) return;
     await removeExperiment(data.e.id);
     go("/assistant/experiments");
   }

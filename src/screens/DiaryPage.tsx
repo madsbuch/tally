@@ -98,6 +98,7 @@ import {
 import type { DayGoal, PeriodGoal } from "../lib/goals";
 import { CARDIO_MIN_AVG_HR } from "../lib/exerciseGoals";
 import BackupReminder from "../components/BackupReminder";
+import { confirmAction } from "../lib/confirm";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -806,7 +807,7 @@ function CaptureErrorSheet({
   }
 
   async function discard() {
-    if (!window.confirm("Discard this capture? Nothing will be logged.")) return;
+    if (!(await confirmAction("Discard this capture? Nothing will be logged.", { confirmLabel: "Discard", danger: true }))) return;
     setBusy(true);
     setError(null);
     try {

@@ -19,6 +19,7 @@ import {
 } from "../lib/sync";
 import type { SyncDevice, SyncStatus } from "../lib/sync";
 import InfoButton from "../components/InfoButton";
+import { confirmAction } from "../lib/confirm";
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -186,14 +187,15 @@ export default function SyncPage() {
     [refresh, replace],
   );
 
-  function askToReplace() {
+  async function askToReplace() {
     if (!status) return;
     const what = describeHeld(status.held);
     if (
-      !window.confirm(
+      !(await confirmAction(
         `This device holds ${what}. Joining replaces all of it with the vault's data.\n\n` +
-          "A complete copy of this device's database is saved first, in Tally's backups folder, so nothing is lost. Continue?",
-      )
+          "A complete copy of this device's database is saved first, in Tally's backups folder, so nothing is lost.",
+        { confirmLabel: "Replace and join", danger: true },
+      ))
     ) {
       return;
     }
@@ -226,7 +228,7 @@ export default function SyncPage() {
   }
 
   async function remove(d: SyncDevice) {
-    if (!window.confirm(`Remove ${d.name} from the vault? It stops syncing; what it already has stays on it.`)) return;
+    if (!(await confirmAction(`Remove ${d.name} from the vault? It stops syncing; what it already has stays on it.`, { confirmLabel: "Remove", danger: true }))) return;
     try {
       await removeDevice(d.id);
       void refresh();

@@ -39,6 +39,7 @@ import ModelRow, { modelSub } from "../components/ModelRow";
 import GarminConnectSettings from "../components/GarminConnectSettings";
 import FoodCountrySetting from "../components/FoodCountrySetting";
 import ThemeSetting from "../components/ThemeSetting";
+import { confirmAction } from "../lib/confirm";
 
 const MAX_LIST_ROWS = 40;
 
@@ -282,7 +283,7 @@ export default function SettingsPage() {
   }
 
   async function removeKey() {
-    if (!window.confirm("Remove the OpenRouter API key from this device?")) return;
+    if (!(await confirmAction("Remove the OpenRouter API key from this device?", { confirmLabel: "Remove", danger: true }))) return;
     setSavedKey(null);
     setTest({ status: "idle" });
     await deleteSetting(SETTING_KEYS.openrouterApiKey);
@@ -410,11 +411,12 @@ export default function SettingsPage() {
 
   async function disconnectHc() {
     if (
-      !window.confirm(
+      !(await confirmAction(
         "Disconnect Health Connect? Already-synced entries stay on this " +
           "device, and you can reconnect anytime. The permission sheet will " +
           "appear again, including “access data history”.",
-      )
+        { confirmLabel: "Disconnect" },
+      ))
     ) {
       return;
     }

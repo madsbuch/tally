@@ -23,6 +23,7 @@ import {
   writtenLabel,
 } from "../lib/manuals";
 import { useGo, useUp } from "../lib/navigation";
+import { confirmAction } from "../lib/confirm";
 
 interface Draft {
   title: string;
@@ -190,7 +191,7 @@ export default function ManualPage() {
 
   async function remove() {
     if (!manual) return;
-    if (!window.confirm(`Delete “${manual.title}” and its history?`)) return;
+    if (!(await confirmAction(`Delete “${manual.title}” and its history?`, { confirmLabel: "Delete", danger: true }))) return;
     await removeManual(manual.id);
     go("/assistant/manuals");
   }

@@ -30,6 +30,7 @@ import InfoButton from "../components/InfoButton";
 import FastingExperiments from "../components/FastingExperiments";
 import { MANUAL_GLYPH, manualPath, onManualsChanged } from "../lib/manuals";
 import { useGo } from "../lib/navigation";
+import { confirmAction } from "../lib/confirm";
 
 const PRESET_HOURS = [13, 16, 18, 24, 48, 72];
 const MIN_HOURS = 1;
@@ -414,7 +415,7 @@ export default function FastingSection() {
   async function handleEnd(fast: Fast, early: boolean) {
     if (
       early &&
-      !window.confirm("End this fast before reaching your goal? It will be saved to history.")
+      !(await confirmAction("End this fast before reaching your goal? It will be saved to history.", { confirmLabel: "End fast" }))
     ) {
       return;
     }
@@ -427,9 +428,10 @@ export default function FastingSection() {
     // A future-dated entry still ends the fast, but not beyond "now".
     const when = new Date(Math.min(new Date(meal.eaten_at).getTime(), Date.now()));
     if (
-      !window.confirm(
+      !(await confirmAction(
         `End this fast at ${formatDayStamp(when, longSpan)}, when "${meal.title}" was eaten? It will be saved to history.`,
-      )
+        { confirmLabel: "End fast" },
+      ))
     ) {
       return;
     }
@@ -472,7 +474,7 @@ export default function FastingSection() {
   }
 
   async function handleDelete(id: string) {
-    if (!window.confirm("Delete this fast from history?")) return;
+    if (!(await confirmAction("Delete this fast from history?", { confirmLabel: "Delete", danger: true }))) return;
     setError(null);
     try {
       await deleteFast(id);

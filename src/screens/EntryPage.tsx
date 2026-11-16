@@ -110,6 +110,7 @@ import MealFastOk from "../components/MealFastOk";
 import GarminWorkoutDetails from "../components/GarminWorkoutDetails";
 import EntryChat from "../components/EntryChat";
 import { parseRowId } from "../lib/ids";
+import { confirmAction } from "../lib/confirm";
 
 type Kind = "meal" | "workout" | "supplement" | "sleep" | "state" | "reading" | "performance";
 
@@ -358,7 +359,7 @@ export default function EntryPage() {
       (reading ? `${READING_DEFS[reading.kind].label} ${formatReading(reading.kind, reading.value, unit)}` : null) ??
       perf?.title ??
       "this entry";
-    if (!window.confirm(`Delete "${what}"? This cannot be undone.`)) return;
+    if (!(await confirmAction(`Delete "${what}"? This cannot be undone.`, { confirmLabel: "Delete", danger: true }))) return;
     try {
       if (meal) {
         await deleteFoodEntry(meal.id);
@@ -692,8 +693,8 @@ export default function EntryPage() {
                 <button
                   className="btn btn-ghost btn-sm"
                   aria-label="Remove this note"
-                  onClick={() => {
-                    if (!window.confirm("Remove this note?")) return;
+                  onClick={async () => {
+                    if (!(await confirmAction("Remove this note?", { confirmLabel: "Remove", danger: true }))) return;
                     void deleteEntryNote(n.id)
                       .then(afterChange)
                       .catch((e: unknown) => setError(errMsg(e)));

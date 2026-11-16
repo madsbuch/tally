@@ -14,6 +14,7 @@ import type { GarminSyncResult } from "../lib/garmin";
 import { garminLinkReport } from "../lib/garminDb";
 import type { GarminLinkReport } from "../lib/garminDb";
 import type { GarminStatus } from "../lib/schemas";
+import { confirmAction } from "../lib/confirm";
 
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
@@ -140,16 +141,16 @@ export default function GarminConnectSettings() {
       if (r) setMessage(resultLine(r));
     });
 
-  const removeKey = () => {
-    if (!window.confirm("Remove the Garmin personal API key? Everything already synced stays.")) return;
+  const removeKey = async () => {
+    if (!(await confirmAction("Remove the Garmin personal API key? Everything already synced stays.", { confirmLabel: "Remove", danger: true }))) return;
     void run(async () => {
       await disconnectGarmin("key");
       setMessage("Key removed. You can also delete it on Garmin Connect Web.");
     });
   };
 
-  const signOut = () => {
-    if (!window.confirm("Sign out of the unofficial Garmin sign-in? Everything already synced stays.")) return;
+  const signOut = async () => {
+    if (!(await confirmAction("Sign out of the unofficial Garmin sign-in? Everything already synced stays.", { confirmLabel: "Sign out" }))) return;
     void run(async () => {
       await disconnectGarmin("signin");
       setMessage("Signed out.");

@@ -26,6 +26,7 @@ import { compressImage, readPhotoDataUrl } from "../lib/photos";
 import { MAX_PDF_PAGES, isPdf, pdfToImages } from "../lib/pdf";
 import InfoButton from "../components/InfoButton";
 import { useUp } from "../lib/navigation";
+import { confirmAction } from "../lib/confirm";
 
 const KIND_LABELS: Record<LibraryDocument["kind"], string> = {
   lab: "Lab result",
@@ -166,7 +167,7 @@ function DocumentSheet({
   }
 
   async function remove() {
-    if (!window.confirm(`Delete "${doc.title}"? This cannot be undone.`)) return;
+    if (!(await confirmAction(`Delete "${doc.title}"? This cannot be undone.`, { confirmLabel: "Delete", danger: true }))) return;
     setBusy(true);
     try {
       await removeDocument(doc);

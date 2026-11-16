@@ -3,8 +3,9 @@
 // so raw `JSON.parse` is banned everywhere else. Runs as part of `bun run build`
 // (and therefore in the Android CI workflow) and standalone via `bun run lint`.
 //
-// The config is deliberately minimal — a parser plus the boundary rule — so a
-// lint failure always means the JSON rule was broken, not style noise. Grow it
+// The config is deliberately minimal — a parser, the boundary rule, and a ban
+// on native dialogs (they don't show in the desktop app) — so a lint failure
+// always means one of those was broken, not style noise. Grow it
 // intentionally if more rules are wanted.
 import tseslint from "typescript-eslint";
 import reactHooks from "eslint-plugin-react-hooks";
@@ -28,6 +29,20 @@ export default tseslint.config(
             "Raw JSON.parse is banned outside src/lib/schemas.ts — route external JSON " +
             "through parseJson + a zod schema there (see CLAUDE.md).",
         },
+        // The desktop app's WebView shows none of these, and confirm()
+        // answers "no": deletes silently did nothing on the computer.
+        ...["confirm", "alert", "prompt"].map((property) => ({
+          object: "window",
+          property,
+          message: "Native dialogs don't show in the desktop app — use confirmAction from src/lib/confirm.ts.",
+        })),
+      ],
+      "no-restricted-globals": [
+        "error",
+        ...["confirm", "alert", "prompt"].map((name) => ({
+          name,
+          message: "Native dialogs don't show in the desktop app — use confirmAction from src/lib/confirm.ts.",
+        })),
       ],
     },
   },

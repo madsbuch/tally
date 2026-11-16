@@ -18,6 +18,7 @@ import {
   removeTrial,
   saveTrial,
 } from "../lib/experiments";
+import { confirmAction } from "../lib/confirm";
 
 function whenLabel(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -70,7 +71,7 @@ export default function TrialCard({
   }
 
   async function remove() {
-    if (!window.confirm("Delete this trial?")) return;
+    if (!(await confirmAction("Delete this trial?", { confirmLabel: "Delete", danger: true }))) return;
     await removeTrial(t.id);
   }
 

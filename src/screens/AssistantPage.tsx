@@ -21,6 +21,7 @@ import { markCheckinRead, useUnreadCheckin } from "../lib/coachInbox";
 import { chatPath, parseChatId, useGo, useUp } from "../lib/navigation";
 import InfoButton from "../components/InfoButton";
 import CoachShelf from "../components/CoachShelf";
+import { confirmAction } from "../lib/confirm";
 
 const SUGGESTIONS = [
   "How is my week going?",
@@ -209,7 +210,7 @@ export default function AssistantPage() {
   }, [input, inChat]);
 
   async function removeChat(id: string) {
-    if (!window.confirm("Delete this chat?")) return;
+    if (!(await confirmAction("Delete this chat?", { confirmLabel: "Delete", danger: true }))) return;
     await deleteChat(id);
     setHistory(await listChats());
   }
