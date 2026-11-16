@@ -26,6 +26,8 @@ export async function exportDatabase(): Promise<ExportResult> {
   // Path comes from our own Rust command; escape quotes for the SQL literal
   // anyway (VACUUM INTO's filename can't always be bound as a parameter).
   await conn.execute(`VACUUM INTO '${path.replace(/'/g, "''")}'`);
+  // Marked as a copy: should it ever be put back in place, sync notices.
+  await invoke("mark_db_copy", { path }).catch((e) => console.warn("Marking the export failed", e));
 
   if (isAndroid()) {
     await invoke("plugin:share|share_file", {

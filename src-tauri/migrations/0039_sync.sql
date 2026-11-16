@@ -33,7 +33,8 @@ CREATE TABLE `sync_state` (
 	`applying` integer DEFAULT 0 NOT NULL,
 	`vault_id` text,
 	`secret_key` blob,
-	`public_key` blob
+	`public_key` blob,
+	`instance` text
 );
 --> statement-breakpoint
 CREATE TABLE `sync_vv` (
@@ -50,6 +51,12 @@ CREATE TABLE `vault_devices` (
 	`public_key` text NOT NULL,
 	`platform` text NOT NULL,
 	`added_at` text NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `vault_revocations` (
+	`public_key` text PRIMARY KEY NOT NULL,
+	`device_id` text NOT NULL,
+	`revoked_at` text NOT NULL
 );--> statement-breakpoint
 INSERT INTO `sync_state` (`id`, `device_id`) VALUES (1, lower(printf('%s-%s-%s-%s-%s',
   hex(randomblob(4)), hex(randomblob(2)), hex(randomblob(2)), hex(randomblob(2)), hex(randomblob(6)))));--> statement-breakpoint
@@ -60,6 +67,12 @@ INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq)
   FROM `vault_devices` t, sync_state s WHERE s.id = 1;--> statement-breakpoint
 INSERT INTO sync_vv (tbl, pk, device, counter)
   SELECT 'vault_devices', t.`id`, s.device_id, 1 FROM `vault_devices` t, sync_state s WHERE s.id = 1;--> statement-breakpoint
+INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq)
+  SELECT 'vault_revocations', t.`public_key`, printf('%013d.%06d', CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER), 0), s.device_id, 0,
+    (SELECT coalesce(max(seq), 0) FROM sync_rows) + row_number() OVER (ORDER BY t.`public_key`)
+  FROM `vault_revocations` t, sync_state s WHERE s.id = 1;--> statement-breakpoint
+INSERT INTO sync_vv (tbl, pk, device, counter)
+  SELECT 'vault_revocations', t.`public_key`, s.device_id, 1 FROM `vault_revocations` t, sync_state s WHERE s.id = 1;--> statement-breakpoint
 INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq)
   SELECT 'settings', t.`key`, printf('%013d.%06d', CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER), 0), s.device_id, 0,
     (SELECT coalesce(max(seq), 0) FROM sync_rows) + row_number() OVER (ORDER BY t.`key`)
@@ -274,8 +287,8 @@ UPDATE sync_state SET seq = (SELECT coalesce(max(seq), 0) FROM sync_rows), hlc_m
 CREATE TRIGGER `sync_vault_devices_ai` AFTER INSERT ON `vault_devices` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -288,11 +301,11 @@ BEGIN
     SELECT 'vault_devices', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_vault_devices_au` AFTER UPDATE ON `vault_devices` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_vault_devices_au` AFTER UPDATE ON `vault_devices` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`name` IS NOT NEW.`name` OR OLD.`public_key` IS NOT NEW.`public_key` OR OLD.`platform` IS NOT NEW.`platform` OR OLD.`added_at` IS NOT NEW.`added_at`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -308,8 +321,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_vault_devices_ad` AFTER DELETE ON `vault_devices` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -322,11 +335,62 @@ BEGIN
     SELECT 'vault_devices', OLD.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
+CREATE TRIGGER `sync_vault_revocations_ai` AFTER INSERT ON `vault_revocations` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+BEGIN
+  UPDATE sync_state SET
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
+    seq = seq + 1
+  WHERE id = 1;
+  INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
+    SELECT 'vault_revocations', NEW.`public_key`, printf('%013d.%06d', hlc_ms, hlc_counter), device_id, 0, seq, NULL
+    FROM sync_state WHERE id = 1
+    ON CONFLICT (tbl, pk) DO UPDATE SET
+      hlc = excluded.hlc, origin = excluded.origin, deleted = excluded.deleted,
+      seq = excluded.seq, from_peer = NULL;
+  INSERT INTO sync_vv (tbl, pk, device, counter)
+    SELECT 'vault_revocations', NEW.`public_key`, device_id, 1 FROM sync_state WHERE id = 1
+    ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
+END;--> statement-breakpoint
+CREATE TRIGGER `sync_vault_revocations_au` AFTER UPDATE ON `vault_revocations` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`public_key` IS NOT NEW.`public_key` OR OLD.`device_id` IS NOT NEW.`device_id` OR OLD.`revoked_at` IS NOT NEW.`revoked_at`)
+BEGIN
+  UPDATE sync_state SET
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
+    seq = seq + 1
+  WHERE id = 1;
+  INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
+    SELECT 'vault_revocations', NEW.`public_key`, printf('%013d.%06d', hlc_ms, hlc_counter), device_id, 0, seq, NULL
+    FROM sync_state WHERE id = 1
+    ON CONFLICT (tbl, pk) DO UPDATE SET
+      hlc = excluded.hlc, origin = excluded.origin, deleted = excluded.deleted,
+      seq = excluded.seq, from_peer = NULL;
+  INSERT INTO sync_vv (tbl, pk, device, counter)
+    SELECT 'vault_revocations', NEW.`public_key`, device_id, 1 FROM sync_state WHERE id = 1
+    ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
+END;--> statement-breakpoint
+CREATE TRIGGER `sync_vault_revocations_ad` AFTER DELETE ON `vault_revocations` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+BEGIN
+  UPDATE sync_state SET
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
+    seq = seq + 1
+  WHERE id = 1;
+  INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
+    SELECT 'vault_revocations', OLD.`public_key`, printf('%013d.%06d', hlc_ms, hlc_counter), device_id, 1, seq, NULL
+    FROM sync_state WHERE id = 1
+    ON CONFLICT (tbl, pk) DO UPDATE SET
+      hlc = excluded.hlc, origin = excluded.origin, deleted = excluded.deleted,
+      seq = excluded.seq, from_peer = NULL;
+  INSERT INTO sync_vv (tbl, pk, device, counter)
+    SELECT 'vault_revocations', OLD.`public_key`, device_id, 1 FROM sync_state WHERE id = 1
+    ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
+END;--> statement-breakpoint
 CREATE TRIGGER `sync_settings_ai` AFTER INSERT ON `settings` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -339,11 +403,11 @@ BEGIN
     SELECT 'settings', NEW.`key`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_settings_au` AFTER UPDATE ON `settings` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_settings_au` AFTER UPDATE ON `settings` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`key` IS NOT NEW.`key` OR OLD.`value` IS NOT NEW.`value`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -359,8 +423,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_settings_ad` AFTER DELETE ON `settings` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -376,8 +440,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_supplements_ai` AFTER INSERT ON `supplements` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -390,11 +454,11 @@ BEGIN
     SELECT 'supplements', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_supplements_au` AFTER UPDATE ON `supplements` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_supplements_au` AFTER UPDATE ON `supplements` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`name` IS NOT NEW.`name` OR OLD.`dose_amount` IS NOT NEW.`dose_amount` OR OLD.`dose_unit` IS NOT NEW.`dose_unit` OR OLD.`nutrients` IS NOT NEW.`nutrients` OR OLD.`notes` IS NOT NEW.`notes` OR OLD.`archived` IS NOT NEW.`archived`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -410,8 +474,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_supplements_ad` AFTER DELETE ON `supplements` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -427,8 +491,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_documents_ai` AFTER INSERT ON `documents` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -441,11 +505,11 @@ BEGIN
     SELECT 'documents', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_documents_au` AFTER UPDATE ON `documents` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_documents_au` AFTER UPDATE ON `documents` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`created_at` IS NOT NEW.`created_at` OR OLD.`document_date` IS NOT NEW.`document_date` OR OLD.`title` IS NOT NEW.`title` OR OLD.`kind` IS NOT NEW.`kind` OR OLD.`photo_path` IS NOT NEW.`photo_path` OR OLD.`note` IS NOT NEW.`note` OR OLD.`summary` IS NOT NEW.`summary` OR OLD.`extracted` IS NOT NEW.`extracted` OR OLD.`status` IS NOT NEW.`status` OR OLD.`error` IS NOT NEW.`error` OR OLD.`model_id` IS NOT NEW.`model_id` OR OLD.`page_paths` IS NOT NEW.`page_paths`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -461,8 +525,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_documents_ad` AFTER DELETE ON `documents` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -478,8 +542,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_manuals_ai` AFTER INSERT ON `manuals` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -492,11 +556,11 @@ BEGIN
     SELECT 'manuals', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_manuals_au` AFTER UPDATE ON `manuals` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_manuals_au` AFTER UPDATE ON `manuals` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`title` IS NOT NEW.`title` OR OLD.`situation` IS NOT NEW.`situation` OR OLD.`applies_when` IS NOT NEW.`applies_when` OR OLD.`body` IS NOT NEW.`body` OR OLD.`edited_by` IS NOT NEW.`edited_by` OR OLD.`created_at` IS NOT NEW.`created_at` OR OLD.`updated_at` IS NOT NEW.`updated_at`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -512,8 +576,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_manuals_ad` AFTER DELETE ON `manuals` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -529,8 +593,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_experiments_ai` AFTER INSERT ON `experiments` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -543,11 +607,11 @@ BEGIN
     SELECT 'experiments', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_experiments_au` AFTER UPDATE ON `experiments` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_experiments_au` AFTER UPDATE ON `experiments` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`title` IS NOT NEW.`title` OR OLD.`hypothesis` IS NOT NEW.`hypothesis` OR OLD.`applies_when` IS NOT NEW.`applies_when` OR OLD.`arms` IS NOT NEW.`arms` OR OLD.`measures` IS NOT NEW.`measures` OR OLD.`assignment` IS NOT NEW.`assignment` OR OLD.`target_per_arm` IS NOT NEW.`target_per_arm` OR OLD.`status` IS NOT NEW.`status` OR OLD.`conclusion` IS NOT NEW.`conclusion` OR OLD.`manual_id` IS NOT NEW.`manual_id` OR OLD.`created_at` IS NOT NEW.`created_at` OR OLD.`updated_at` IS NOT NEW.`updated_at` OR OLD.`ended_at` IS NOT NEW.`ended_at`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -563,8 +627,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_experiments_ad` AFTER DELETE ON `experiments` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -580,8 +644,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_chats_ai` AFTER INSERT ON `chats` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -594,11 +658,11 @@ BEGIN
     SELECT 'chats', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_chats_au` AFTER UPDATE ON `chats` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_chats_au` AFTER UPDATE ON `chats` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`created_at` IS NOT NEW.`created_at` OR OLD.`updated_at` IS NOT NEW.`updated_at` OR OLD.`title` IS NOT NEW.`title` OR OLD.`messages` IS NOT NEW.`messages`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -614,8 +678,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_chats_ad` AFTER DELETE ON `chats` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -631,8 +695,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_fasts_ai` AFTER INSERT ON `fasts` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -645,11 +709,11 @@ BEGIN
     SELECT 'fasts', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_fasts_au` AFTER UPDATE ON `fasts` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_fasts_au` AFTER UPDATE ON `fasts` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`started_at` IS NOT NEW.`started_at` OR OLD.`goal_hours` IS NOT NEW.`goal_hours` OR OLD.`purpose` IS NOT NEW.`purpose` OR OLD.`ended_at` IS NOT NEW.`ended_at` OR OLD.`start_day` IS NOT NEW.`start_day` OR OLD.`end_day` IS NOT NEW.`end_day` OR OLD.`tz_offset_min` IS NOT NEW.`tz_offset_min`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -665,8 +729,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_fasts_ad` AFTER DELETE ON `fasts` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -682,8 +746,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_food_entries_ai` AFTER INSERT ON `food_entries` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -696,11 +760,11 @@ BEGIN
     SELECT 'food_entries', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_food_entries_au` AFTER UPDATE ON `food_entries` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_food_entries_au` AFTER UPDATE ON `food_entries` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`eaten_at` IS NOT NEW.`eaten_at` OR OLD.`title` IS NOT NEW.`title` OR OLD.`description` IS NOT NEW.`description` OR OLD.`photo_path` IS NOT NEW.`photo_path` OR OLD.`nutrients` IS NOT NEW.`nutrients` OR OLD.`model_id` IS NOT NEW.`model_id` OR OLD.`icon` IS NOT NEW.`icon` OR OLD.`day` IS NOT NEW.`day` OR OLD.`tz_offset_min` IS NOT NEW.`tz_offset_min` OR OLD.`fast_ok_note` IS NOT NEW.`fast_ok_note`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -716,8 +780,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_food_entries_ad` AFTER DELETE ON `food_entries` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -733,8 +797,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_workouts_ai` AFTER INSERT ON `workouts` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -747,11 +811,11 @@ BEGIN
     SELECT 'workouts', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_workouts_au` AFTER UPDATE ON `workouts` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_workouts_au` AFTER UPDATE ON `workouts` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`performed_at` IS NOT NEW.`performed_at` OR OLD.`title` IS NOT NEW.`title` OR OLD.`description` IS NOT NEW.`description` OR OLD.`photo_path` IS NOT NEW.`photo_path` OR OLD.`calories_burned` IS NOT NEW.`calories_burned` OR OLD.`duration_min` IS NOT NEW.`duration_min` OR OLD.`avg_hr` IS NOT NEW.`avg_hr` OR OLD.`zone2_min` IS NOT NEW.`zone2_min` OR OLD.`cardio` IS NOT NEW.`cardio` OR OLD.`cardio_by_hand` IS NOT NEW.`cardio_by_hand` OR OLD.`model_id` IS NOT NEW.`model_id` OR OLD.`icon` IS NOT NEW.`icon` OR OLD.`source` IS NOT NEW.`source` OR OLD.`external_id` IS NOT NEW.`external_id` OR OLD.`day` IS NOT NEW.`day` OR OLD.`tz_offset_min` IS NOT NEW.`tz_offset_min` OR OLD.`source_record_id` IS NOT NEW.`source_record_id`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -767,8 +831,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_workouts_ad` AFTER DELETE ON `workouts` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -784,8 +848,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_sleep_sessions_ai` AFTER INSERT ON `sleep_sessions` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -798,11 +862,11 @@ BEGIN
     SELECT 'sleep_sessions', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_sleep_sessions_au` AFTER UPDATE ON `sleep_sessions` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_sleep_sessions_au` AFTER UPDATE ON `sleep_sessions` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`external_id` IS NOT NEW.`external_id` OR OLD.`started_at` IS NOT NEW.`started_at` OR OLD.`ended_at` IS NOT NEW.`ended_at` OR OLD.`duration_min` IS NOT NEW.`duration_min` OR OLD.`deep_min` IS NOT NEW.`deep_min` OR OLD.`rem_min` IS NOT NEW.`rem_min` OR OLD.`light_min` IS NOT NEW.`light_min` OR OLD.`awake_min` IS NOT NEW.`awake_min` OR OLD.`source` IS NOT NEW.`source` OR OLD.`day` IS NOT NEW.`day` OR OLD.`tz_offset_min` IS NOT NEW.`tz_offset_min` OR OLD.`source_record_id` IS NOT NEW.`source_record_id`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -818,8 +882,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_sleep_sessions_ad` AFTER DELETE ON `sleep_sessions` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -835,8 +899,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_state_logs_ai` AFTER INSERT ON `state_logs` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -849,11 +913,11 @@ BEGIN
     SELECT 'state_logs', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_state_logs_au` AFTER UPDATE ON `state_logs` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_state_logs_au` AFTER UPDATE ON `state_logs` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`logged_at` IS NOT NEW.`logged_at` OR OLD.`note` IS NOT NEW.`note` OR OLD.`tagging` IS NOT NEW.`tagging` OR OLD.`day` IS NOT NEW.`day` OR OLD.`tz_offset_min` IS NOT NEW.`tz_offset_min`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -869,8 +933,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_state_logs_ad` AFTER DELETE ON `state_logs` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -886,8 +950,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_state_categories_ai` AFTER INSERT ON `state_categories` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -900,11 +964,11 @@ BEGIN
     SELECT 'state_categories', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_state_categories_au` AFTER UPDATE ON `state_categories` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_state_categories_au` AFTER UPDATE ON `state_categories` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`label` IS NOT NEW.`label` OR OLD.`icon` IS NOT NEW.`icon` OR OLD.`created_at` IS NOT NEW.`created_at`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -920,8 +984,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_state_categories_ad` AFTER DELETE ON `state_categories` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -937,8 +1001,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_performance_logs_ai` AFTER INSERT ON `performance_logs` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -951,11 +1015,11 @@ BEGIN
     SELECT 'performance_logs', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_performance_logs_au` AFTER UPDATE ON `performance_logs` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_performance_logs_au` AFTER UPDATE ON `performance_logs` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`measured_at` IS NOT NEW.`measured_at` OR OLD.`title` IS NOT NEW.`title` OR OLD.`note` IS NOT NEW.`note` OR OLD.`photo_path` IS NOT NEW.`photo_path` OR OLD.`model_id` IS NOT NEW.`model_id` OR OLD.`day` IS NOT NEW.`day` OR OLD.`tz_offset_min` IS NOT NEW.`tz_offset_min`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -971,8 +1035,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_performance_logs_ad` AFTER DELETE ON `performance_logs` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -988,8 +1052,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_achievements_ai` AFTER INSERT ON `achievements` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1002,11 +1066,11 @@ BEGIN
     SELECT 'achievements', NEW.`key`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_achievements_au` AFTER UPDATE ON `achievements` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_achievements_au` AFTER UPDATE ON `achievements` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`key` IS NOT NEW.`key` OR OLD.`unlocked_at` IS NOT NEW.`unlocked_at`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1022,8 +1086,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_achievements_ad` AFTER DELETE ON `achievements` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1039,8 +1103,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_ai_usage_ai` AFTER INSERT ON `ai_usage` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1053,11 +1117,11 @@ BEGIN
     SELECT 'ai_usage', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_ai_usage_au` AFTER UPDATE ON `ai_usage` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_ai_usage_au` AFTER UPDATE ON `ai_usage` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`created_at` IS NOT NEW.`created_at` OR OLD.`day` IS NOT NEW.`day` OR OLD.`source` IS NOT NEW.`source` OR OLD.`chat_id` IS NOT NEW.`chat_id` OR OLD.`model` IS NOT NEW.`model` OR OLD.`requests` IS NOT NEW.`requests` OR OLD.`prompt_tokens` IS NOT NEW.`prompt_tokens` OR OLD.`cached_tokens` IS NOT NEW.`cached_tokens` OR OLD.`completion_tokens` IS NOT NEW.`completion_tokens` OR OLD.`cost_usd` IS NOT NEW.`cost_usd`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1073,8 +1137,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_ai_usage_ad` AFTER DELETE ON `ai_usage` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1090,8 +1154,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_blood_readings_ai` AFTER INSERT ON `blood_readings` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1104,11 +1168,11 @@ BEGIN
     SELECT 'blood_readings', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_blood_readings_au` AFTER UPDATE ON `blood_readings` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_blood_readings_au` AFTER UPDATE ON `blood_readings` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`measured_at` IS NOT NEW.`measured_at` OR OLD.`kind` IS NOT NEW.`kind` OR OLD.`value` IS NOT NEW.`value` OR OLD.`note` IS NOT NEW.`note` OR OLD.`day` IS NOT NEW.`day` OR OLD.`tz_offset_min` IS NOT NEW.`tz_offset_min` OR OLD.`photo_path` IS NOT NEW.`photo_path`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1124,8 +1188,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_blood_readings_ad` AFTER DELETE ON `blood_readings` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1141,8 +1205,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_captures_ai` AFTER INSERT ON `captures` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1155,11 +1219,11 @@ BEGIN
     SELECT 'captures', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_captures_au` AFTER UPDATE ON `captures` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_captures_au` AFTER UPDATE ON `captures` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`created_at` IS NOT NEW.`created_at` OR OLD.`day` IS NOT NEW.`day` OR OLD.`note` IS NOT NEW.`note` OR OLD.`photo_path` IS NOT NEW.`photo_path` OR OLD.`status` IS NOT NEW.`status` OR OLD.`error` IS NOT NEW.`error`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1175,8 +1239,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_captures_ad` AFTER DELETE ON `captures` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1192,8 +1256,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_coach_memory_ai` AFTER INSERT ON `coach_memory` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1206,11 +1270,11 @@ BEGIN
     SELECT 'coach_memory', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_coach_memory_au` AFTER UPDATE ON `coach_memory` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_coach_memory_au` AFTER UPDATE ON `coach_memory` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`kind` IS NOT NEW.`kind` OR OLD.`text` IS NOT NEW.`text` OR OLD.`status` IS NOT NEW.`status` OR OLD.`follow_up_on` IS NOT NEW.`follow_up_on` OR OLD.`created_at` IS NOT NEW.`created_at` OR OLD.`updated_at` IS NOT NEW.`updated_at`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1226,8 +1290,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_coach_memory_ad` AFTER DELETE ON `coach_memory` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1243,8 +1307,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_coach_runs_ai` AFTER INSERT ON `coach_runs` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1257,11 +1321,11 @@ BEGIN
     SELECT 'coach_runs', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_coach_runs_au` AFTER UPDATE ON `coach_runs` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_coach_runs_au` AFTER UPDATE ON `coach_runs` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`trigger_key` IS NOT NEW.`trigger_key` OR OLD.`day` IS NOT NEW.`day` OR OLD.`created_at` IS NOT NEW.`created_at` OR OLD.`chat_id` IS NOT NEW.`chat_id`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1277,8 +1341,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_coach_runs_ad` AFTER DELETE ON `coach_runs` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1294,8 +1358,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_day_goal_adjustments_ai` AFTER INSERT ON `day_goal_adjustments` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1308,11 +1372,11 @@ BEGIN
     SELECT 'day_goal_adjustments', NEW.`day`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_day_goal_adjustments_au` AFTER UPDATE ON `day_goal_adjustments` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_day_goal_adjustments_au` AFTER UPDATE ON `day_goal_adjustments` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`day` IS NOT NEW.`day` OR OLD.`delta_kcal` IS NOT NEW.`delta_kcal` OR OLD.`note` IS NOT NEW.`note` OR OLD.`updated_at` IS NOT NEW.`updated_at`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1328,8 +1392,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_day_goal_adjustments_ad` AFTER DELETE ON `day_goal_adjustments` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1345,8 +1409,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_entry_messages_ai` AFTER INSERT ON `entry_messages` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1359,11 +1423,11 @@ BEGIN
     SELECT 'entry_messages', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_entry_messages_au` AFTER UPDATE ON `entry_messages` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_entry_messages_au` AFTER UPDATE ON `entry_messages` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`entry_kind` IS NOT NEW.`entry_kind` OR OLD.`entry_id` IS NOT NEW.`entry_id` OR OLD.`role` IS NOT NEW.`role` OR OLD.`text` IS NOT NEW.`text` OR OLD.`changes` IS NOT NEW.`changes` OR OLD.`before_entry` IS NOT NEW.`before_entry` OR OLD.`created_at` IS NOT NEW.`created_at`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1379,8 +1443,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_entry_messages_ad` AFTER DELETE ON `entry_messages` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1396,8 +1460,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_entry_notes_ai` AFTER INSERT ON `entry_notes` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1410,11 +1474,11 @@ BEGIN
     SELECT 'entry_notes', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_entry_notes_au` AFTER UPDATE ON `entry_notes` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_entry_notes_au` AFTER UPDATE ON `entry_notes` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`entry_kind` IS NOT NEW.`entry_kind` OR OLD.`entry_id` IS NOT NEW.`entry_id` OR OLD.`text` IS NOT NEW.`text` OR OLD.`created_at` IS NOT NEW.`created_at`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1430,8 +1494,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_entry_notes_ad` AFTER DELETE ON `entry_notes` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1447,8 +1511,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_experiment_trials_ai` AFTER INSERT ON `experiment_trials` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1461,11 +1525,11 @@ BEGIN
     SELECT 'experiment_trials', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_experiment_trials_au` AFTER UPDATE ON `experiment_trials` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_experiment_trials_au` AFTER UPDATE ON `experiment_trials` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`experiment_id` IS NOT NEW.`experiment_id` OR OLD.`arm` IS NOT NEW.`arm` OR OLD.`fast_id` IS NOT NEW.`fast_id` OR OLD.`started_at` IS NOT NEW.`started_at` OR OLD.`day` IS NOT NEW.`day` OR OLD.`tz_offset_min` IS NOT NEW.`tz_offset_min` OR OLD.`ratings` IS NOT NEW.`ratings` OR OLD.`note` IS NOT NEW.`note` OR OLD.`excluded` IS NOT NEW.`excluded` OR OLD.`created_at` IS NOT NEW.`created_at` OR OLD.`updated_at` IS NOT NEW.`updated_at`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1481,8 +1545,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_experiment_trials_ad` AFTER DELETE ON `experiment_trials` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1498,8 +1562,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_garmin_activities_ai` AFTER INSERT ON `garmin_activities` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1512,11 +1576,11 @@ BEGIN
     SELECT 'garmin_activities', NEW.`activity_id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_garmin_activities_au` AFTER UPDATE ON `garmin_activities` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_garmin_activities_au` AFTER UPDATE ON `garmin_activities` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`activity_id` IS NOT NEW.`activity_id` OR OLD.`workout_id` IS NOT NEW.`workout_id` OR OLD.`dismissed` IS NOT NEW.`dismissed` OR OLD.`linked_by` IS NOT NEW.`linked_by` OR OLD.`started_at` IS NOT NEW.`started_at` OR OLD.`duration_sec` IS NOT NEW.`duration_sec` OR OLD.`type_key` IS NOT NEW.`type_key` OR OLD.`name` IS NOT NEW.`name` OR OLD.`distance_m` IS NOT NEW.`distance_m` OR OLD.`avg_hr` IS NOT NEW.`avg_hr` OR OLD.`max_hr` IS NOT NEW.`max_hr` OR OLD.`calories` IS NOT NEW.`calories` OR OLD.`aerobic_te` IS NOT NEW.`aerobic_te` OR OLD.`anaerobic_te` IS NOT NEW.`anaerobic_te` OR OLD.`te_label` IS NOT NEW.`te_label` OR OLD.`training_load` IS NOT NEW.`training_load` OR OLD.`avg_power` IS NOT NEW.`avg_power` OR OLD.`max_power` IS NOT NEW.`max_power` OR OLD.`norm_power` IS NOT NEW.`norm_power` OR OLD.`avg_cadence` IS NOT NEW.`avg_cadence` OR OLD.`elevation_gain_m` IS NOT NEW.`elevation_gain_m` OR OLD.`avg_speed_mps` IS NOT NEW.`avg_speed_mps` OR OLD.`vo2_max` IS NOT NEW.`vo2_max` OR OLD.`zone_secs` IS NOT NEW.`zone_secs` OR OLD.`laps` IS NOT NEW.`laps` OR OLD.`summary` IS NOT NEW.`summary` OR OLD.`updated_at` IS NOT NEW.`updated_at`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1532,8 +1596,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_garmin_activities_ad` AFTER DELETE ON `garmin_activities` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1549,8 +1613,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_garmin_days_ai` AFTER INSERT ON `garmin_days` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1563,11 +1627,11 @@ BEGIN
     SELECT 'garmin_days', NEW.`day`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_garmin_days_au` AFTER UPDATE ON `garmin_days` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_garmin_days_au` AFTER UPDATE ON `garmin_days` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`day` IS NOT NEW.`day` OR OLD.`steps` IS NOT NEW.`steps` OR OLD.`calories_total` IS NOT NEW.`calories_total` OR OLD.`calories_active` IS NOT NEW.`calories_active` OR OLD.`resting_hr` IS NOT NEW.`resting_hr` OR OLD.`min_hr` IS NOT NEW.`min_hr` OR OLD.`max_hr` IS NOT NEW.`max_hr` OR OLD.`stress_avg` IS NOT NEW.`stress_avg` OR OLD.`stress_max` IS NOT NEW.`stress_max` OR OLD.`body_battery_high` IS NOT NEW.`body_battery_high` OR OLD.`body_battery_low` IS NOT NEW.`body_battery_low` OR OLD.`body_battery_charged` IS NOT NEW.`body_battery_charged` OR OLD.`body_battery_drained` IS NOT NEW.`body_battery_drained` OR OLD.`body_battery_wake` IS NOT NEW.`body_battery_wake` OR OLD.`respiration_avg` IS NOT NEW.`respiration_avg` OR OLD.`spo2_avg` IS NOT NEW.`spo2_avg` OR OLD.`spo2_low` IS NOT NEW.`spo2_low` OR OLD.`floors_up` IS NOT NEW.`floors_up` OR OLD.`intensity_min_moderate` IS NOT NEW.`intensity_min_moderate` OR OLD.`intensity_min_vigorous` IS NOT NEW.`intensity_min_vigorous` OR OLD.`readiness_score` IS NOT NEW.`readiness_score` OR OLD.`readiness_level` IS NOT NEW.`readiness_level` OR OLD.`training_status` IS NOT NEW.`training_status` OR OLD.`acute_load` IS NOT NEW.`acute_load` OR OLD.`chronic_load` IS NOT NEW.`chronic_load` OR OLD.`hrv_last_night` IS NOT NEW.`hrv_last_night` OR OLD.`hrv_weekly_avg` IS NOT NEW.`hrv_weekly_avg` OR OLD.`hrv_status` IS NOT NEW.`hrv_status` OR OLD.`vo2_max` IS NOT NEW.`vo2_max` OR OLD.`weight_kg` IS NOT NEW.`weight_kg` OR OLD.`sleep_score` IS NOT NEW.`sleep_score` OR OLD.`sleep_stress` IS NOT NEW.`sleep_stress` OR OLD.`sleep_respiration` IS NOT NEW.`sleep_respiration` OR OLD.`sleep_body_battery` IS NOT NEW.`sleep_body_battery` OR OLD.`sleep_id` IS NOT NEW.`sleep_id` OR OLD.`sleep_started_at` IS NOT NEW.`sleep_started_at` OR OLD.`sleep_ended_at` IS NOT NEW.`sleep_ended_at` OR OLD.`sleep_tz_offset_min` IS NOT NEW.`sleep_tz_offset_min` OR OLD.`sleep_deep_min` IS NOT NEW.`sleep_deep_min` OR OLD.`sleep_rem_min` IS NOT NEW.`sleep_rem_min` OR OLD.`sleep_light_min` IS NOT NEW.`sleep_light_min` OR OLD.`sleep_awake_min` IS NOT NEW.`sleep_awake_min` OR OLD.`raw` IS NOT NEW.`raw` OR OLD.`fetched_at` IS NOT NEW.`fetched_at`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1583,8 +1647,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_garmin_days_ad` AFTER DELETE ON `garmin_days` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1600,8 +1664,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_health_metrics_ai` AFTER INSERT ON `health_metrics` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1614,11 +1678,11 @@ BEGIN
     SELECT 'health_metrics', NEW.`day`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_health_metrics_au` AFTER UPDATE ON `health_metrics` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_health_metrics_au` AFTER UPDATE ON `health_metrics` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`day` IS NOT NEW.`day` OR OLD.`steps` IS NOT NEW.`steps` OR OLD.`resting_hr` IS NOT NEW.`resting_hr` OR OLD.`hrv_ms` IS NOT NEW.`hrv_ms` OR OLD.`spo2_pct` IS NOT NEW.`spo2_pct` OR OLD.`weight_kg` IS NOT NEW.`weight_kg` OR OLD.`vo2_max` IS NOT NEW.`vo2_max` OR OLD.`calories_total` IS NOT NEW.`calories_total` OR OLD.`updated_at` IS NOT NEW.`updated_at`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1634,8 +1698,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_health_metrics_ad` AFTER DELETE ON `health_metrics` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1651,8 +1715,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_incomplete_days_ai` AFTER INSERT ON `incomplete_days` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1665,11 +1729,11 @@ BEGIN
     SELECT 'incomplete_days', NEW.`day`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_incomplete_days_au` AFTER UPDATE ON `incomplete_days` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_incomplete_days_au` AFTER UPDATE ON `incomplete_days` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`day` IS NOT NEW.`day` OR OLD.`updated_at` IS NOT NEW.`updated_at`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1685,8 +1749,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_incomplete_days_ad` AFTER DELETE ON `incomplete_days` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1702,8 +1766,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_manual_revisions_ai` AFTER INSERT ON `manual_revisions` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1716,11 +1780,11 @@ BEGIN
     SELECT 'manual_revisions', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_manual_revisions_au` AFTER UPDATE ON `manual_revisions` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_manual_revisions_au` AFTER UPDATE ON `manual_revisions` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`manual_id` IS NOT NEW.`manual_id` OR OLD.`title` IS NOT NEW.`title` OR OLD.`situation` IS NOT NEW.`situation` OR OLD.`body` IS NOT NEW.`body` OR OLD.`edited_by` IS NOT NEW.`edited_by` OR OLD.`written_at` IS NOT NEW.`written_at`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1736,8 +1800,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_manual_revisions_ad` AFTER DELETE ON `manual_revisions` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1753,8 +1817,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_performance_stats_ai` AFTER INSERT ON `performance_stats` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1767,11 +1831,11 @@ BEGIN
     SELECT 'performance_stats', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_performance_stats_au` AFTER UPDATE ON `performance_stats` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_performance_stats_au` AFTER UPDATE ON `performance_stats` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`log_id` IS NOT NEW.`log_id` OR OLD.`metric` IS NOT NEW.`metric` OR OLD.`label` IS NOT NEW.`label` OR OLD.`value` IS NOT NEW.`value` OR OLD.`unit` IS NOT NEW.`unit`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1787,8 +1851,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_performance_stats_ad` AFTER DELETE ON `performance_stats` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1804,8 +1868,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_progress_photos_ai` AFTER INSERT ON `progress_photos` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1818,11 +1882,11 @@ BEGIN
     SELECT 'progress_photos', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_progress_photos_au` AFTER UPDATE ON `progress_photos` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_progress_photos_au` AFTER UPDATE ON `progress_photos` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`taken_at` IS NOT NEW.`taken_at` OR OLD.`day` IS NOT NEW.`day` OR OLD.`tz_offset_min` IS NOT NEW.`tz_offset_min` OR OLD.`photo_path` IS NOT NEW.`photo_path`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1838,8 +1902,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_progress_photos_ad` AFTER DELETE ON `progress_photos` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1855,8 +1919,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_saved_meals_ai` AFTER INSERT ON `saved_meals` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1869,11 +1933,11 @@ BEGIN
     SELECT 'saved_meals', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_saved_meals_au` AFTER UPDATE ON `saved_meals` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_saved_meals_au` AFTER UPDATE ON `saved_meals` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`name` IS NOT NEW.`name` OR OLD.`description` IS NOT NEW.`description` OR OLD.`nutrients` IS NOT NEW.`nutrients` OR OLD.`icon` IS NOT NEW.`icon` OR OLD.`source_entry_id` IS NOT NEW.`source_entry_id` OR OLD.`created_at` IS NOT NEW.`created_at` OR OLD.`updated_at` IS NOT NEW.`updated_at`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1889,8 +1953,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_saved_meals_ad` AFTER DELETE ON `saved_meals` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1906,8 +1970,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_state_log_tags_ai` AFTER INSERT ON `state_log_tags` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1920,11 +1984,11 @@ BEGIN
     SELECT 'state_log_tags', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_state_log_tags_au` AFTER UPDATE ON `state_log_tags` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_state_log_tags_au` AFTER UPDATE ON `state_log_tags` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`log_id` IS NOT NEW.`log_id` OR OLD.`label` IS NOT NEW.`label` OR OLD.`icon` IS NOT NEW.`icon`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1940,8 +2004,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_state_log_tags_ad` AFTER DELETE ON `state_log_tags` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1957,8 +2021,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_supplement_logs_ai` AFTER INSERT ON `supplement_logs` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1971,11 +2035,11 @@ BEGIN
     SELECT 'supplement_logs', NEW.`id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_supplement_logs_au` AFTER UPDATE ON `supplement_logs` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_supplement_logs_au` AFTER UPDATE ON `supplement_logs` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`id` IS NOT NEW.`id` OR OLD.`supplement_id` IS NOT NEW.`supplement_id` OR OLD.`taken_at` IS NOT NEW.`taken_at` OR OLD.`amount` IS NOT NEW.`amount` OR OLD.`day` IS NOT NEW.`day` OR OLD.`tz_offset_min` IS NOT NEW.`tz_offset_min`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -1991,8 +2055,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_supplement_logs_ad` AFTER DELETE ON `supplement_logs` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -2008,8 +2072,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_document_files_ai` AFTER INSERT ON `document_files` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -2022,11 +2086,11 @@ BEGIN
     SELECT 'document_files', NEW.`document_id`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_document_files_au` AFTER UPDATE ON `document_files` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_document_files_au` AFTER UPDATE ON `document_files` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`document_id` IS NOT NEW.`document_id` OR OLD.`filename` IS NOT NEW.`filename` OR OLD.`media_type` IS NOT NEW.`media_type` OR OLD.`data` IS NOT NEW.`data`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -2042,8 +2106,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_document_files_ad` AFTER DELETE ON `document_files` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -2059,8 +2123,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_photos_ai` AFTER INSERT ON `photos` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -2073,11 +2137,11 @@ BEGIN
     SELECT 'photos', NEW.`filename`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;
 END;--> statement-breakpoint
-CREATE TRIGGER `sync_photos_au` AFTER UPDATE ON `photos` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
+CREATE TRIGGER `sync_photos_au` AFTER UPDATE ON `photos` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0 AND (OLD.`filename` IS NOT NEW.`filename` OR OLD.`data` IS NOT NEW.`data`)
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -2093,8 +2157,8 @@ END;--> statement-breakpoint
 CREATE TRIGGER `sync_photos_ad` AFTER DELETE ON `photos` WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0
 BEGIN
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)),
+    hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END,
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)

@@ -74,6 +74,8 @@ pub async fn run(pool: &SqlitePool, dir: &Path, today: &str) -> Result<Option<Pa
         let _ = std::fs::remove_file(&partial);
         let path = partial.to_string_lossy().replace('\'', "''");
         sqlx::query(&format!("VACUUM INTO '{path}'")).execute(pool).await.map_err(|e| e.to_string())?;
+        // Marked as a copy, so putting it back in place is noticed (instance.rs).
+        super::instance::mark_copy(&partial).await?;
         std::fs::rename(&partial, &target).map_err(|e| e.to_string())?;
         written = Some(target);
     }

@@ -55,6 +55,18 @@ The database is meant to sync between devices, so:
   mirror in `CoachDb.kt` in step.
 - Photos are named by the SHA-256 of their bytes (`photos.rs`), so a name
   always means the same image.
+- Every table syncs between the vault's devices (`src-tauri/src/sync/`)
+  unless it's listed in `LOCAL_TABLES` (`scripts/sync-triggers.ts`). Sync
+  rides on triggers: a migration that adds a table must add its triggers
+  (`bun scripts/sync-triggers.ts <table>` prints them), and one that rebuilds
+  a table must re-create them — dropping a table drops its triggers.
+  `tests/sync-tracking.test.ts` fails for any table that's neither.
+  Trigger SQL must run on Android 14's SQLite 3.39 (the coach worker opens
+  the database with it); CI checks with `tools/sqlite-android-compat`.
+- Work waiting on a row (a capture to analyse, a document to read) is done
+  only by the device that wrote it (`writtenHere` in `src/lib/db.ts`), and
+  check-ins and Garmin imports only on the phone — otherwise two devices
+  would both do it.
 
 ## Commands
 

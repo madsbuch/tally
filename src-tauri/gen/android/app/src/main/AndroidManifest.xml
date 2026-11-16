@@ -8,7 +8,14 @@
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
+    <!-- No Android backup or device-to-device transfer of the app's files:
+         the database must never come back as an older copy of itself behind
+         sync's back. A new phone joins the vault instead, which brings
+         everything (src-tauri/src/sync/instance.rs). -->
     <application
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.tally"

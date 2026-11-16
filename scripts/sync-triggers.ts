@@ -33,7 +33,7 @@ export const LOCAL_TABLES = [
  * last — so a device joining mid-way through has whole records, not orphans.
  */
 const FIRST = [
-  "vault_devices", "settings", "supplements", "documents", "manuals", "experiments",
+  "vault_devices", "vault_revocations", "settings", "supplements", "documents", "manuals", "experiments",
   "chats", "fasts", "food_entries", "workouts", "sleep_sessions", "state_logs",
   "state_categories", "performance_logs",
 ];
@@ -42,11 +42,19 @@ const LAST = ["document_files", "photos"];
 /** Milliseconds since the epoch, from julianday (no unixepoch('subsec') on 3.39). */
 const NOW_MS = "CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)";
 
-export function triggerSql(table: string, pk: string): string {
+/**
+ * The hybrid logical clock's tick, as SET clauses on sync_state (SQLite
+ * evaluates them all against the old row): the wall clock if it has moved
+ * on, else one more within the same millisecond — rolling into the next
+ * millisecond rather than let the 6-digit counter overflow and sort wrong.
+ */
+export const TICK_SQL = `hlc_counter = CASE WHEN ${NOW_MS} > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+    hlc_ms = CASE WHEN ${NOW_MS} > hlc_ms THEN ${NOW_MS} WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END`;
+
+export function triggerSql(table: string, pk: string, columns: string[]): string {
   const record = (ref: "NEW" | "OLD", deleted: 0 | 1) => `
   UPDATE sync_state SET
-    hlc_counter = CASE WHEN ${NOW_MS} > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-    hlc_ms = max(hlc_ms, ${NOW_MS}),
+    ${TICK_SQL},
     seq = seq + 1
   WHERE id = 1;
   INSERT INTO sync_rows (tbl, pk, hlc, origin, deleted, seq, from_peer)
@@ -59,9 +67,13 @@ export function triggerSql(table: string, pk: string): string {
     SELECT '${table}', ${ref}.\`${pk}\`, device_id, 1 FROM sync_state WHERE id = 1
     ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;`;
   const when = "WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0";
+  // An update that changes nothing (a re-import writing the same values) is
+  // not a new version: it would otherwise win over a real edit made
+  // concurrently elsewhere.
+  const changed = columns.map((c) => `OLD.\`${c}\` IS NOT NEW.\`${c}\``).join(" OR ");
   return [
     `CREATE TRIGGER \`sync_${table}_ai\` AFTER INSERT ON \`${table}\` ${when}\nBEGIN${record("NEW", 0)}\nEND;`,
-    `CREATE TRIGGER \`sync_${table}_au\` AFTER UPDATE ON \`${table}\` ${when}\nBEGIN${record("NEW", 0)}\nEND;`,
+    `CREATE TRIGGER \`sync_${table}_au\` AFTER UPDATE ON \`${table}\` ${when} AND (${changed})\nBEGIN${record("NEW", 0)}\nEND;`,
     `CREATE TRIGGER \`sync_${table}_ad\` AFTER DELETE ON \`${table}\` ${when}\nBEGIN${record("OLD", 1)}\nEND;`,
   ].join("--> statement-breakpoint\n");
 }
@@ -76,11 +88,11 @@ INSERT INTO sync_vv (tbl, pk, device, counter)
   SELECT '${table}', t.\`${pk}\`, s.device_id, 1 FROM \`${table}\` t, sync_state s WHERE s.id = 1;`;
 }
 
-function pkOf(db: Database, table: string): string {
+function shapeOf(db: Database, table: string): { pk: string; columns: string[] } {
   const cols = db.query(`PRAGMA table_info("${table}")`).all() as { name: string; pk: number }[];
   const pk = cols.filter((c) => c.pk > 0);
   if (pk.length !== 1) throw new Error(`${table}: sync needs a single-column primary key`);
-  return pk[0]!.name;
+  return { pk: pk[0]!.name, columns: cols.map((c) => c.name) };
 }
 
 if (import.meta.main) {
@@ -110,10 +122,13 @@ if (import.meta.main) {
       ];
 
   const out: string[] = [];
-  for (const t of ordered) out.push(backfillSql(t, pkOf(db, t)));
+  for (const t of ordered) out.push(backfillSql(t, shapeOf(db, t).pk));
   if (!only) {
     out.push(`UPDATE sync_state SET seq = (SELECT coalesce(max(seq), 0) FROM sync_rows), hlc_ms = ${NOW_MS} WHERE id = 1;`);
   }
-  for (const t of ordered) out.push(triggerSql(t, pkOf(db, t)));
+  for (const t of ordered) {
+    const { pk, columns } = shapeOf(db, t);
+    out.push(triggerSql(t, pk, columns));
+  }
   process.stdout.write(out.join("--> statement-breakpoint\n") + "\n");
 }

@@ -139,6 +139,13 @@ impl Channel {
     }
 
     pub async fn recv_bytes(&mut self) -> Result<Vec<u8>> {
+        self.recv_bytes_limited(MAX_MESSAGE).await
+    }
+
+    /// Receives a message of at most `max` bytes; a longer one is refused
+    /// before any of it is held. Before the other side has proven it belongs
+    /// to the vault, this keeps what it can make this device hold small.
+    pub async fn recv_bytes_limited(&mut self, max: usize) -> Result<Vec<u8>> {
         let mut buf = vec![0u8; 65_535];
         let frame = read_frame(&mut self.stream).await?;
         let n = self.noise.read_message(&frame, &mut buf).map_err(|_| "message failed authentication")?;
@@ -146,10 +153,11 @@ impl Channel {
             return Err("short message".into());
         }
         let total = u32::from_be_bytes(buf[..4].try_into().expect("4 bytes")) as usize;
-        if total > MAX_MESSAGE {
+        if total > max.min(MAX_MESSAGE) {
             return Err("message too large".into());
         }
-        let mut out = Vec::with_capacity(total);
+        // Grown as chunks arrive, not reserved up front on the sender's word.
+        let mut out = Vec::with_capacity(total.min(1 << 20));
         out.extend_from_slice(&buf[4..n]);
         while out.len() < total {
             let frame = read_frame(&mut self.stream).await?;
@@ -169,6 +177,11 @@ impl Channel {
 
     pub async fn recv<T: DeserializeOwned>(&mut self) -> Result<T> {
         let bytes = self.recv_bytes().await?;
+        rmp_serde::from_slice(&bytes).map_err(|e| format!("unreadable message: {e}"))
+    }
+
+    pub async fn recv_limited<T: DeserializeOwned>(&mut self, max: usize) -> Result<T> {
+        let bytes = self.recv_bytes_limited(max).await?;
         rmp_serde::from_slice(&bytes).map_err(|e| format!("unreadable message: {e}"))
     }
 }

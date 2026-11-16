@@ -983,6 +983,13 @@ export const syncState = sqliteTable("sync_state", {
   /** Noise static key pair (X25519), made on first use. */
   secretKey: blob("secret_key", { mode: "buffer" }),
   publicKey: blob("public_key", { mode: "buffer" }),
+  /**
+   * Which copy of the database this is. Mirrored in a file beside it, so a
+   * database that turns up somewhere it wasn't written — restored from a
+   * backup, a snapshot put back, a file copied — notices, and takes a new
+   * device id before writing anything (src-tauri/src/sync/instance.rs).
+   */
+  instance: text("instance"),
 });
 
 /**
@@ -1038,6 +1045,20 @@ export const syncPeers = sqliteTable("sync_peers", {
   lastCompleteAt: text("last_complete_at"),
   /** 1 when the last finished sync ended with both sides identical. */
   complete: integer("complete").notNull().default(0),
+});
+
+/**
+ * Keys taken out of the vault. Only ever added to, never edited or removed —
+ * so no later edit on some device can undo a removal, the way it could undo
+ * deleting a `vault_devices` row. A device presenting a key listed here is
+ * refused, whatever else says about it.
+ */
+export const vaultRevocations = sqliteTable("vault_revocations", {
+  /** X25519 public key, hex. */
+  publicKey: text("public_key").primaryKey(),
+  /** The device it belonged to, for the record. */
+  deviceId: text("device_id").notNull(),
+  revokedAt: text("revoked_at").notNull(),
 });
 
 /**

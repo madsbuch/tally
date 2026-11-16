@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "00a5ce78-fed9-40a3-a5e2-703cf2feef67",
+  "id": "b1573124-a3b7-45d0-b01f-6f36b3a88225",
   "prevId": "4ffd11e6-1937-4443-9c19-9719e52baed3",
   "tables": {
     "achievements": {
@@ -2971,6 +2971,13 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "instance": {
+          "name": "instance",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {},
@@ -3059,6 +3066,37 @@
         },
         "added_at": {
           "name": "added_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "vault_revocations": {
+      "name": "vault_revocations",
+      "columns": {
+        "public_key": {
+          "name": "public_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "device_id": {
+          "name": "device_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
           "type": "text",
           "primaryKey": false,
           "notNull": true,

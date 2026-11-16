@@ -6,10 +6,13 @@
 //! - `discovery`: finding the vault's other devices on the local network.
 //! - `service`: the app's side — Tauri commands, the background loop.
 //! - `snapshots`: the computer's daily copies of the database.
+//! - `instance`: noticing a database restored from an older copy.
+//! - `background`: a sync with the app closed (Android, through JNI).
 
 pub mod background;
 pub mod discovery;
 pub mod engine;
+pub mod instance;
 pub mod service;
 pub mod session;
 pub mod snapshots;
@@ -17,6 +20,9 @@ pub mod wire;
 
 #[cfg(test)]
 pub(crate) mod tests;
+/// Regression tests from an adversarial review of the first version.
+#[cfg(test)]
+mod review_tests;
 
 /// A random UUID (v4), for device and vault ids.
 pub fn new_uuid() -> String {

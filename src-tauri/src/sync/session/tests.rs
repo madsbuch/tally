@@ -157,8 +157,9 @@ async fn a_stranger_cannot_sync() {
     exec(&stranger.pool, &format!("UPDATE sync_state SET vault_id = '{vault}'")).await;
     ensure_vault(&stranger.pool).await.unwrap();
     let before = dump(&h.device.pool).await;
-    let err = sync_now(&stranger.pool, h.addr).await.unwrap_err();
-    assert!(err.contains("isn't (or is no longer) in this vault") || err.contains("doesn't know"), "{err}");
+    // Dropped straight after the handshake: it learns nothing, not even why.
+    assert!(sync_now(&stranger.pool, h.addr).await.is_err());
+    assert!(h.errors.lock().unwrap().iter().any(|e| e.contains("outside the vault")));
     assert_eq!(dump(&h.device.pool).await, before);
     assert_eq!(count(&stranger.pool, "SELECT count(*) FROM food_entries").await, 0);
 }
@@ -262,4 +263,96 @@ async fn failed_connections_are_reported_by_the_listener() {
     }
     assert_eq!(h.served.load(Ordering::SeqCst), 0);
     assert!(!h.errors.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_restored_copy_is_caught_at_the_start_of_a_sync_and_then_catches_up() {
+    let h = host().await;
+    let joiner = device().await;
+    join(&joiner.pool, &offer_from(&h).await).await.unwrap();
+    // A copy of the phone's database, taken now…
+    let dir = crate::photos::tests::Scratch::new();
+    let copy = dir.0.join("restored.db");
+    sqlx::query(&format!("VACUUM INTO '{}'", copy.display())).execute(&joiner.pool).await.unwrap();
+    // …then the phone logs more, and syncs it.
+    for i in 0..4 {
+        exec(&joiner.pool, &format!("INSERT INTO food_entries (id, eaten_at, title, nutrients) VALUES ('lost-{i}', 'now', 'x', '{{}}')")).await;
+    }
+    sync_now(&joiner.pool, h.addr).await.unwrap();
+    // The phone is restored from the copy — and nothing checked the file
+    // beside it (the worst case). It logs a meal.
+    let restored = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect_with(sqlx::sqlite::SqliteConnectOptions::new().filename(&copy))
+        .await
+        .unwrap();
+    let old_id = identity(&restored).await.unwrap().device_id;
+    exec(&restored, "INSERT INTO food_entries (id, eaten_at, title, nutrients) VALUES ('after-restore', 'now', 'Eggs', '{}')").await;
+
+    // The first sync notices, takes a new id, and stops.
+    let err = sync_now(&restored, h.addr).await.unwrap_err();
+    assert!(err.contains("older copy"), "{err}");
+    assert_ne!(identity(&restored).await.unwrap().device_id, old_id);
+    // The next one goes through — the host knows it by its key — and
+    // everything comes together.
+    let mut outcome = sync_now(&restored, h.addr).await.unwrap();
+    if !outcome.complete {
+        outcome = sync_now(&restored, h.addr).await.unwrap();
+    }
+    assert!(outcome.complete, "{:?}", outcome.differences);
+    assert_eq!(count(&restored, "SELECT count(*) FROM food_entries WHERE id LIKE 'lost-%'").await, 4);
+    assert_eq!(count(&h.device.pool, "SELECT count(*) FROM food_entries WHERE id = 'after-restore'").await, 1);
+    assert_same(&h.device.pool, &restored).await;
+}
+
+#[tokio::test]
+async fn a_removed_device_is_refused_by_its_key_whatever_id_it_takes() {
+    let h = host().await;
+    let joiner = device().await;
+    join(&joiner.pool, &offer_from(&h).await).await.unwrap();
+    let joiner_id = identity(&joiner.pool).await.unwrap().device_id;
+    crate::sync::service::remove_device(&h.device.pool, &joiner_id).await.unwrap();
+    // A new id doesn't help: the key is what's revoked.
+    crate::sync::instance::rotate(&joiner.pool).await.unwrap();
+    let err = sync_now(&joiner.pool, h.addr).await.unwrap_err();
+    assert!(!err.is_empty());
+    assert_eq!(h.served.load(Ordering::SeqCst), 1, "only the join's sync went through");
+}
+
+#[tokio::test]
+async fn a_busy_host_leaves_the_joiner_untouched_and_the_code_usable() {
+    let h = host().await;
+    let o = offer_from(&h).await;
+    let host_id = identity(&h.device.pool).await.unwrap().device_id;
+    let joiner = device().await;
+    exec(&joiner.pool, "INSERT INTO settings (key, value) VALUES ('calorie_target_kcal', '1800')").await;
+    {
+        let _held = try_busy(&host_id).unwrap();
+        let err = join(&joiner.pool, &o).await.unwrap_err();
+        assert!(err.contains("busy"), "{err}");
+        // Nothing on the joiner changed.
+        assert_eq!(identity(&joiner.pool).await.unwrap().vault_id, None);
+        assert_eq!(count(&joiner.pool, "SELECT count(*) FROM settings").await, 1);
+    }
+    // The code wasn't used up.
+    join(&joiner.pool, &o).await.unwrap();
+}
+
+#[tokio::test]
+async fn a_stranger_is_turned_away_before_it_can_send_much() {
+    let h = host().await;
+    offer_from(&h).await;
+    // A device that isn't in the vault completes a handshake and announces a
+    // huge message: it's dropped without the host reading or holding it.
+    let (secret, _) = wire::generate_keypair();
+    let stream = TcpStream::connect(h.addr).await.unwrap();
+    let mut ch = Channel::initiate(stream, PURPOSE_SYNC, &secret, None).await.unwrap();
+    let big = vec![0u8; 8 * 1024 * 1024];
+    let _ = ch.send_bytes(&big).await;
+    for _ in 0..50 {
+        if h.errors.lock().unwrap().iter().any(|e| e.contains("outside the vault")) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    panic!("not turned away: {:?}", h.errors.lock().unwrap());
 }

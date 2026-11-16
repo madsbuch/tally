@@ -231,7 +231,8 @@ pub async fn sync_round(pool: &SqlitePool) -> Round {
     let Ok(me) = session::identity(pool).await else { return round };
     let Some(vault) = me.vault_id.clone() else { return round };
     let peers: Vec<(String, Option<String>)> = sqlx::query_as(
-        "SELECT d.id, p.last_addr FROM vault_devices d LEFT JOIN sync_peers p ON p.device_id = d.id WHERE d.id <> ?",
+        "SELECT d.id, p.last_addr FROM vault_devices d LEFT JOIN sync_peers p ON p.device_id = d.id
+         WHERE d.id <> ? AND d.public_key NOT IN (SELECT public_key FROM vault_revocations)",
     )
     .bind(&me.device_id)
     .fetch_all(pool)
@@ -249,18 +250,35 @@ pub async fn sync_round(pool: &SqlitePool) -> Round {
     )
     .await;
     for (id, last_addr) in &peers {
-        let addr: Option<SocketAddr> = found
-            .iter()
-            .find(|f| &f.device_id == id)
-            .map(|f| f.addr)
-            .or_else(|| last_addr.as_ref().and_then(|a| a.parse().ok()));
-        let Some(addr) = addr else { continue };
-        match session::sync_with(pool, addr).await {
-            Ok(Some(o)) => round.outcomes.push(o),
-            Ok(None) => {}
+        // Where discovery says it is, then where it was last reached: an
+        // answer to a probe isn't proof of anything (anyone on the network
+        // can send one), so a failed attempt there doesn't end the search.
+        let mut addrs: Vec<SocketAddr> = found.iter().filter(|f| &f.device_id == id).map(|f| f.addr).collect();
+        if let Some(a) = last_addr.as_ref().and_then(|a| a.parse().ok()) {
+            if !addrs.contains(&a) {
+                addrs.push(a);
+            }
+        }
+        let mut last_err = None;
+        for addr in addrs {
+            match session::sync_with(pool, addr).await {
+                Ok(Some(o)) => {
+                    round.outcomes.push(o);
+                    last_err = None;
+                    break;
+                }
+                Ok(None) => {
+                    last_err = None;
+                    break;
+                }
+                Err(e) => last_err = Some(e),
+            }
+        }
+        match last_err {
             // Not around is normal; anything else is worth showing.
-            Err(e) if e.contains("no answer") || e.contains("refused") || e.contains("unreachable") => {}
-            Err(e) => round.errors.push(e),
+            Some(e) if e.contains("no answer") || e.contains("refused") || e.contains("unreachable") => {}
+            Some(e) => round.errors.push(e),
+            None => {}
         }
     }
     round
@@ -310,7 +328,9 @@ pub async fn status(pool: &SqlitePool, svc: &SyncService) -> Result<Status, Stri
     let me = session::identity(pool).await?;
     let rows: Vec<(String, String, String, Option<String>, Option<String>, Option<i64>)> = sqlx::query_as(
         "SELECT d.id, d.name, d.platform, p.last_sync_at, p.last_complete_at, p.complete
-         FROM vault_devices d LEFT JOIN sync_peers p ON p.device_id = d.id ORDER BY d.added_at",
+         FROM vault_devices d LEFT JOIN sync_peers p ON p.device_id = d.id
+         WHERE d.public_key NOT IN (SELECT public_key FROM vault_revocations)
+         ORDER BY d.added_at",
     )
     .fetch_all(pool)
     .await
@@ -362,17 +382,31 @@ pub async fn set_name(pool: &SqlitePool, name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Takes a device off the vault's list: it's refused from then on, everywhere
-/// the list reaches. Its data stays where it is.
+/// Takes a device out of the vault: its key goes on the revocation list,
+/// which only ever grows, so it's refused from then on everywhere the list
+/// reaches — whatever later edits say about its entry. Its data stays where
+/// it is.
 pub async fn remove_device(pool: &SqlitePool, id: &str) -> Result<(), String> {
     let me = session::identity(pool).await?;
     if id == me.device_id {
         return Err("a device can't remove itself".into());
     }
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    sqlx::query(
+        "INSERT INTO vault_revocations (public_key, device_id, revoked_at)
+         SELECT public_key, id, ? FROM vault_devices WHERE id = ?
+         ON CONFLICT (public_key) DO NOTHING",
+    )
+    .bind(super::now_iso())
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
     sqlx::query("DELETE FROM vault_devices WHERE id = ?")
         .bind(id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+    tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }

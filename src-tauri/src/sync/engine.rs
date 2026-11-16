@@ -98,6 +98,9 @@ pub struct TableInfo {
     pub name: String,
     pub pk: String,
     pub columns: Vec<String>,
+    /// Columns declared BLOB (photos, document files): the digest reads their
+    /// length, not their bytes.
+    pub blob_columns: Vec<String>,
     /// Column sets of the unique indexes other than the primary key.
     pub uniques: Vec<Vec<String>>,
     /// (column, parent table, parent column) of foreign keys that cascade on delete.
@@ -115,16 +118,18 @@ pub async fn synced_tables(conn: &mut SqliteConnection) -> Result<BTreeMap<Strin
     .map_err(err)?;
     let mut out = BTreeMap::new();
     for name in names {
-        let cols: Vec<(String, i64)> = sqlx::query_as("SELECT name, pk FROM pragma_table_info(?) ORDER BY cid")
-            .bind(&name)
-            .fetch_all(&mut *conn)
-            .await
-            .map_err(err)?;
+        let cols: Vec<(String, i64, String)> =
+            sqlx::query_as("SELECT name, pk, upper(type) FROM pragma_table_info(?) ORDER BY cid")
+                .bind(&name)
+                .fetch_all(&mut *conn)
+                .await
+                .map_err(err)?;
         let pk = cols
             .iter()
-            .find(|(_, p)| *p == 1)
-            .map(|(c, _)| c.clone())
+            .find(|(_, p, _)| *p == 1)
+            .map(|(c, _, _)| c.clone())
             .ok_or_else(|| format!("{name}: no primary key"))?;
+        let blob_columns = cols.iter().filter(|(_, _, t)| t == "BLOB").map(|(c, _, _)| c.clone()).collect();
         let indexes: Vec<(String, String)> =
             sqlx::query_as("SELECT name, origin FROM pragma_index_list(?) WHERE \"unique\" = 1")
                 .bind(&name)
@@ -160,7 +165,7 @@ pub async fn synced_tables(conn: &mut SqliteConnection) -> Result<BTreeMap<Strin
             .collect();
         out.insert(
             name.clone(),
-            TableInfo { name, pk, columns: cols.into_iter().map(|(c, _)| c).collect(), uniques, cascades },
+            TableInfo { name, pk, columns: cols.into_iter().map(|(c, _, _)| c).collect(), blob_columns, uniques, cascades },
         );
     }
     Ok(out)
@@ -394,6 +399,8 @@ async fn next_seq(conn: &mut SqliteConnection) -> Result<i64> {
 /// ordered after it (the hybrid logical clock's receive rule).
 async fn observe_hlc(conn: &mut SqliteConnection, hlc: &str) -> Result<()> {
     let (ms, counter) = parse_hlc(hlc)?;
+    let limit = wall_ms() + MAX_CLOCK_LEAD_MS;
+    let (ms, counter) = if ms > limit { (limit, 0) } else { (ms, counter) };
     sqlx::query(
         "UPDATE sync_state SET
            hlc_counter = CASE WHEN ?1 > hlc_ms THEN ?2 WHEN ?1 = hlc_ms THEN max(hlc_counter, ?2) ELSE hlc_counter END,
@@ -408,17 +415,36 @@ async fn observe_hlc(conn: &mut SqliteConnection, hlc: &str) -> Result<()> {
     Ok(())
 }
 
+/// "<13 digits>.<6 digits>": the only shape that sorts correctly as text.
 fn parse_hlc(hlc: &str) -> Result<(i64, i64)> {
-    let (ms, counter) = hlc.split_once('.').ok_or_else(|| format!("bad clock value {hlc:?}"))?;
+    let bad = || format!("bad clock value {hlc:?}");
+    let (ms, counter) = hlc.split_once('.').ok_or_else(bad)?;
+    if ms.len() != 13 || counter.len() != 6 || !ms.bytes().chain(counter.bytes()).all(|b| b.is_ascii_digit()) {
+        return Err(bad());
+    }
     Ok((ms.parse().map_err(err)?, counter.parse().map_err(err)?))
 }
+
+fn wall_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// How far ahead of this device's own clock a peer's may pull it along: a
+/// peer with a clock years ahead must not pin every device's clock there.
+const MAX_CLOCK_LEAD_MS: i64 = 24 * 3600 * 1000;
 
 /// A fresh local clock value, as the triggers make them.
 async fn tick(conn: &mut SqliteConnection) -> Result<String> {
     sqlx::query_scalar(
         "UPDATE sync_state SET
-           hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0 ELSE hlc_counter + 1 END,
-           hlc_ms = max(hlc_ms, CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER))
+           hlc_counter = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms THEN 0
+                              WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
+           hlc_ms = CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER) > hlc_ms
+                           THEN CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)
+                         WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END
          WHERE id = 1
          RETURNING printf('%013d.%06d', hlc_ms, hlc_counter)",
     )
@@ -610,14 +636,6 @@ fn fork_id(pk: &str, hlc: &str, origin: &str) -> String {
     format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
 }
 
-async fn device_name(conn: &mut SqliteConnection, id: &str) -> Result<Option<String>> {
-    sqlx::query_scalar("SELECT name FROM vault_devices WHERE id = ?")
-        .bind(id)
-        .fetch_optional(&mut *conn)
-        .await
-        .map_err(err)
-}
-
 /// Keeps the losing side of a chat continued on two devices as a chat of its
 /// own. Its id, title and version follow from the losing version alone, so
 /// both devices create exactly the same one.
@@ -631,12 +649,14 @@ async fn fork_chat(
     loser_data: &[(String, Value)],
 ) -> Result<()> {
     let id = fork_id(pk, loser_hlc, loser_origin);
-    let name = device_name(conn, loser_origin).await?.unwrap_or_else(|| "another device".into());
+    // The title follows from the losing version alone — not from anything
+    // devices might see differently (like what each calls the others) — or
+    // two devices would make the same chat under two titles, forever.
     let data: Vec<(String, Value)> = loser_data
         .iter()
         .map(|(c, v)| match (c.as_str(), v) {
             (c, _) if c == t.pk => (c.to_string(), Value::Text(id.clone())),
-            ("title", Value::Text(title)) => (c.to_string(), Value::Text(format!("{title} (continued on {name})"))),
+            ("title", Value::Text(title)) => (c.to_string(), Value::Text(format!("{title} (continued in parallel)"))),
             _ => (c.clone(), v.clone()),
         })
         .collect();
@@ -822,6 +842,11 @@ pub async fn pull_all(into: &SqlitePool, from: &SqlitePool, batch_rows: i64, bat
 /// Removes rows whose parent was deleted on another device while they were
 /// being added here, where the parent's deletion would have taken them along
 /// (`ON DELETE CASCADE`). Done as ordinary local deletes, so they sync.
+///
+/// Only a parent known to be deleted (a tombstone here) counts. A parent
+/// that simply hasn't arrived yet — a pull cut off between a child and its
+/// parent's newest version — is not a deletion, and treating it as one
+/// would delete the child on every device.
 pub async fn remove_orphans(pool: &SqlitePool) -> Result<u64> {
     let mut conn = pool.acquire().await.map_err(err)?;
     let tables = synced_tables(&mut conn).await?;
@@ -829,13 +854,15 @@ pub async fn remove_orphans(pool: &SqlitePool) -> Result<u64> {
     for t in tables.values() {
         for (col, parent, parent_col) in &t.cascades {
             let sql = format!(
-                "DELETE FROM {t} WHERE {col} IS NOT NULL AND NOT EXISTS (SELECT 1 FROM {p} WHERE {p}.{pc} = {t}.{col})",
+                "DELETE FROM {t} WHERE {col} IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM {p} WHERE {p}.{pc} = {t}.{col})
+                   AND EXISTS (SELECT 1 FROM sync_rows r WHERE r.tbl = ? AND r.pk = {t}.{col} AND r.deleted = 1)",
                 t = quote(&t.name),
                 col = quote(col),
                 p = quote(parent),
                 pc = quote(parent_col),
             );
-            removed += sqlx::query(&sql).execute(&mut *conn).await.map_err(err)?.rows_affected();
+            removed += sqlx::query(&sql).bind(parent).execute(&mut *conn).await.map_err(err)?.rows_affected();
         }
     }
     Ok(removed)
@@ -887,12 +914,22 @@ async fn digest_in(conn: &mut SqliteConnection) -> Result<Digest> {
         .map_err(err)?;
         let mut cols: Vec<&String> = t.columns.iter().collect();
         cols.sort();
-        let select: Vec<String> = cols.iter().map(|c| quote(c)).collect();
+        // A blob is represented by its length: hashing every photo on every
+        // sync would read the whole library each time. Photos are named by
+        // their content, and the rows around them by their versions.
+        let select: Vec<String> = cols
+            .iter()
+            .map(|c| if t.blob_columns.contains(c) { format!("length({0}) AS {0}", quote(c)) } else { quote(c) })
+            .collect();
         let sql = format!("SELECT {} FROM {} ORDER BY {}", select.join(", "), quote(&t.name), quote(&t.pk));
-        let rows = sqlx::query(&sql).fetch_all(&mut *conn).await.map_err(err)?;
         let mut h = Sha256::new();
-        for row in &rows {
-            let values = row_values(row)?;
+        let mut count = 0i64;
+        // One row at a time: memory stays flat however big the table.
+        let mut stream = sqlx::query(&sql).fetch(&mut *conn);
+        use futures_util::TryStreamExt;
+        while let Some(row) = stream.try_next().await.map_err(err)? {
+            count += 1;
+            let values = row_values(&row)?;
             let pk = match value_of(&values, &t.pk) {
                 Some(Value::Text(s)) => s.clone(),
                 other => format!("{other:?}"),
@@ -904,6 +941,7 @@ async fn digest_in(conn: &mut SqliteConnection) -> Result<Digest> {
             }
             h.update(rmp_serde::to_vec(&values).map_err(err)?);
         }
+        drop(stream);
         for (pk, hlc, origin) in &tombstones {
             h.update(b"\x00deleted");
             h.update(pk.as_bytes());
@@ -912,7 +950,7 @@ async fn digest_in(conn: &mut SqliteConnection) -> Result<Digest> {
         }
         out.insert(
             t.name.clone(),
-            TableDigest { rows: rows.len() as i64, tracked: versions.len() as i64, hash: hex::encode(h.finalize()) },
+            TableDigest { rows: count, tracked: versions.len() as i64, hash: hex::encode(h.finalize()) },
         );
     }
     Ok(out)
@@ -945,7 +983,11 @@ const JOIN_EXEMPT: &[&str] = &["settings", "achievements", "vault_devices", "sta
 /// the condition for joining at all. Returns the tables holding data if not.
 pub async fn data_tables(pool: &SqlitePool) -> Result<Vec<String>> {
     let mut conn = pool.acquire().await.map_err(err)?;
-    let tables = synced_tables(&mut conn).await?;
+    data_tables_in(&mut conn).await
+}
+
+async fn data_tables_in(conn: &mut SqliteConnection) -> Result<Vec<String>> {
+    let tables = synced_tables(conn).await?;
     let mut with_data = Vec::new();
     for t in tables.keys() {
         if JOIN_EXEMPT.contains(&t.as_str()) {
@@ -963,17 +1005,18 @@ pub async fn data_tables(pool: &SqlitePool) -> Result<Vec<String>> {
 }
 
 /// Empties every synced table and the sync bookkeeping, and gives this device
-/// a new id and the vault's — ready to receive the vault's data. Refuses if
-/// any of the person's data is here. Returns the new device id.
-pub async fn reset_for_join(pool: &SqlitePool, vault_id: &str) -> Result<String> {
-    let held = data_tables(pool).await?;
-    if !held.is_empty() {
-        return Err(format!("this device already holds data ({}); joining needs an empty one", held.join(", ")));
-    }
+/// the id `new_id` and the vault's — ready to receive the vault's data.
+/// Refuses if any of the person's data is here, checked in the same
+/// transaction that empties it, so nothing written meanwhile can be lost.
+pub async fn reset_for_join(pool: &SqlitePool, vault_id: &str, new_id: &str) -> Result<()> {
     let mut conn = pool.acquire().await.map_err(err)?.detach();
     sqlx::query("PRAGMA foreign_keys = OFF").execute(&mut conn).await.map_err(err)?;
     sqlx::query("BEGIN IMMEDIATE").execute(&mut conn).await.map_err(err)?;
     let result = async {
+        let held = data_tables_in(&mut conn).await?;
+        if !held.is_empty() {
+            return Err(format!("this device already holds data ({}); joining needs an empty one", held.join(", ")));
+        }
         sqlx::query("UPDATE sync_state SET applying = 1 WHERE id = 1").execute(&mut conn).await.map_err(err)?;
         let tables = synced_tables(&mut conn).await?;
         for t in tables.keys() {
@@ -982,18 +1025,17 @@ pub async fn reset_for_join(pool: &SqlitePool, vault_id: &str) -> Result<String>
         for t in ["sync_rows", "sync_vv", "sync_peers"] {
             sqlx::query(&format!("DELETE FROM {t}")).execute(&mut conn).await.map_err(err)?;
         }
-        let id = crate::sync::new_uuid();
         sqlx::query("UPDATE sync_state SET device_id = ?, vault_id = ?, seq = 0, applying = 0 WHERE id = 1")
-            .bind(&id)
+            .bind(new_id)
             .bind(vault_id)
             .execute(&mut conn)
             .await
             .map_err(err)?;
-        Ok::<_, String>(id)
+        Ok::<_, String>(())
     }
     .await;
     let out = match result {
-        Ok(id) => sqlx::query("COMMIT").execute(&mut conn).await.map(|_| id).map_err(err),
+        Ok(()) => sqlx::query("COMMIT").execute(&mut conn).await.map(|_| ()).map_err(err),
         Err(e) => {
             let _ = sqlx::query("ROLLBACK").execute(&mut conn).await;
             Err(e)

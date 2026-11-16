@@ -47,6 +47,10 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
 pub const PAIRING_TTL: Duration = Duration::from_secs(10 * 60);
 /// The TCP port tried first; any free one if it's taken.
 pub const PREFERRED_PORT: u16 = 47822;
+/// The most a device may send before it's known to belong to the vault.
+const PRE_AUTH_LIMIT: usize = 64 * 1024;
+/// Connections handled at once; more are turned away at the door.
+const MAX_CONNECTIONS: usize = 8;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Hello {
@@ -63,6 +67,10 @@ pub enum Msg {
     Hello(Hello),
     Join { device_id: String, name: String, platform: String },
     Welcome { vault_id: String },
+    /// How far the sender has pulled from the receiver. More than the
+    /// receiver has ever recorded means the receiver is an older copy of
+    /// itself (restored from a backup) — see [`check_not_stale`].
+    Seen { pulled_from_you: i64 },
     Pull { since: i64 },
     Batch(Batch),
     YourTurn,
@@ -131,9 +139,27 @@ async fn hello(pool: &SqlitePool, me: &Identity) -> Result<Hello> {
     })
 }
 
+/// Before anything else is read from an incoming connection: whether the key
+/// it proved belongs to a device of this vault (and isn't revoked). A
+/// stranger is turned away before it can send anything of size.
+async fn key_known(pool: &SqlitePool, key: &[u8]) -> Result<bool> {
+    let k = hex::encode(key);
+    sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM vault_devices WHERE public_key = ?1)
+           AND NOT EXISTS (SELECT 1 FROM vault_revocations WHERE public_key = ?1)",
+    )
+    .bind(&k)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| e.to_string())
+}
+
 /// Whether `theirs` may sync with this device: the same vault, the same
-/// schema, and a device the vault lists under the key it proved — or, while
-/// joining (the device list is still empty here), the key the QR code named.
+/// schema, a key the vault lists and hasn't revoked — or, while joining (the
+/// device list is still empty here), the key the QR code named.
+///
+/// A device is known by its key; its id can change (a restored copy takes a
+/// new one, see `instance.rs`), and the new id arrives with the sync itself.
 async fn check_peer(pool: &SqlitePool, me: &Hello, theirs: &Hello, proven_key: &[u8], vouched: Option<&[u8]>) -> Result<()> {
     if theirs.protocol != me.protocol {
         return Err(format!("{} runs a different version of sync; update both devices", theirs.name));
@@ -147,19 +173,45 @@ async fn check_peer(pool: &SqlitePool, me: &Hello, theirs: &Hello, proven_key: &
     if me.vault_id.is_none() || theirs.vault_id != me.vault_id {
         return Err("not in the same vault".into());
     }
+    if theirs.device_id == me.device_id {
+        return Err("the other device has this device's id: one of them is a copy".into());
+    }
     if let Some(k) = vouched {
         return if k == proven_key { Ok(()) } else { Err("the host's key changed mid-pairing".into()) };
     }
-    let key: Option<String> = sqlx::query_scalar("SELECT public_key FROM vault_devices WHERE id = ?")
+    let key = hex::encode(proven_key);
+    let revoked: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM vault_revocations WHERE public_key = ?)")
+        .bind(&key)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    if revoked {
+        return Err(format!("{} was removed from this vault", theirs.name));
+    }
+    let listed: Option<String> = sqlx::query_scalar("SELECT public_key FROM vault_devices WHERE id = ?")
         .bind(&theirs.device_id)
         .fetch_optional(pool)
         .await
         .map_err(|e| e.to_string())?;
-    match key {
-        Some(k) if k == hex::encode(proven_key) => Ok(()),
+    match listed {
+        Some(k) if k == key => Ok(()),
         Some(_) => Err(format!("{} presented a key the vault doesn't know it by", theirs.name)),
+        None if key_known(pool, proven_key).await? => Ok(()),
         None => Err(format!("{} isn't (or is no longer) in this vault", theirs.name)),
     }
+}
+
+/// After the hellos, each side says how far it has pulled from the other. A
+/// device that's been pulled from further than it has ever recorded is an
+/// older copy of itself: it takes a new id (`instance::rotate`) and the sync
+/// stops here — the next one starts clean.
+async fn check_not_stale(pool: &SqlitePool, pulled_from_me: i64) -> Result<()> {
+    let mine = engine::local_state(pool).await?.seq;
+    if pulled_from_me > mine {
+        super::instance::rotate(pool).await?;
+        return Err("this device's database is an older copy of itself (restored?); it has taken a new id and will sync from scratch".into());
+    }
+    Ok(())
 }
 
 /// What a finished sync did.
@@ -279,6 +331,11 @@ async fn client_session(
         return Err("expected a hello".into());
     };
     check_peer(pool, me, &theirs, &ch.remote_key, vouched).await?;
+    ch.send(&Msg::Seen { pulled_from_you: engine::pulled_from(pool, &theirs.device_id).await? }).await?;
+    let Msg::Seen { pulled_from_you } = expect(ch).await? else {
+        return Err("expected how far it has pulled".into());
+    };
+    check_not_stale(pool, pulled_from_you).await?;
     let received = pull(ch, pool, &theirs.device_id).await?;
     ch.send(&Msg::YourTurn).await?;
     serve_pulls(ch, pool, &theirs.device_id, &Msg::Finished).await?;
@@ -298,6 +355,11 @@ async fn server_session(ch: &mut Channel, pool: &SqlitePool, me: &Hello, theirs:
         return Err(reason);
     }
     ch.send(&Msg::Hello(me.clone())).await?;
+    let Msg::Seen { pulled_from_you } = expect(ch).await? else {
+        return Err("expected how far it has pulled".into());
+    };
+    ch.send(&Msg::Seen { pulled_from_you: engine::pulled_from(pool, &theirs.device_id).await? }).await?;
+    check_not_stale(pool, pulled_from_you).await?;
     serve_pulls(ch, pool, &theirs.device_id, &Msg::YourTurn).await?;
     let received = pull(ch, pool, &theirs.device_id).await?;
     ch.send(&Msg::Finished).await?;
@@ -457,6 +519,17 @@ pub async fn join(pool: &SqlitePool, offer: &PairingOffer) -> Result<Outcome> {
     let Some(_guard) = try_busy(&me.device_id) else {
         return Err("a sync is running; try again in a moment".into());
     };
+    // A fresh key for a fresh member: a device once removed (its key revoked)
+    // can be paired again, and a key never outlives the device's place.
+    let (secret, public) = wire::generate_keypair();
+    sqlx::query("UPDATE sync_state SET secret_key = ?, public_key = ? WHERE id = 1")
+        .bind(&secret)
+        .bind(&public)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let me = identity(pool).await?;
+    let new_id = super::new_uuid();
     let mut last_error = String::from("the code holds no address");
     for addr in &offer.addrs {
         let Ok(addr) = addr.parse::<SocketAddr>() else { continue };
@@ -478,13 +551,14 @@ pub async fn join(pool: &SqlitePool, offer: &PairingOffer) -> Result<Outcome> {
         if ch.remote_key != offer.host_key {
             return Err("the device that answered isn't the one that showed the code".into());
         }
-        // Past this point the host is who the code said: empty out and join.
-        let new_id = engine::reset_for_join(pool, &offer.vault_id).await?;
-        ch.send(&Msg::Join { device_id: new_id, name: me.name.clone(), platform: me.platform.clone() }).await?;
+        // The host is who the code said. Ask to be let in; only once it has,
+        // empty out — a refusal leaves this device exactly as it was.
+        ch.send(&Msg::Join { device_id: new_id.clone(), name: me.name.clone(), platform: me.platform.clone() }).await?;
         match expect(&mut ch).await? {
             Msg::Welcome { vault_id } if vault_id == offer.vault_id => {}
             _ => return Err("the host didn't let this device in".into()),
         }
+        engine::reset_for_join(pool, &offer.vault_id, &new_id).await?;
         let me = identity(pool).await?;
         let hello = hello(pool, &me).await?;
         let host_key = offer.host_key.clone();
@@ -504,7 +578,10 @@ pub async fn serve(pool: &SqlitePool, mut stream: TcpStream, slot: &PairingSlot)
     match Channel::purpose(&mut stream).await? {
         PURPOSE_SYNC => {
             let mut ch = Channel::respond(stream, &me.secret, None).await?;
-            let Msg::Hello(theirs) = expect(&mut ch).await? else {
+            if !key_known(pool, &ch.remote_key).await? {
+                return Err("a device outside the vault knocked".into());
+            }
+            let Msg::Hello(theirs) = ch.recv_limited::<Msg>(PRE_AUTH_LIMIT).await? else {
                 return Err("expected a hello".into());
             };
             let Some(_guard) = try_busy(&me.device_id) else {
@@ -523,6 +600,11 @@ pub async fn serve(pool: &SqlitePool, mut stream: TcpStream, slot: &PairingSlot)
                 }
             };
             let mut ch = Channel::respond(stream, &me.secret, Some(&token)).await?;
+            // Busy: say so before the code is used up, so it can be scanned again.
+            let Some(_guard) = try_busy(&me.device_id) else {
+                let _ = ch.send(&Msg::Refused { reason: "busy; scan again in a moment".into() }).await;
+                return Err("busy".into());
+            };
             // The token is good for one device only.
             {
                 let mut slot = slot.lock().map_err(|e| e.to_string())?;
@@ -531,23 +613,33 @@ pub async fn serve(pool: &SqlitePool, mut stream: TcpStream, slot: &PairingSlot)
                     _ => return Err("pairing code already used".into()),
                 }
             }
-            let Msg::Join { device_id, name, platform } = expect(&mut ch).await? else {
+            let Msg::Join { device_id, name, platform } = ch.recv_limited::<Msg>(PRE_AUTH_LIMIT).await? else {
                 return Err("expected a join".into());
             };
-            let Some(_guard) = try_busy(&me.device_id) else {
-                let _ = ch.send(&Msg::Refused { reason: "busy; scan again in a moment".into() }).await;
-                return Err("busy".into());
-            };
             let me = ensure_vault(pool).await?;
+            let key = hex::encode(&ch.remote_key);
+            let taken: Option<String> = sqlx::query_scalar("SELECT public_key FROM vault_devices WHERE id = ?")
+                .bind(&device_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+            let revoked: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM vault_revocations WHERE public_key = ?)")
+                .bind(&key)
+                .fetch_one(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+            if revoked || taken.is_some_and(|k| k != key) {
+                let _ = ch.send(&Msg::Refused { reason: "that device can't join".into() }).await;
+                return Err("refused a join under another device's id or a revoked key".into());
+            }
             // Listed under the key it proved, whatever it claims.
             sqlx::query(
                 "INSERT INTO vault_devices (id, name, public_key, platform, added_at) VALUES (?, ?, ?, ?, ?)
-                 ON CONFLICT (id) DO UPDATE SET name = excluded.name, public_key = excluded.public_key,
-                   platform = excluded.platform",
+                 ON CONFLICT (id) DO NOTHING",
             )
             .bind(&device_id)
             .bind(&name)
-            .bind(hex::encode(&ch.remote_key))
+            .bind(&key)
             .bind(&platform)
             .bind(now_iso())
             .execute(pool)
@@ -576,12 +668,18 @@ where
     };
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let on_outcome = Arc::new(on_outcome);
+    let permits = Arc::new(tokio::sync::Semaphore::new(MAX_CONNECTIONS));
     let handle = tokio::spawn(async move {
         loop {
             let Ok((stream, _)) = listener.accept().await else { continue };
+            let Ok(permit) = permits.clone().try_acquire_owned() else {
+                drop(stream);
+                continue;
+            };
             let (pool, slot, on_outcome) = (pool.clone(), slot.clone(), on_outcome.clone());
             tokio::spawn(async move {
                 on_outcome(serve(&pool, stream, &slot).await);
+                drop(permit);
             });
         }
     });

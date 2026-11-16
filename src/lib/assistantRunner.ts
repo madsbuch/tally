@@ -22,9 +22,11 @@
  * goes back to.
  */
 import {
+  chatVersion,
   createChat,
   deleteChat,
   getChatMessages,
+  getChatSummary,
   updateChatMessages,
 } from "./db";
 import { runAssistantTurn, sanitizeChart } from "./assistant";
@@ -289,6 +291,17 @@ export function getAssistantState(): AssistantState {
 
 let persisting = false;
 let persistAgain = false;
+/**
+ * The version of the chat row (its sync clock value) this transcript was
+ * read from or last written as. If another device's version has replaced it
+ * meanwhile — the same chat continued over there, brought in by sync — the
+ * running transcript is saved as a chat of its own rather than over theirs.
+ */
+let basis: string | null = null;
+
+async function versionOf(id: string): Promise<string | null> {
+  return (await chatVersion(id).catch(() => null))?.hlc ?? null;
+}
 
 /**
  * Write the transcript to the `chats` table. Called after every round, so an
@@ -313,9 +326,21 @@ async function persist(): Promise<void> {
           typeof firstUser?.content === "string" ? firstUser.content : "Chat",
         );
         chatId = await createChat(title, transcript);
+        basis = await versionOf(chatId);
         emit();
       } else {
-        await updateChatMessages(chatId, transcript);
+        const current = await chatVersion(chatId).catch(() => null);
+        if (current && (current.deleted || (basis !== null && current.hlc !== basis))) {
+          // Continued (or deleted) on another device while this ran here:
+          // both conversations are kept.
+          const summary = await getChatSummary(chatId).catch(() => null);
+          const title = `${summary?.title ?? chatTitle("Chat")} (continued in parallel)`;
+          chatId = await createChat(title, transcript);
+          emit();
+        } else {
+          await updateChatMessages(chatId, transcript);
+        }
+        basis = await versionOf(chatId);
       }
     } while (persistAgain);
   } catch (e) {
@@ -443,6 +468,7 @@ export async function startAssistantChat(text: string): Promise<string | null> {
     const opening: ChatMessage[] = [{ role: "user", content: trimmed }];
     const id = await createChat(chatTitle(trimmed), opening);
     if (!id) return null;
+    const version = await versionOf(id);
     if (isRunning()) {
       // A turn resumed while this was saving; it keeps the runner.
       await deleteChat(id).catch(() => {});
@@ -451,6 +477,7 @@ export async function startAssistantChat(text: string): Promise<string | null> {
     openSeq++;
     transcript = opening;
     chatId = id;
+    basis = version;
     items = [{ kind: "user", text: trimmed }];
     run();
     return id;
@@ -489,6 +516,7 @@ export function closeAssistantChat(): void {
   openSeq++;
   transcript = [];
   chatId = null;
+  basis = null;
   items = [];
   status = "idle";
   error = null;
@@ -507,10 +535,12 @@ export async function openAssistantChat(
   if (status === "running") return "skipped";
   const seq = ++openSeq;
   const saved = await getChatMessages(id);
+  const version = await versionOf(id);
   if (seq !== openSeq || isRunning()) return "skipped";
   if (!saved) return "missing";
   transcript = saved;
   chatId = id;
+  basis = version;
   items = transcriptToUi(saved);
   activeTool = null;
   // A transcript ending on an unanswered user message is a turn that died

@@ -390,6 +390,27 @@ async fn sync_start(app: tauri::AppHandle, svc: SyncState<'_>) -> Result<(), Str
     Ok(())
 }
 
+/// Before anything is written to a freshly opened database: a copy of it
+/// from elsewhere (restored, put back) takes a new device id (instance.rs).
+#[tauri::command]
+async fn sync_check_instance(app: tauri::AppHandle) -> Result<(), String> {
+    let pool = db_pool(&app).await?;
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    match sync::instance::check(&pool, &dir.join("tally.db")).await? {
+        sync::instance::Check::Rotated { old_id, new_id } => {
+            eprintln!("sync: this database was a copy from elsewhere; device {old_id} is now {new_id}");
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Marks an exported copy of the database as a copy (instance.rs).
+#[tauri::command]
+async fn mark_db_copy(path: String) -> Result<(), String> {
+    sync::instance::mark_copy(std::path::Path::new(&path)).await
+}
+
 #[tauri::command]
 async fn sync_status(svc: SyncState<'_>) -> Result<sync::service::Status, String> {
     sync::service::status(svc.pool()?, &svc).await
@@ -477,6 +498,8 @@ pub fn run() {
             read_document_file,
             prepare_db_export,
             sync_start,
+            sync_check_instance,
+            mark_db_copy,
             sync_status,
             sync_set_name,
             sync_offer,

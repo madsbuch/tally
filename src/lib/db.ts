@@ -36,6 +36,7 @@ import {
   stateLogs,
   supplementLogs,
   supplements,
+  syncRows,
   workouts,
 } from "../db/schema";
 import type {
@@ -106,6 +107,14 @@ let sqlitePromise: Promise<Database> | null = null;
 function sqlite(): Promise<Database> {
   if (!sqlitePromise) {
     sqlitePromise = Database.load(DB_URL).then(async (conn) => {
+      // Before anything writes: a copy of this database from elsewhere
+      // (restored from a backup, a snapshot put back) takes a new device id,
+      // or sync would quietly stop carrying its changes (src-tauri/src/sync/instance.rs).
+      try {
+        await invoke("sync_check_instance");
+      } catch (e) {
+        console.warn("Checking the database's instance failed", e);
+      }
       // Photos used to be loose files in app data `photos/`; move any still
       // there into the `photos` table before anything reads one. A no-op
       // once the folder is gone; on failure the rest retry next start.
@@ -1155,6 +1164,19 @@ export async function updateChatMessages(
     .update(chats)
     .set({ messages, updatedAt: new Date().toISOString() })
     .where(eq(chats.id, id));
+}
+
+/**
+ * The version of a chat row (src-tauri/src/sync): its clock value, and
+ * whether that version is a deletion. Null for a chat sync hasn't recorded.
+ */
+export async function chatVersion(id: string): Promise<{ hlc: string; deleted: boolean } | null> {
+  const rows = await db
+    .select({ hlc: syncRows.hlc, deleted: syncRows.deleted })
+    .from(syncRows)
+    .where(and(eq(syncRows.tbl, "chats"), eq(syncRows.pk, id)));
+  const r = rows[0];
+  return r ? { hlc: r.hlc, deleted: r.deleted !== 0 } : null;
 }
 
 export async function deleteChat(id: string): Promise<void> {

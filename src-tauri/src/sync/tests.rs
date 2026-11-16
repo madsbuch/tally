@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 pub(crate) struct Device {
     pub(crate) pool: SqlitePool,
     pub(crate) id: String,
-    _dir: Scratch,
+    pub(crate) _dir: Scratch,
 }
 
 pub(crate) async fn device() -> Device {
@@ -386,7 +386,7 @@ async fn a_split_chat_comes_out_the_same_on_both_devices() {
     assert_eq!(chats.len(), 2, "{chats:?}");
     // The later edit (the Mac's) keeps the chat; the phone's becomes its own.
     assert_eq!(chats[0], ("c".into(), "Plan".into(), "[\"q1\",\"mac\"]".into()));
-    assert_eq!(chats[1].1, "Plan (continued on Phone)");
+    assert_eq!(chats[1].1, "Plan (continued in parallel)");
     assert_eq!(chats[1].2, "[\"q1\",\"phone\"]");
 }
 
@@ -559,7 +559,7 @@ async fn joining_needs_an_empty_device_and_then_receives_everything() {
 
     // A device with data of its own is refused, and keeps it.
     exec(&b.pool, "INSERT INTO fasts (id, started_at, goal_hours) VALUES ('f', 'now', 16)").await;
-    assert!(engine::reset_for_join(&b.pool, "v").await.is_err());
+    assert!(engine::reset_for_join(&b.pool, "v", "new-b").await.is_err());
     let n: i64 = sqlx::query_scalar("SELECT count(*) FROM fasts").fetch_one(&b.pool).await.unwrap();
     assert_eq!(n, 1);
 
@@ -567,7 +567,8 @@ async fn joining_needs_an_empty_device_and_then_receives_everything() {
     let c = device().await;
     exec(&c.pool, "INSERT INTO settings (key, value) VALUES ('calorie_target_kcal', '1800')").await;
     let old_id = c.id.clone();
-    let new_id = engine::reset_for_join(&c.pool, "v").await.unwrap();
+    let new_id = crate::sync::new_uuid();
+    engine::reset_for_join(&c.pool, "v", &new_id).await.unwrap();
     assert_ne!(new_id, old_id);
     let c = Device { id: new_id, ..c };
     engine::pull_all(&c.pool, &a.pool, 10, 1 << 20).await.unwrap();
@@ -591,4 +592,56 @@ async fn the_digest_notices_any_difference() {
     exec(&b.pool, "UPDATE sync_state SET applying = 0").await;
     let diff = engine::digest_differences(&same, &engine::digest(&b.pool).await.unwrap());
     assert_eq!(diff, vec!["food_entries".to_string()]);
+}
+
+// ---------------------------------------------------------------------------
+// The clock
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_peer_with_a_clock_years_ahead_cannot_drag_ours_along() {
+    let (a, b) = (device().await, device().await);
+    exec(&a.pool, "INSERT INTO food_entries (id, eaten_at, title, nutrients) VALUES ('m', 'now', 'Oats', '{}')").await;
+    let mut batch = engine::export(&a.pool, 0, &b.id, 100, 1 << 20).await.unwrap();
+    for c in &mut batch.changes {
+        c.hlc = "9999999999999.000000".into();
+    }
+    engine::apply(&b.pool, &a.id, &batch).await.unwrap();
+    let ms: i64 = sqlx::query_scalar("SELECT hlc_ms FROM sync_state").fetch_one(&b.pool).await.unwrap();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+    assert!(ms <= now + 24 * 3600 * 1000 + 1000, "clock dragged to {ms}");
+}
+
+#[tokio::test]
+async fn the_clock_rolls_into_the_next_millisecond_rather_than_overflow() {
+    let a = device().await;
+    let ahead = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64 + 3_600_000;
+    exec(&a.pool, &format!("UPDATE sync_state SET hlc_ms = {ahead}, hlc_counter = 999999")).await;
+    exec(&a.pool, "INSERT INTO fasts (id, started_at, goal_hours) VALUES ('f', 'now', 16)").await;
+    let hlc: String = sqlx::query_scalar("SELECT hlc FROM sync_rows WHERE pk = 'f'").fetch_one(&a.pool).await.unwrap();
+    assert_eq!(hlc, format!("{:013}.000000", ahead + 1));
+}
+
+#[tokio::test]
+async fn malformed_clock_values_are_refused() {
+    let (a, b) = (device().await, device().await);
+    exec(&a.pool, "INSERT INTO food_entries (id, eaten_at, title, nutrients) VALUES ('m', 'now', 'Oats', '{}')").await;
+    for bad in ["1.2", "99999999999999.000000", "0000000000001.0000001", "000000000000a.000000"] {
+        let mut batch = engine::export(&a.pool, 0, &b.id, 100, 1 << 20).await.unwrap();
+        batch.changes[0].hlc = bad.into();
+        assert!(engine::apply(&b.pool, &a.id, &batch).await.is_err(), "{bad} accepted");
+    }
+}
+
+#[tokio::test]
+async fn an_update_that_changes_nothing_is_not_a_new_version() {
+    let a = device().await;
+    exec(&a.pool, "INSERT INTO food_entries (id, eaten_at, title, nutrients) VALUES ('m', 'now', 'Oats', '{}')").await;
+    let before: (String, i64) = sqlx::query_as("SELECT hlc, seq FROM sync_rows WHERE pk = 'm'").fetch_one(&a.pool).await.unwrap();
+    exec(&a.pool, "UPDATE food_entries SET title = 'Oats', nutrients = '{}' WHERE id = 'm'").await;
+    let after: (String, i64) = sqlx::query_as("SELECT hlc, seq FROM sync_rows WHERE pk = 'm'").fetch_one(&a.pool).await.unwrap();
+    assert_eq!(before, after);
+    exec(&a.pool, "UPDATE food_entries SET title = 'Porridge' WHERE id = 'm'").await;
+    let changed: (String, i64) = sqlx::query_as("SELECT hlc, seq FROM sync_rows WHERE pk = 'm'").fetch_one(&a.pool).await.unwrap();
+    assert!(changed.1 > before.1);
 }
