@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { getDb } from "../lib/db";
@@ -39,6 +39,8 @@ import { notifyCoachInboxChanged } from "../lib/coachInbox";
 import { openAssistantChat } from "../lib/assistantRunner";
 import AchievementToast from "../components/AchievementToast";
 import ConfirmHost from "../components/ConfirmHost";
+import PullToRefresh from "../components/PullToRefresh";
+import { refreshEverything } from "../lib/refresh";
 
 /**
  * Bottom tab bar. `to` is one of the tab roots in lib/navigation.ts, which are
@@ -126,6 +128,8 @@ export default function App() {
   // A check-in the user hasn't opened: findable from any tab, for when its
   // notification was swiped away or never seen.
   const unreadCheckin = useUnreadCheckin();
+  /** The page's scroller, where a pull to refresh starts. */
+  const mainRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     // Clear a "working…" notification stranded by a previous process before
@@ -294,9 +298,10 @@ export default function App() {
   return (
     <div className="app">
       <div className="statusbar-scrim" aria-hidden="true" />
-      <main className="app-main">
+      <main className="app-main" ref={mainRef}>
         <Outlet />
       </main>
+      <PullToRefresh scroller={mainRef} onRefresh={refreshEverything} />
       <nav className="tabbar">
         {/* Shown only on a wide window, where the tab bar is a sidebar. */}
         <div className="tabbar-brand" aria-hidden="true">

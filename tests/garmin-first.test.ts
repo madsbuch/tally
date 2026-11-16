@@ -304,7 +304,7 @@ describe("Health Connect as the event bus", () => {
 });
 
 describe("when Garmin syncs (garminSyncPlan)", () => {
-  const ask = (o: Partial<{ manual: boolean; newWorkout: boolean; moved: boolean }> = {}) => ({
+  const ask = (o: Partial<{ manual: boolean; newWorkout: boolean; moved: boolean; pulled: boolean }> = {}) => ({
     manual: false, newWorkout: false, moved: false, ...o,
   });
   const H = 3_600_000;
@@ -321,6 +321,16 @@ describe("when Garmin syncs (garminSyncPlan)", () => {
   test("a full sync still comes round every few hours, moved or not", () => {
     expect(garminSyncPlan(ask({ moved: true }), true, 20 * MIN, 3 * H + MIN)).toEqual({ run: true, light: false });
     expect(garminSyncPlan(ask(), true, 3 * H + MIN, 3 * H + MIN)).toEqual({ run: true, light: false });
+  });
+
+  test("a pull to refresh: the cheap part, unless it was just done", () => {
+    expect(garminSyncPlan(ask({ pulled: true }), true, 3 * MIN, 3 * MIN)).toEqual({ run: true, light: true });
+    expect(garminSyncPlan(ask({ pulled: true }), true, MIN, MIN)).toEqual({ run: false });
+    expect(garminSyncPlan(ask({ pulled: true }), false, 3 * MIN, 3 * MIN)).toEqual({ run: false });
+    expect(garminSyncPlan(ask({ pulled: true }), false, 16 * MIN, 16 * MIN)).toEqual({ run: true, light: true });
+    // A full sync due comes along, and a new workout makes it full.
+    expect(garminSyncPlan(ask({ pulled: true }), true, 3 * MIN, 3 * H + MIN)).toEqual({ run: true, light: false });
+    expect(garminSyncPlan(ask({ pulled: true, newWorkout: true }), true, 3 * MIN, MIN)).toEqual({ run: true, light: false });
   });
 
   test("a new workout or the button: full, at once", () => {

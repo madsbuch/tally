@@ -67,6 +67,12 @@ const NEW_WORKOUT_SYNC_MIN_MS = 2 * 60_000;
  */
 const MOVED_SYNC_MIN_MS = 15 * 60_000;
 const MOVED_SYNC_MIN_MS_SIGNIN = 60 * 60_000;
+/**
+ * Pulled to refresh: someone is looking at today's numbers and asked for new
+ * ones, so sooner still — the light part, as for `moved`.
+ */
+const PULLED_SYNC_MIN_MS = 2 * 60_000;
+const PULLED_SYNC_MIN_MS_SIGNIN = 15 * 60_000;
 /** Gap between consecutive requests. */
 const REQUEST_GAP_MS = 400;
 /** After a 429, leave Garmin alone this long. */
@@ -208,6 +214,8 @@ export interface SyncAsk {
   manual: boolean;
   newWorkout: boolean;
   moved: boolean;
+  /** Pulled to refresh. */
+  pulled?: boolean;
 }
 
 /**
@@ -225,14 +233,20 @@ export function garminSyncPlan(
     ? 0
     : ask.newWorkout
       ? NEW_WORKOUT_SYNC_MIN_MS
-      : ask.moved
+      : ask.pulled
         ? personal
-          ? MOVED_SYNC_MIN_MS
-          : MOVED_SYNC_MIN_MS_SIGNIN
-        : AUTO_SYNC_MIN_MS;
+          ? PULLED_SYNC_MIN_MS
+          : PULLED_SYNC_MIN_MS_SIGNIN
+        : ask.moved
+          ? personal
+            ? MOVED_SYNC_MIN_MS
+            : MOVED_SYNC_MIN_MS_SIGNIN
+          : AUTO_SYNC_MIN_MS;
   if (sinceLast < minGap) return { run: false };
-  // Brought on by Health Connect's numbers moving, and a full sync not due.
-  return { run: true, light: ask.moved && !ask.manual && !ask.newWorkout && sinceFull < AUTO_SYNC_MIN_MS };
+  // Brought on by Health Connect's numbers moving or a pull, and a full sync
+  // not due.
+  const quick = (ask.moved || ask.pulled === true) && !ask.manual && !ask.newWorkout;
+  return { run: true, light: quick && sinceFull < AUTO_SYNC_MIN_MS };
 }
 /** When the last full sync (laps, readiness) finished, in this run of the app. */
 let lastFullSyncAt = 0;
@@ -244,16 +258,20 @@ let lastFullSyncAt = 0;
  * (Health Connect's numbers for today moved). Null = skipped (not connected,
  * too soon, or paused). Concurrent calls join the running one.
  */
-export function syncGarmin(
-  opts: { manual?: boolean; newWorkout?: boolean; moved?: boolean } = {},
-): Promise<GarminSyncResult | null> {
-  inFlight ??= runSync(opts.manual ?? false, opts.newWorkout ?? false, opts.moved ?? false).finally(() => {
+export function syncGarmin(opts: Partial<SyncAsk> = {}): Promise<GarminSyncResult | null> {
+  inFlight ??= runSync({
+    manual: opts.manual ?? false,
+    newWorkout: opts.newWorkout ?? false,
+    moved: opts.moved ?? false,
+    pulled: opts.pulled ?? false,
+  }).finally(() => {
     inFlight = null;
   });
   return inFlight;
 }
 
-async function runSync(manual: boolean, newWorkout: boolean, moved: boolean): Promise<GarminSyncResult | null> {
+async function runSync(ask: SyncAsk): Promise<GarminSyncResult | null> {
+  const { manual } = ask;
   const status = await getGarminStatus();
   if (!status.personal && !status.connected) return null;
   if (await getGarminPausedUntil()) {
@@ -270,7 +288,7 @@ async function runSync(manual: boolean, newWorkout: boolean, moved: boolean): Pr
   // (Garmin Connect writes it there after its own upload), so fetch its
   // zones, Training Effect and laps while it's the one being looked at.
   const plan = garminSyncPlan(
-    { manual, newWorkout, moved },
+    ask,
     status.personal,
     last ? Date.now() - Date.parse(last) : Infinity,
     Date.now() - lastFullSyncAt,

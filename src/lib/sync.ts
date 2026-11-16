@@ -78,6 +78,39 @@ export async function syncNow(): Promise<void> {
   await invoke("sync_now");
 }
 
+/**
+ * Sync with the vault's other devices now, and wait for that round to end
+ * (at most `timeoutMs`: a device that's away doesn't hold anything up).
+ * False when there's no other device to sync with.
+ */
+export async function syncDevicesNow(timeoutMs = 10_000): Promise<boolean> {
+  const before = await getSyncStatus();
+  if (!before.inVault || !before.devices.some((d) => !d.isSelf)) return false;
+  const askedAt = Date.now();
+  await new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      off();
+      resolve();
+    };
+    const timer = setTimeout(finish, timeoutMs);
+    // A round ending after the ask is the one asked for (or one that was
+    // already under way, which carried the same changes).
+    const off = onSyncStatus(() => {
+      void getSyncStatus()
+        .then((s) => {
+          if (!s.syncing && s.lastRoundAt != null && Date.parse(s.lastRoundAt) >= askedAt) finish();
+        })
+        .catch(() => {});
+    });
+    syncNow().catch(finish);
+  });
+  return true;
+}
+
 export async function removeDevice(id: string): Promise<void> {
   await invoke("sync_remove_device", { id });
 }
