@@ -9,25 +9,34 @@
 use sqlx::SqlitePool;
 use std::path::Path;
 
-/// Stores JPEG bytes and returns the filename they're keyed by: a millisecond
-/// timestamp. Pages of one PDF can arrive within the same millisecond, so it
-/// steps forward until a name is free.
-pub async fn save(pool: &SqlitePool, bytes: &[u8], now_millis: u128) -> Result<String, String> {
-    let mut millis = now_millis;
-    loop {
-        let name = format!("{millis}.jpg");
-        let inserted = sqlx::query("INSERT OR IGNORE INTO photos (filename, data) VALUES (?, ?)")
-            .bind(&name)
-            .bind(bytes)
-            .execute(pool)
-            .await
-            .map_err(|e| e.to_string())?
-            .rows_affected();
-        if inserted == 1 {
-            return Ok(name);
-        }
-        millis += 1;
+/// Stores JPEG bytes and returns the filename they're keyed by: the SHA-256
+/// of the bytes. Naming by content means a name always stands for the same
+/// image on every device — two devices can never mint the same name for
+/// different pictures, and the same picture saved twice is stored once.
+///
+/// Photos saved before this keep their old timestamp names; nothing depends
+/// on the shape of a name.
+pub async fn save(pool: &SqlitePool, bytes: &[u8]) -> Result<String, String> {
+    let name = content_name(bytes);
+    sqlx::query("INSERT OR IGNORE INTO photos (filename, data) VALUES (?, ?)")
+        .bind(&name)
+        .bind(bytes)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(name)
+}
+
+/// The name a photo with these bytes is stored under.
+pub fn content_name(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(bytes);
+    let mut name = String::with_capacity(68);
+    for b in digest {
+        name.push_str(&format!("{b:02x}"));
     }
+    name.push_str(".jpg");
+    name
 }
 
 /// The stored bytes of a photo; an error when there's no such photo.
@@ -231,7 +240,72 @@ pub(crate) mod tests {
             .await
             .unwrap();
         assert_eq!(kept, "v");
-        save(&pool, b"after upgrade", 1).await.unwrap();
+        save(&pool, b"after upgrade").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn uuid_migration_rekeys_linked_rows_under_foreign_keys() {
+        // A device on the version before UUID ids (0038 is version 39), with
+        // rows that point at each other — the way the app upgrades: sqlx,
+        // foreign keys on, each migration in a transaction.
+        let scratch = Scratch::new();
+        let options = SqliteConnectOptions::new()
+            .filename(scratch.0.join("tally.db"))
+            .create_if_missing(true);
+        let pool = SqlitePoolOptions::new().connect_with(options).await.unwrap();
+        let mut migrator = Migrator::new(AppMigrations).await.unwrap();
+        let all = migrator.migrations.to_vec();
+        assert!(all.iter().any(|m| m.version == 39 && m.description == "uuid_ids"));
+        migrator.migrations = all.into_iter().filter(|m| m.version < 39).collect::<Vec<_>>().into();
+        migrator.run(&pool).await.unwrap();
+        for stmt in [
+            "INSERT INTO supplements (id, name) VALUES (2, 'D3')",
+            "INSERT INTO supplement_logs (id, supplement_id, taken_at) VALUES (1, 2, '2026-01-01T08:00:00Z')",
+            "INSERT INTO documents (id, created_at, title) VALUES (5, '2026-01-01T08:00:00Z', 'Labs')",
+            "INSERT INTO document_files (document_id, filename, media_type, data) VALUES (5, 'a.pdf', 'application/pdf', x'00')",
+            "INSERT INTO state_logs (id, logged_at, day, tz_offset_min) VALUES (9, '2026-01-01T08:00:00Z', '2026-01-01', 60)",
+            "INSERT INTO state_log_tags (id, log_id, label) VALUES (1, 9, 'Bloated')",
+            "INSERT INTO settings (key, value) VALUES ('coach_unread_chat', '12')",
+        ] {
+            sqlx::query(stmt).execute(&pool).await.unwrap();
+        }
+
+        Migrator::new(AppMigrations).await.unwrap().run(&pool).await.unwrap();
+
+        let id = |n: u32| format!("00000000-0000-7000-8000-{n:012x}");
+        let log: (String, String) = sqlx::query_as("SELECT id, supplement_id FROM supplement_logs")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(log, (id(1), id(2)));
+        let doc: String = sqlx::query_scalar("SELECT document_id FROM document_files")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(doc, id(5));
+        let tag: String = sqlx::query_scalar("SELECT log_id FROM state_log_tags")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(tag, id(9));
+        let unread: String =
+            sqlx::query_scalar("SELECT value FROM device_settings WHERE key = 'coach_unread_chat'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(unread, id(12));
+        let broken: Vec<(String,)> = sqlx::query_as("SELECT \"table\" FROM pragma_foreign_key_check")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert!(broken.is_empty(), "{broken:?}");
+        // The rebuilt tables still enforce their references.
+        assert!(sqlx::query(
+            "INSERT INTO supplement_logs (id, supplement_id, taken_at) VALUES ('x', 'missing', 'now')"
+        )
+        .execute(&pool)
+        .await
+        .is_err());
     }
 
     #[tokio::test]
@@ -334,8 +408,9 @@ pub(crate) mod tests {
         let pool = migrated_db(&scratch).await;
         let bytes = fake_jpeg(40, 300_000);
 
-        let name = save(&pool, &bytes, 1_730_987_654_321).await.unwrap();
-        assert_eq!(name, "1730987654321.jpg");
+        let name = save(&pool, &bytes).await.unwrap();
+        assert_eq!(name, content_name(&bytes));
+        assert_eq!(name.len(), 64 + ".jpg".len());
         assert_eq!(read(&pool, &name).await.unwrap(), bytes);
 
         delete(&pool, &name).await.unwrap();
@@ -345,20 +420,29 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn saves_in_the_same_millisecond_get_distinct_names() {
+    async fn names_follow_the_bytes() {
         let scratch = Scratch::new();
         let pool = migrated_db(&scratch).await;
         let pages: Vec<Vec<u8>> = (0..4).map(|i| fake_jpeg(50 + i, 100)).collect();
 
         let mut names = Vec::new();
         for page in &pages {
-            names.push(save(&pool, page, 5_000).await.unwrap());
+            names.push(save(&pool, page).await.unwrap());
         }
 
-        assert_eq!(names, ["5000.jpg", "5001.jpg", "5002.jpg", "5003.jpg"]);
+        // Different pictures, different names, each holding its own bytes…
+        let distinct: std::collections::HashSet<_> = names.iter().collect();
+        assert_eq!(distinct.len(), pages.len());
         for (name, page) in names.iter().zip(&pages) {
             assert_eq!(&read(&pool, name).await.unwrap(), page);
         }
+        // …and the same picture again is the same row.
+        assert_eq!(save(&pool, &pages[0]).await.unwrap(), names[0]);
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM photos")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 4);
     }
 
     #[tokio::test]
@@ -366,7 +450,7 @@ pub(crate) mod tests {
         let scratch = Scratch::new();
         let pool = migrated_db(&scratch).await;
         let bytes = fake_jpeg(60, 4000);
-        let name = save(&pool, &bytes, 7).await.unwrap();
+        let name = save(&pool, &bytes).await.unwrap();
 
         let export = scratch.0.join("export.db");
         sqlx::query(&format!("VACUUM INTO '{}'", export.display()))

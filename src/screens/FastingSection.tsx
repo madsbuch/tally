@@ -253,7 +253,7 @@ export default function FastingSection() {
   /** Fast-breaking meals tracked inside the active fast's window. */
   const [fastMeals, setFastMeals] = useState<FoodEntry[]>([]);
   /** The flagged meal being marked as not breaking the fast, and the reason typed so far. */
-  const [exempting, setExempting] = useState<number | null>(null);
+  const [exempting, setExempting] = useState<string | null>(null);
   const [exemptNote, setExemptNote] = useState("");
   const [savingExempt, setSavingExempt] = useState(false);
   const [history, setHistory] = useState<Fast[]>([]);
@@ -471,7 +471,7 @@ export default function FastingSection() {
     }
   }
 
-  async function handleDelete(id: number) {
+  async function handleDelete(id: string) {
     if (!window.confirm("Delete this fast from history?")) return;
     setError(null);
     try {

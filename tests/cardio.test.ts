@@ -90,7 +90,7 @@ describe("cardio from average heart rate", () => {
     expect(WorkoutChatSchema.parse({ reply: "OK", entry: { avg_hr: null } }).entry?.avg_hr).toBeNull();
     expect(WorkoutChatSchema.parse({ reply: "OK", entry: { title: "Ride" } }).entry?.avg_hr).toBeUndefined();
     expect(WorkoutChatSchema.parse({ reply: "OK", entry: { avg_hr: "unknown" } }).entry?.avg_hr).toBeUndefined();
-    const snapshot = parseEntrySnapshot({ ...workout, id: 1, source: null, external_id: null, day: null, tz_offset_min: null });
+    const snapshot = parseEntrySnapshot({ ...workout, id: "w1", source: null, external_id: null, day: null, tz_offset_min: null });
     expect(snapshot && "avg_hr" in snapshot ? snapshot.avg_hr : undefined).toBeNull();
   });
 

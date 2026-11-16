@@ -66,6 +66,7 @@ import { onAppResume, wasSuspendedSince } from "./appLifecycle";
 import { withBackgroundTask } from "./background";
 import { readPhotoDataUrl, savePhoto } from "./photos";
 import { dayOf, shiftDay, timeOf } from "./daystamp";
+import { idArg } from "./ids";
 import type {
   Capture,
   Fast,
@@ -397,8 +398,8 @@ const DIARY_TOOLS: ToolDef[] = [
         type: "object",
         properties: {
           id: {
-            type: "number",
-            description: "Entry id (the #number) from the diary listing in your instructions",
+            type: "string",
+            description: "Entry id (the text after #) from the diary listing in your instructions",
           },
           portion: {
             type: "number",
@@ -425,7 +426,7 @@ const DIARY_TOOLS: ToolDef[] = [
       parameters: {
         type: "object",
         properties: {
-          id: { type: "number", description: "Saved meal id (the #number) from your instructions" },
+          id: { type: "string", description: "Saved meal id (the text after #) from your instructions" },
           portion: {
             type: "number",
             description:
@@ -798,11 +799,11 @@ async function executeTool(
   }
 
   if (name === "repeat_meal") {
-    const rawId = num(args["id"]);
+    const rawId = idArg(args["id"]);
     if (rawId == null) return "Error: id is required.";
-    const source = await getFoodEntry(Math.round(rawId));
+    const source = await getFoodEntry(rawId);
     if (!source) {
-      return `Error: there is no diary entry #${Math.round(rawId)}, log it with log_meal instead.`;
+      return `Error: there is no diary entry #${rawId}, log it with log_meal instead.`;
     }
     // A portion is a multiple of what that entry was, so the bounds only have
     // to keep a nonsense number from turning into a nonsense day.
@@ -827,11 +828,11 @@ async function executeTool(
   }
 
   if (name === "log_saved_meal") {
-    const rawId = num(args["id"]);
+    const rawId = idArg(args["id"]);
     if (rawId == null) return "Error: id is required.";
-    const saved = await getSavedMeal(Math.round(rawId));
+    const saved = await getSavedMeal(rawId);
     if (!saved) {
-      return `Error: there is no saved meal #${Math.round(rawId)}, log it with log_meal instead.`;
+      return `Error: there is no saved meal #${rawId}, log it with log_meal instead.`;
     }
     const portion = Math.min(20, Math.max(0.05, num(args["portion"]) ?? 1));
     const title = portion === 1 ? saved.name : `${saved.name} (${round2(portion)}×)`;
@@ -986,7 +987,7 @@ async function executeTool(
 // ---------------------------------------------------------------------------
 
 const MAX_ROUNDS = 10;
-const inFlight = new Set<number>();
+const inFlight = new Set<string>();
 
 // ---------------------------------------------------------------------------
 // Background awareness
@@ -1117,7 +1118,7 @@ async function runCapture(capture: Capture): Promise<void> {
   notifyDiaryChanged();
 }
 
-async function processCapture(id: number): Promise<void> {
+async function processCapture(id: string): Promise<void> {
   if (inFlight.has(id)) return;
   inFlight.add(id);
   const startedAt = Date.now();
@@ -1163,7 +1164,7 @@ export interface EnqueueOptions {
  * Fire-and-forget: persists the capture immediately and starts background
  * analysis. Returns as soon as the capture is stored — never blocks on AI.
  */
-export async function enqueueCapture(opts: EnqueueOptions): Promise<number> {
+export async function enqueueCapture(opts: EnqueueOptions): Promise<string> {
   const photoPath = opts.photoBase64 ? await savePhoto(opts.photoBase64) : null;
   const id = await addCapture({
     created_at: new Date().toISOString(),
@@ -1177,7 +1178,7 @@ export async function enqueueCapture(opts: EnqueueOptions): Promise<number> {
 }
 
 /** Re-run a failed capture. */
-export async function retryCapture(id: number): Promise<void> {
+export async function retryCapture(id: string): Promise<void> {
   await setCaptureStatus(id, "pending", null);
   notifyDiaryChanged();
   void processCapture(id);

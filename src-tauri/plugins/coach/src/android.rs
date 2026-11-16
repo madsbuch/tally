@@ -12,7 +12,7 @@ const PLUGIN_IDENTIFIER: &str = "com.madsbuch.tally.coach";
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OpenedCheckin {
-    chat_id: Option<i64>,
+    chat_id: Option<String>,
 }
 
 /// `notifyCheckin`'s answer.
@@ -46,7 +46,7 @@ impl<R: Runtime> Coach<R> {
         Ok(())
     }
 
-    pub fn take_opened_checkin(&self) -> crate::Result<Option<i64>> {
+    pub fn take_opened_checkin(&self) -> crate::Result<Option<String>> {
         let opened = self
             .0
             .run_mobile_plugin::<OpenedCheckin>("takeOpenedCheckin", ())?;

@@ -19,7 +19,7 @@ class ScheduleCheckinArgs {
 
 @InvokeArg
 class NotifyCheckinArgs {
-    var chatId: Long = 0
+    var chatId: String = ""
     var title: String = ""
     var body: String = ""
 }
@@ -74,7 +74,7 @@ class CoachPlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun notifyCheckin(invoke: Invoke) {
         val args = invoke.parseArgs(NotifyCheckinArgs::class.java)
-        val posted = args.chatId > 0 &&
+        val posted = args.chatId.isNotEmpty() &&
             CheckinNotification.post(activity.applicationContext, args.chatId, args.title, args.body)
         val ret = JSObject()
         ret.put("posted", posted)

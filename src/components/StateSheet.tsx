@@ -186,7 +186,7 @@ function TagChips({
   onToggle,
 }: {
   categories: StateCategory[];
-  picked: ReadonlySet<number>;
+  picked: ReadonlySet<string>;
   onToggle: (c: StateCategory) => void;
 }) {
   if (categories.length === 0) {
@@ -223,7 +223,7 @@ function TagChips({
  */
 function useTagPicker(initial: readonly StateTag[] = []) {
   const [categories, setCategories] = useState<StateCategory[]>([]);
-  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [picked, setPicked] = useState<Set<string>>(new Set());
   const [managing, setManaging] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);

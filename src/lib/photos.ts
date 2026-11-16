@@ -75,7 +75,7 @@ export async function savePhoto(base64: string): Promise<string> {
  * from) in the `document_files` table. Not a photo, but stored the same way:
  * through Rust, so the bytes bind as a BLOB.
  */
-export async function saveDocumentFile(documentId: number, file: File): Promise<void> {
+export async function saveDocumentFile(documentId: string, file: File): Promise<void> {
   const dataBase64 = await blobToBase64(file);
   await getDb();
   await invoke("save_document_file", {

@@ -36,7 +36,7 @@ import type { AutoMetric } from "../lib/schemas";
 interface Loaded {
   e: Experiment;
   trials: ExperimentTrial[];
-  metrics: Map<number, TrialMetrics>;
+  metrics: Map<string, TrialMetrics>;
   manual: Manual | null;
 }
 

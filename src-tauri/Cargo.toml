@@ -28,6 +28,8 @@ tauri-plugin-sql = { version = "2.4.0", features = ["sqlite"] }
 tauri-plugin-notification = "2.3.3"
 tauri-plugin-http = "2.5.9"
 base64 = "0.22.1"
+# Photos are named by the SHA-256 of their bytes (photos.rs).
+sha2 = "0.10"
 # Same sqlx as tauri-plugin-sql: photo commands bind BLOBs on its pool.
 sqlx = { version = "0.8", default-features = false, features = ["sqlite"] }
 tauri-plugin-background = { path = "plugins/background" }

@@ -38,7 +38,7 @@ export type TriggerKey =
 
 /** A memory whose reminder has come due. */
 export interface DueFollowUp {
-  id: number;
+  id: string;
   text: string;
   /** The day it was set for; may be in the past if the app wasn't opened. */
   followUpOn: string;
@@ -465,7 +465,7 @@ export async function loadTriggerHistory(
 export async function recordTriggerRun(
   key: TriggerKey,
   today: string,
-  chatId: number | null,
+  chatId: string | null,
 ): Promise<void> {
   await addCoachRun(key, today, chatId).catch((e) => {
     // A lost record only risks a repeat check-in; never fail the message over it.

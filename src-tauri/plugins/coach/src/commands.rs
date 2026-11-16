@@ -35,7 +35,7 @@ pub(crate) async fn cancel_checkin<R: Runtime>(app: AppHandle<R>) -> Result<()> 
 /// The chat whose check-in notification was tapped since the last call, if
 /// any. Each tap is handed out once.
 #[command]
-pub(crate) async fn take_opened_checkin<R: Runtime>(app: AppHandle<R>) -> Result<Option<i64>> {
+pub(crate) async fn take_opened_checkin<R: Runtime>(app: AppHandle<R>) -> Result<Option<String>> {
     app.coach().take_opened_checkin()
 }
 
@@ -44,7 +44,7 @@ pub(crate) async fn take_opened_checkin<R: Runtime>(app: AppHandle<R>) -> Result
 #[command]
 pub(crate) async fn notify_checkin<R: Runtime>(
     app: AppHandle<R>,
-    chat_id: i64,
+    chat_id: String,
     title: String,
     body: String,
 ) -> Result<bool> {

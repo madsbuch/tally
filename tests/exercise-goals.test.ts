@@ -137,7 +137,7 @@ describe("rolling exercise goals", () => {
   test("target persists and old undo snapshots still load", async () => {
     await setSetting("zone2_weekly_target", "250");
     expect(await getSetting("zone2_weekly_target")).toBe("250");
-    const snapshot = parseEntrySnapshot({ ...workout, id: 1, source: null, external_id: null, day: null, tz_offset_min: null });
+    const snapshot = parseEntrySnapshot({ ...workout, id: "w1", source: null, external_id: null, day: null, tz_offset_min: null });
     expect(snapshot && "zone2_min" in snapshot ? snapshot.zone2_min : undefined).toBeNull();
   });
   test("entry chat distinguishes omitted, cleared and zero minutes", () => {

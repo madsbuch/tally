@@ -85,7 +85,7 @@ export default function AssistantPage() {
   const [input, setInput] = useState("");
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   /** This chat as saved, shown read-only while a turn runs in another one. */
-  const [snapshot, setSnapshot] = useState<{ id: number; items: UiItem[] } | null>(null);
+  const [snapshot, setSnapshot] = useState<{ id: string; items: UiItem[] } | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const composerRef = useRef<HTMLDivElement | null>(null);
@@ -208,7 +208,7 @@ export default function AssistantPage() {
     }
   }, [input, inChat]);
 
-  async function removeChat(id: number) {
+  async function removeChat(id: string) {
     if (!window.confirm("Delete this chat?")) return;
     await deleteChat(id);
     setHistory(await listChats());

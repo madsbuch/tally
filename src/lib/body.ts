@@ -207,7 +207,7 @@ function intakeFrom(
   workouts: Workout[] = [],
   sleep: SleepSession[] = [],
   readings: BloodReading[] = [],
-  garmin: Map<number, { load: number | null; focus: LoadFocus | null }> = new Map(),
+  garmin: Map<string, { load: number | null; focus: LoadFocus | null }> = new Map(),
   garminDays: GarminTrainingDay[] = [],
   garminBalance: Intake["garminBalance"] = null,
   fastedDays: Set<string> = new Set(),
@@ -278,7 +278,7 @@ function intakeFrom(
  */
 export function fuelReadings(readings: BloodReading[]): FuelReading[] {
   const out: FuelReading[] = [];
-  const paired = new Set<number>();
+  const paired = new Set<string>();
   for (const r of readings) {
     if (r.kind !== "ketone") continue;
     const partner = partnerOf(r, readings);
@@ -318,12 +318,12 @@ export async function loadIntake(startDay: string, endDay: string): Promise<Inta
   ]);
   const [details, days, balance] = await Promise.all([
     garminDetailsForWorkouts(workouts.map((w) => w.id)).catch(
-      () => new Map<number, GarminWorkoutDetail>(),
+      () => new Map<string, GarminWorkoutDetail>(),
     ),
     listGarminDaysForRange(shiftDay(endDay, -GARMIN_DAYS_BACK), endDay).catch(() => []),
     latestGarminLoadBalance(shiftDay(endDay, -GARMIN_DAYS_BACK), endDay).catch(() => null),
   ]);
-  const garmin = new Map<number, { load: number | null; focus: LoadFocus | null }>();
+  const garmin = new Map<string, { load: number | null; focus: LoadFocus | null }>();
   for (const [id, d] of details) {
     garmin.set(id, {
       load: d.trainingLoad != null && d.trainingLoad >= 0 ? d.trainingLoad : null,
@@ -371,7 +371,7 @@ export interface LabTest {
   day: string;
   value: number;
   /** The library document it came from. */
-  documentId: number;
+  documentId: string;
 }
 
 /** A blood test older than this says too little about now to anchor on. */

@@ -10,7 +10,7 @@ use sqlx::SqlitePool;
 /// Stores (or replaces) the original file of document `document_id`.
 pub async fn save(
     pool: &SqlitePool,
-    document_id: i64,
+    document_id: &str,
     filename: &str,
     media_type: &str,
     bytes: &[u8],
@@ -31,7 +31,7 @@ pub async fn save(
 
 /// The stored bytes of document `document_id`'s original; an error when it
 /// has none.
-pub async fn read(pool: &SqlitePool, document_id: i64) -> Result<Vec<u8>, String> {
+pub async fn read(pool: &SqlitePool, document_id: &str) -> Result<Vec<u8>, String> {
     let data: Option<Vec<u8>> =
         sqlx::query_scalar("SELECT data FROM document_files WHERE document_id = ?")
             .bind(document_id)
@@ -46,9 +46,10 @@ mod tests {
     use super::*;
     use crate::photos::tests::{migrated_db, Scratch};
 
-    async fn add_document(pool: &SqlitePool) -> i64 {
+    async fn add_document(pool: &SqlitePool) -> String {
         sqlx::query_scalar(
-            "INSERT INTO documents (created_at, title) VALUES ('2026-11-13T08:00:00Z', 'DEXA') \
+            "INSERT INTO documents (id, created_at, title) \
+             VALUES ('0193a1b2-0000-7000-8000-000000000001', '2026-11-13T08:00:00Z', 'DEXA') \
              RETURNING id",
         )
         .fetch_one(pool)
@@ -70,13 +71,13 @@ mod tests {
         let id = add_document(&pool).await;
         let pdf = fake_pdf(3_000_000);
 
-        save(&pool, id, "dexa.pdf", "application/pdf", &pdf).await.unwrap();
+        save(&pool, &id, "dexa.pdf", "application/pdf", &pdf).await.unwrap();
 
-        assert_eq!(read(&pool, id).await.unwrap(), pdf);
+        assert_eq!(read(&pool, &id).await.unwrap(), pdf);
         let (name, media): (String, String) = sqlx::query_as(
             "SELECT filename, media_type FROM document_files WHERE document_id = ?",
         )
-        .bind(id)
+        .bind(&id)
         .fetch_one(&pool)
         .await
         .unwrap();
@@ -88,11 +89,11 @@ mod tests {
         let scratch = Scratch::new();
         let pool = migrated_db(&scratch).await;
         let id = add_document(&pool).await;
-        save(&pool, id, "dexa.pdf", "application/pdf", &fake_pdf(100)).await.unwrap();
+        save(&pool, &id, "dexa.pdf", "application/pdf", &fake_pdf(100)).await.unwrap();
 
-        sqlx::query("DELETE FROM documents WHERE id = ?").bind(id).execute(&pool).await.unwrap();
+        sqlx::query("DELETE FROM documents WHERE id = ?").bind(&id).execute(&pool).await.unwrap();
 
-        assert!(read(&pool, id).await.is_err());
+        assert!(read(&pool, &id).await.is_err());
     }
 
     #[tokio::test]
@@ -100,6 +101,6 @@ mod tests {
         let scratch = Scratch::new();
         let pool = migrated_db(&scratch).await;
 
-        assert!(save(&pool, 999, "x.pdf", "application/pdf", &fake_pdf(10)).await.is_err());
+        assert!(save(&pool, "no-such-document", "x.pdf", "application/pdf", &fake_pdf(10)).await.is_err());
     }
 }

@@ -176,7 +176,7 @@ export type AssistantStatus =
   | "error";
 
 export interface AssistantState {
-  chatId: number | null;
+  chatId: string | null;
   items: UiItem[];
   status: AssistantStatus;
   /** Why the turn stopped; null unless status is "error" or "interrupted". */
@@ -191,7 +191,7 @@ export interface AssistantState {
 }
 
 let transcript: ChatMessage[] = [];
-let chatId: number | null = null;
+let chatId: string | null = null;
 let items: UiItem[] = [];
 let status: AssistantStatus = "idle";
 let error: string | null = null;
@@ -435,14 +435,14 @@ async function refreshSystemPrompt(): Promise<void> {
  * the coach is still thinking. Resolves to its id, or null when a turn is
  * already running or the chat couldn't be saved. Never throws.
  */
-export async function startAssistantChat(text: string): Promise<number | null> {
+export async function startAssistantChat(text: string): Promise<string | null> {
   const trimmed = text.trim();
   if (!trimmed || status === "running" || starting) return null;
   starting = true;
   try {
     const opening: ChatMessage[] = [{ role: "user", content: trimmed }];
     const id = await createChat(chatTitle(trimmed), opening);
-    if (id <= 0) return null;
+    if (!id) return null;
     if (isRunning()) {
       // A turn resumed while this was saving; it keeps the runner.
       await deleteChat(id).catch(() => {});
@@ -502,7 +502,7 @@ export function closeAssistantChat(): void {
  * this one was being read.
  */
 export async function openAssistantChat(
-  id: number,
+  id: string,
 ): Promise<"opened" | "missing" | "skipped"> {
   if (status === "running") return "skipped";
   const seq = ++openSeq;

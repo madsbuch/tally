@@ -2,6 +2,7 @@ import { and, eq, getTableColumns, gte, inArray, isNotNull, like, lte, sql } fro
 import type { SQL } from "drizzle-orm";
 import { garminActivities, garminDays, healthMetrics, sleepSessions, workouts } from "../db/schema";
 import { db, upsertSleepSession } from "./db";
+import { derivedId } from "./ids";
 import { dayOf, stampOf } from "./daystamp";
 import { bestSessionMatch, recordIdNames, sameNight } from "./syncMatch";
 import type { Span } from "./syncMatch";
@@ -131,7 +132,7 @@ function workoutUpdatesFor(a: ActivityIn) {
 }
 
 /** Refresh the measured average without erasing Health Connect HR when Garmin lacks it. */
-async function updateLinkedWorkoutHeartRate(workoutId: number, value: number | null) {
+async function updateLinkedWorkoutHeartRate(workoutId: string, value: number | null) {
   const avgHr = sql<number | null>`coalesce(${normalizeAverageHeartRate(value)}, ${workouts.avgHr})`;
   await db.update(workouts).set({
     avgHr,
@@ -179,7 +180,7 @@ export async function linkGarminActivity(
   }
 
   const candidates = await unclaimedSyncedWorkoutsNear(a.startMs, a.id);
-  let match: { id: number; how: "exact" | "time" } | null = null;
+  let match: { id: string; how: "exact" | "time" } | null = null;
   const exact = candidates.find((c) => recordIdNames(c.sourceRecordId, a.id));
   if (exact) {
     match = { id: exact.id, how: "exact" };
@@ -191,7 +192,7 @@ export async function linkGarminActivity(
     if (best) match = { id: best.id, how: "time" };
   }
 
-  let workoutId: number | null = match?.id ?? null;
+  let workoutId: string | null = match?.id ?? null;
   let outcome: LinkOutcome = match?.how ?? "skipped";
   if (!match && !existing?.dismissed) {
     const tzOffsetMin = a.offsetMin ?? stampOf(iso(a.startMs)).tz_offset_min;
@@ -200,6 +201,8 @@ export async function linkGarminActivity(
       .insert(workouts)
       .values({
         ...values,
+        // Named after the activity, so two devices importing it agree on its id.
+        id: await derivedId("workouts", `garmin:${a.id}`),
         day: dayOf(values.performedAt, tzOffsetMin),
         tzOffsetMin,
         source: "Garmin",
@@ -482,7 +485,7 @@ export async function earliestGarminActivityAt(): Promise<string | null> {
 }
 
 export interface GarminWorkoutDetail {
-  workoutId: number;
+  workoutId: string;
   activityId: string;
   typeKey: string | null;
   distanceM: number | null;
@@ -504,9 +507,9 @@ export interface GarminWorkoutDetail {
 
 /** Garmin's detail for these workouts, keyed by workout id. */
 export async function garminDetailsForWorkouts(
-  ids: number[],
-): Promise<Map<number, GarminWorkoutDetail>> {
-  const out = new Map<number, GarminWorkoutDetail>();
+  ids: string[],
+): Promise<Map<string, GarminWorkoutDetail>> {
+  const out = new Map<string, GarminWorkoutDetail>();
   if (ids.length === 0) return out;
   const rows = await db
     .select()

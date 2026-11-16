@@ -61,8 +61,8 @@ async function run(): Promise<number> {
   if (logs.length === 0) return 0;
 
   // Per-dose nutrients and how they were arrived at, per supplement.
-  const perDose = new Map<number, { nutrients: Nutrients; model: string | null; notes: string | null }>();
-  const needEstimate = new Map<number, SupplementLogWithSupplement>();
+  const perDose = new Map<string, { nutrients: Nutrients; model: string | null; notes: string | null }>();
+  const needEstimate = new Map<string, SupplementLogWithSupplement>();
   for (const l of logs) {
     if (Object.keys(l.nutrients).length > 0) {
       perDose.set(l.supplement_id, { nutrients: l.nutrients, model: null, notes: null });

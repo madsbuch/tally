@@ -53,7 +53,7 @@ const INSTRUCTION =
 export interface CheckinResult {
   sent: boolean;
   reason: Evaluation["reason"] | "no-key" | "busy" | "failed" | "spend-cap";
-  chatId?: number;
+  chatId?: string;
 }
 
 let inFlight = false;
@@ -75,7 +75,7 @@ function shortDate(day: string): string {
   });
 }
 
-async function notify(chatId: number, title: string, body: string): Promise<void> {
+async function notify(chatId: string, title: string, body: string): Promise<void> {
   try {
     if (!(await ensureNotificationPermission())) return;
     // On Android the coach plugin posts it — the same notification the

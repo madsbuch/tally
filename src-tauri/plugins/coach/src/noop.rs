@@ -24,7 +24,7 @@ impl<R: Runtime> Coach<R> {
     }
 
     /// No notification here carries a chat, so none was ever tapped.
-    pub fn take_opened_checkin(&self) -> crate::Result<Option<i64>> {
+    pub fn take_opened_checkin(&self) -> crate::Result<Option<String>> {
         Ok(None)
     }
 

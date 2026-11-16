@@ -19,7 +19,7 @@ pub struct ScheduleCheckinArgs {
 #[serde(rename_all = "camelCase")]
 pub struct NotifyCheckinArgs {
     /// The chat the check-in was saved as; tapping the notification opens it.
-    pub chat_id: i64,
+    pub chat_id: String,
     pub title: String,
     pub body: String,
 }

@@ -23,6 +23,7 @@ import { useCallback } from "react";
 import { generatePath, useNavigate } from "react-router-dom";
 import type { Path } from "../router";
 import { closeSheets, pageIndex, unwindHistory } from "./sheetHistory";
+import { parseRowId } from "./ids";
 
 /** The tab bar's destinations. */
 export const TAB_ROOTS = [
@@ -48,19 +49,17 @@ export function tabOf(path: string): TabRoot {
 const CHAT_ROUTE = "/assistant/:chatId" satisfies Path;
 
 /** A coach conversation's address. */
-export function chatPath(chatId: number): string {
+export function chatPath(chatId: string): string {
   return generatePath(CHAT_ROUTE, { chatId: String(chatId) });
 }
 
 /** The chat id in a `:chatId` param, or null when it isn't one. */
-export function parseChatId(raw: string | undefined): number | null {
-  if (!raw || !/^[1-9]\d*$/.test(raw)) return null;
-  const id = Number(raw);
-  return Number.isSafeInteger(id) ? id : null;
+export function parseChatId(raw: string | undefined): string | null {
+  return parseRowId(raw);
 }
 
 /** The conversation a path shows, or null when it shows anything else. */
-export function chatIdOf(path: string): number | null {
+export function chatIdOf(path: string): string | null {
   const [, tab, raw] = path.split("/");
   return tab === "assistant" ? parseChatId(raw) : null;
 }

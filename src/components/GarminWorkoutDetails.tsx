@@ -28,7 +28,7 @@ function pace(mps: number, typeKey: string | null): string {
  * What the direct Garmin Connect sync knows about this workout beyond what
  * Health Connect carried — nothing renders when it has nothing.
  */
-export default function GarminWorkoutDetails({ workoutId }: { workoutId: number }) {
+export default function GarminWorkoutDetails({ workoutId }: { workoutId: string }) {
   const [d, setD] = useState<GarminWorkoutDetail | null>(null);
 
   useEffect(() => {

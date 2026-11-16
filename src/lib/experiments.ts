@@ -45,21 +45,20 @@ import { AUTO_METRIC_INFO, REFEED_WINDOW_H } from "./experimentMetrics";
 
 export { AUTO_METRIC_INFO, REFEED_WINDOW_H };
 import type { Experiment, ExperimentTrial, Fast } from "./types";
+import { parseRowId } from "./ids";
 
 export const EXPERIMENTS_CHANGED_EVENT = "tally:experiments-changed";
 
 export const EXPERIMENT_GLYPH = "🧪";
 
 /** An experiment's address: a page under the Coach tab. */
-export function experimentPath(id: number): string {
+export function experimentPath(id: string): string {
   return `/assistant/experiments/${id}`;
 }
 
 /** The experiment id in a `:experimentId` param, or null when it isn't one. */
-export function parseExperimentId(raw: string | undefined): number | null {
-  if (!raw || !/^[1-9]\d*$/.test(raw)) return null;
-  const id = Number(raw);
-  return Number.isSafeInteger(id) ? id : null;
+export function parseExperimentId(raw: string | undefined): string | null {
+  return parseRowId(raw);
 }
 
 export function notifyExperimentsChanged(): void {
@@ -135,9 +134,9 @@ function sum(xs: number[]): number {
  */
 export async function loadTrialMetrics(
   trials: ExperimentTrial[],
-  fasts: Map<number, Fast>,
-): Promise<Map<number, TrialMetrics>> {
-  const out = new Map<number, TrialMetrics>();
+  fasts: Map<string, Fast>,
+): Promise<Map<string, TrialMetrics>> {
+  const out = new Map<string, TrialMetrics>();
   if (trials.length === 0) return out;
   const days = trials.map((t) => t.day).sort();
   const first = days[0] as string;
@@ -250,7 +249,7 @@ export interface ArmSummary {
 export function summarize(
   e: Experiment,
   trials: ExperimentTrial[],
-  metrics: Map<number, TrialMetrics>,
+  metrics: Map<string, TrialMetrics>,
 ): ArmSummary[] {
   const keys = [
     ...ratingMeasures(e).map((m) => m.key),
@@ -275,18 +274,18 @@ export function summarize(
 // Writes
 // ---------------------------------------------------------------------------
 
-export async function createExperiment(draft: ExperimentDraft): Promise<number> {
+export async function createExperiment(draft: ExperimentDraft): Promise<string> {
   const id = await addExperiment(draft);
   await changed();
   return id;
 }
 
-export async function saveExperiment(id: number, patch: ExperimentPatch): Promise<void> {
+export async function saveExperiment(id: string, patch: ExperimentPatch): Promise<void> {
   await updateExperiment(id, patch);
   await changed();
 }
 
-export async function removeExperiment(id: number): Promise<void> {
+export async function removeExperiment(id: string): Promise<void> {
   await deleteExperiment(id);
   await changed();
 }
@@ -295,19 +294,19 @@ export async function startTrial(
   e: Experiment,
   arm: string,
   startedAt: string,
-  fastId: number | null = null,
-): Promise<number> {
+  fastId: string | null = null,
+): Promise<string> {
   const id = await addTrial({ experiment_id: e.id, arm, fast_id: fastId, started_at: startedAt });
   await changed();
   return id;
 }
 
-export async function saveTrial(id: number, patch: TrialPatch): Promise<void> {
+export async function saveTrial(id: string, patch: TrialPatch): Promise<void> {
   await updateTrial(id, patch);
   await changed();
 }
 
-export async function removeTrial(id: number): Promise<void> {
+export async function removeTrial(id: string): Promise<void> {
   await deleteTrial(id);
   await changed();
 }

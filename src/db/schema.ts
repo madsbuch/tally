@@ -9,8 +9,29 @@ import {
 } from "drizzle-orm/sqlite-core";
 import type { FoodEntry, Nutrients, Workout } from "../lib/types";
 import type { ChatMessage, DocumentValue, GarminLap } from "../lib/schemas";
+import { newId } from "../lib/ids";
 
+/**
+ * Every row's key: a UUIDv7 string made on the device that wrote it, so rows
+ * from different devices never collide (see lib/ids.ts).
+ */
+const rowId = () => text("id").primaryKey().$defaultFn(() => newId());
+
+/**
+ * Preferences that belong to the person — targets, models, the OpenRouter key
+ * — and so travel with their data to every device in the vault.
+ */
 export const settings = sqliteTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+});
+
+/**
+ * State that belongs to this device and never leaves it: sync bookmarks for
+ * Health Connect and Garmin, caches, the unread check-in badge. Which keys
+ * live here is decided by `DEVICE_SETTING_KEYS` in lib/types.ts.
+ */
+export const deviceSettings = sqliteTable("device_settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
 });
@@ -18,14 +39,12 @@ export const settings = sqliteTable("settings", {
 export const foodEntries = sqliteTable(
   "food_entries",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: rowId(),
     eatenAt: text("eaten_at").notNull(),
     title: text("title").notNull(),
     description: text("description"),
     photoPath: text("photo_path"),
     nutrients: text("nutrients", { mode: "json" }).$type<Nutrients>().notNull().default({}),
-    /** Unused; left from the reverted diet feature so schema matches migrations. */
-    diet: text("diet"),
     modelId: text("model_id"),
     /** Icon key picked by the AI when there's no photo (see lib/icons.ts). */
     icon: text("icon"),
@@ -53,7 +72,7 @@ export const foodEntries = sqliteTable(
 export const workouts = sqliteTable(
   "workouts",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: rowId(),
     performedAt: text("performed_at").notNull(),
     title: text("title").notNull(),
     description: text("description"),
@@ -96,7 +115,7 @@ export const workouts = sqliteTable(
 );
 
 export const supplements = sqliteTable("supplements", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+  id: rowId(),
   name: text("name").notNull(),
   doseAmount: real("dose_amount"),
   doseUnit: text("dose_unit"),
@@ -108,8 +127,8 @@ export const supplements = sqliteTable("supplements", {
 export const supplementLogs = sqliteTable(
   "supplement_logs",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    supplementId: integer("supplement_id")
+    id: rowId(),
+    supplementId: text("supplement_id")
       .notNull()
       .references(() => supplements.id),
     takenAt: text("taken_at").notNull(),
@@ -136,7 +155,7 @@ export const supplementLogs = sqliteTable(
 export const captures = sqliteTable(
   "captures",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: rowId(),
     createdAt: text("created_at").notNull(),
     /** Local diary day ("YYYY-MM-DD") the capture was added to. */
     day: text("day").notNull(),
@@ -152,7 +171,7 @@ export const captures = sqliteTable(
 export const sleepSessions = sqliteTable(
   "sleep_sessions",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: rowId(),
     /** Health Connect record UID for dedup. */
     externalId: text("external_id").notNull(),
     startedAt: text("started_at").notNull(),
@@ -207,7 +226,7 @@ export const healthMetrics = sqliteTable("health_metrics", {
 export const chats = sqliteTable(
   "chats",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: rowId(),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
     title: text("title").notNull(),
@@ -231,7 +250,7 @@ export const dayGoalAdjustments = sqliteTable("day_goal_adjustments", {
 });
 
 export const fasts = sqliteTable("fasts", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+  id: rowId(),
   startedAt: text("started_at").notNull(),
   goalHours: real("goal_hours").notNull(),
   /**
@@ -264,7 +283,7 @@ export const fasts = sqliteTable("fasts", {
 export const documents = sqliteTable(
   "documents",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: rowId(),
     createdAt: text("created_at").notNull(),
     /** Local day the document refers to; null until it's been read. */
     documentDate: text("document_date"),
@@ -309,7 +328,7 @@ export const documents = sqliteTable(
  * PDF along, and written through Rust so the bytes bind as a real BLOB.
  */
 export const documentFiles = sqliteTable("document_files", {
-  documentId: integer("document_id")
+  documentId: text("document_id")
     .primaryKey()
     .references(() => documents.id, { onDelete: "cascade" }),
   /** The name it had when picked, e.g. "dexa-2026-11.pdf". */
@@ -328,7 +347,7 @@ export const documentFiles = sqliteTable("document_files", {
 export const coachMemory = sqliteTable(
   "coach_memory",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: rowId(),
     /** "goal" | "commitment" | "preference" | "note" (see lib/coach.ts). */
     kind: text("kind").notNull(),
     text: text("text").notNull(),
@@ -354,7 +373,7 @@ export const coachMemory = sqliteTable(
  * the person can read and edit them.
  */
 export const manuals = sqliteTable("manuals", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+  id: rowId(),
   title: text("title").notNull(),
   /** One line: when this manual applies ("When fasting longer than a day"). */
   situation: text("situation").notNull(),
@@ -379,8 +398,8 @@ export const manuals = sqliteTable("manuals", {
 export const manualRevisions = sqliteTable(
   "manual_revisions",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    manualId: integer("manual_id")
+    id: rowId(),
+    manualId: text("manual_id")
       .notNull()
       .references(() => manuals.id),
     title: text("title").notNull(),
@@ -401,7 +420,7 @@ export const manualRevisions = sqliteTable(
  * the first one (see lib/experiments.ts).
  */
 export const experiments = sqliteTable("experiments", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+  id: rowId(),
   title: text("title").notNull(),
   /** The idea being tested, in their words. */
   hypothesis: text("hypothesis").notNull(),
@@ -424,7 +443,7 @@ export const experiments = sqliteTable("experiments", {
   /** What it showed, written when it ends. */
   conclusion: text("conclusion"),
   /** The manual the result went into, if any. */
-  manualId: integer("manual_id"),
+  manualId: text("manual_id"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
   endedAt: text("ended_at"),
@@ -439,14 +458,14 @@ export const experiments = sqliteTable("experiments", {
 export const experimentTrials = sqliteTable(
   "experiment_trials",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    experimentId: integer("experiment_id")
+    id: rowId(),
+    experimentId: text("experiment_id")
       .notNull()
       .references(() => experiments.id),
     /** The option's key ("A"). */
     arm: text("arm").notNull(),
     /** The fast it followed, for fasting experiments. */
-    fastId: integer("fast_id"),
+    fastId: text("fast_id"),
     /** When the trial began — for a refeed, the moment the fast ended. */
     startedAt: text("started_at").notNull(),
     /** Local day it began on. */
@@ -474,14 +493,14 @@ export const experimentTrials = sqliteTable(
 export const coachRuns = sqliteTable(
   "coach_runs",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: rowId(),
     /** Trigger that won the evaluation (see lib/coachTriggers.ts). */
     triggerKey: text("trigger_key").notNull(),
     /** Local day "YYYY-MM-DD" it fired on. */
     day: text("day").notNull(),
     createdAt: text("created_at").notNull(),
     /** The chat it opened; null if writing the chat failed. */
-    chatId: integer("chat_id"),
+    chatId: text("chat_id"),
   },
   (t) => [index("idx_coach_runs_day").on(t.day)],
 );
@@ -494,14 +513,14 @@ export const coachRuns = sqliteTable(
 export const aiUsage = sqliteTable(
   "ai_usage",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: rowId(),
     createdAt: text("created_at").notNull(),
     /** Local day "YYYY-MM-DD" it was spent on. */
     day: text("day").notNull(),
     /** "coach" (a conversation turn) | "checkin" (the coach opening one). */
     source: text("source").notNull(),
     /** The chat it was spent in; null when none was saved. */
-    chatId: integer("chat_id"),
+    chatId: text("chat_id"),
     model: text("model").notNull(),
     requests: integer("requests").notNull(),
     promptTokens: integer("prompt_tokens").notNull(),
@@ -532,10 +551,10 @@ export const achievements = sqliteTable("achievements", {
 export const entryMessages = sqliteTable(
   "entry_messages",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: rowId(),
     /** "meal" | "workout" — which table `entryId` points into. */
     entryKind: text("entry_kind").notNull(),
-    entryId: integer("entry_id").notNull(),
+    entryId: text("entry_id").notNull(),
     /** "user" | "assistant". */
     role: text("role").notNull(),
     text: text("text").notNull(),
@@ -565,7 +584,7 @@ export const entryMessages = sqliteTable(
 export const stateLogs = sqliteTable(
   "state_logs",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: rowId(),
     loggedAt: text("logged_at").notNull(),
     /** What they wrote about it; for an untagged one, the whole observation. */
     note: text("note"),
@@ -595,8 +614,8 @@ export const stateLogs = sqliteTable(
 export const stateLogTags = sqliteTable(
   "state_log_tags",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    logId: integer("log_id")
+    id: rowId(),
+    logId: text("log_id")
       .notNull()
       .references(() => stateLogs.id, { onDelete: "cascade" }),
     label: text("label").notNull(),
@@ -620,7 +639,7 @@ export const stateLogTags = sqliteTable(
 export const stateCategories = sqliteTable(
   "state_categories",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: rowId(),
     label: text("label").notNull(),
     /** The emoji itself, picked by the model when the category was created. */
     icon: text("icon").notNull(),
@@ -641,7 +660,7 @@ export const stateCategories = sqliteTable(
 export const bloodReadings = sqliteTable(
   "blood_readings",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: rowId(),
     measuredAt: text("measured_at").notNull(),
     /** "glucose" | "ketone". */
     kind: text("kind").notNull(),
@@ -677,7 +696,7 @@ export const bloodReadings = sqliteTable(
 export const performanceLogs = sqliteTable(
   "performance_logs",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: rowId(),
     measuredAt: text("measured_at").notNull(),
     /** Short heading, e.g. "Garmin performance stats". */
     title: text("title").notNull(),
@@ -705,8 +724,8 @@ export const performanceLogs = sqliteTable(
 export const performanceStats = sqliteTable(
   "performance_stats",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    logId: integer("log_id")
+    id: rowId(),
+    logId: text("log_id")
       .notNull()
       .references(() => performanceLogs.id),
     metric: text("metric").notNull(),
@@ -732,10 +751,10 @@ export const performanceStats = sqliteTable(
 export const entryNotes = sqliteTable(
   "entry_notes",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: rowId(),
     /** "meal" | "workout" | "reading" | "state" | "performance" | "sleep". */
     entryKind: text("entry_kind").notNull(),
-    entryId: integer("entry_id").notNull(),
+    entryId: text("entry_id").notNull(),
     text: text("text").notNull(),
     createdAt: text("created_at").notNull(),
   },
@@ -763,7 +782,7 @@ export const incompleteDays = sqliteTable("incomplete_days", {
 export const savedMeals = sqliteTable(
   "saved_meals",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: rowId(),
     /** What they call it; matched case-insensitively, so saving again updates. */
     name: text("name").notNull(),
     description: text("description"),
@@ -771,7 +790,7 @@ export const savedMeals = sqliteTable(
     nutrients: text("nutrients", { mode: "json" }).$type<Nutrients>().notNull().default({}),
     icon: text("icon"),
     /** The food entry it was saved from, when it came from one. */
-    sourceEntryId: integer("source_entry_id"),
+    sourceEntryId: text("source_entry_id"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },
@@ -788,7 +807,11 @@ export const savedMeals = sqliteTable(
  * bind them as a real BLOB rather than shipping them through the SQL plugin.
  */
 export const photos = sqliteTable("photos", {
-  /** e.g. "1730987654321.jpg" — the key `photo_path` columns hold. */
+  /**
+   * The key `photo_path` columns hold: the SHA-256 of the bytes plus ".jpg",
+   * so a name means the same image on every device ("1730987654321.jpg"
+   * timestamps on photos saved before that).
+   */
   filename: text("filename").primaryKey(),
   /** The JPEG itself. */
   data: blob("data", { mode: "buffer" }).notNull(),
@@ -803,7 +826,7 @@ export const photos = sqliteTable("photos", {
 export const progressPhotos = sqliteTable(
   "progress_photos",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: rowId(),
     /** When it was taken (for a picked older photo: the file's own time). */
     takenAt: text("taken_at").notNull(),
     /** Local day it was taken on, stamped where it happened (lib/daystamp.ts). */
@@ -830,7 +853,7 @@ export const garminActivities = sqliteTable(
     /** Garmin's activity id. */
     activityId: text("activity_id").primaryKey(),
     /** The diary workout it is; null once the user deleted that workout. */
-    workoutId: integer("workout_id"),
+    workoutId: text("workout_id"),
     /** 1 = its workout was deleted by hand — don't create it again. */
     dismissed: integer("dismissed").notNull().default(0),
     /** How it was linked: "exact" | "time" | "created". */

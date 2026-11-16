@@ -161,7 +161,7 @@ export interface ChatOptions {
    */
   feature: AiFeature;
   /** The coach conversation it was made in, when there is one. */
-  chatId?: number | null;
+  chatId?: string | null;
   /**
    * Return an empty turn instead of retrying/failing when the model produces
    * an empty completion. Agent loops set this once something has already been

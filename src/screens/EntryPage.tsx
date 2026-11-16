@@ -109,6 +109,7 @@ import WorkoutCardioToggle from "../components/WorkoutCardioToggle";
 import MealFastOk from "../components/MealFastOk";
 import GarminWorkoutDetails from "../components/GarminWorkoutDetails";
 import EntryChat from "../components/EntryChat";
+import { parseRowId } from "../lib/ids";
 
 type Kind = "meal" | "workout" | "supplement" | "sleep" | "state" | "reading" | "performance";
 
@@ -253,7 +254,7 @@ export default function EntryPage() {
   // Back to the Diary: the page it was opened from, which is right beneath it.
   const back = useUp();
   const kind = isKind(params["kind"]) ? params["kind"] : null;
-  const id = Number(params["id"]);
+  const id = parseRowId(params["id"]);
 
   const [meal, setMeal] = useState<FoodEntry | null>(null);
   const [workout, setWorkout] = useState<Workout | null>(null);
@@ -278,7 +279,7 @@ export default function EntryPage() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!kind || !Number.isInteger(id)) {
+    if (!kind || !id) {
       setGone(true);
       setLoading(false);
       return;
@@ -376,7 +377,7 @@ export default function EntryPage() {
         await deletePerformanceLog(perf.id);
         await deletePhotoIfUnused(perf.photo_path);
       }
-      if (isNotedEntryKind(kind)) await deleteEntryNotesOf(kind, id);
+      if (id && isNotedEntryKind(kind)) await deleteEntryNotesOf(kind, id);
       notifyDiaryChanged();
       back();
     } catch (e) {

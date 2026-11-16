@@ -15,6 +15,7 @@ import {
   experimentTrials,
   coachRuns,
   dayGoalAdjustments,
+  deviceSettings,
   documents,
   entryMessages,
   entryNotes,
@@ -76,7 +77,7 @@ import type {
 import type { ChatMessage } from "./openrouter";
 import type { UsageRow } from "./aiCost";
 import type { ExperimentArm, ExperimentMeasure, TrialRatings } from "./schemas";
-import { SETTING_KEYS } from "./types";
+import { DEVICE_SETTING_KEYS, SETTING_KEYS } from "./types";
 import { sanitizeNutrients } from "./nutrients";
 import { dayOf, stampOf } from "./daystamp";
 import { CARDIO_MIN_AVG_HR, countsAsCardio, normalizeAverageHeartRate, zone2Minutes } from "./exerciseGoals";
@@ -84,6 +85,7 @@ import { isTaggingStatus, stateKey, stateTitle } from "./states";
 import { isGlucoseUnit, isReadingKind } from "./readings";
 import type { GlucoseUnit } from "./readings";
 import { deletePhoto } from "./photos";
+import { derivedId } from "./ids";
 import {
   parseChatTranscript,
   parseDocumentPages,
@@ -141,6 +143,13 @@ export const db = drizzle(async (query, params, method) => {
   return { rows: method === "get" ? (values[0] ?? []) : values };
 });
 
+/** The id an `INSERT … RETURNING id` handed back; throws if there was none. */
+function insertedId(rows: { id: string }[]): string {
+  const id = rows[0]?.id;
+  if (id == null) throw new Error("Insert returned no row");
+  return id;
+}
+
 /** Today's local date as "YYYY-MM-DD". */
 export function todayStr(date = new Date()): string {
   const y = date.getFullYear();
@@ -153,23 +162,25 @@ export function todayStr(date = new Date()): string {
 // Settings
 // ---------------------------------------------------------------------------
 
+/** The table a key lives in: this device's own, or the person's (synced). */
+function settingsTable(key: string) {
+  return DEVICE_SETTING_KEYS.has(key) ? deviceSettings : settings;
+}
+
 export async function getSetting(key: string): Promise<string | null> {
-  const rows = await db
-    .select({ value: settings.value })
-    .from(settings)
-    .where(eq(settings.key, key));
+  const t = settingsTable(key);
+  const rows = await db.select({ value: t.value }).from(t).where(eq(t.key, key));
   return rows[0]?.value ?? null;
 }
 
 export async function setSetting(key: string, value: string): Promise<void> {
-  await db
-    .insert(settings)
-    .values({ key, value })
-    .onConflictDoUpdate({ target: settings.key, set: { value } });
+  const t = settingsTable(key);
+  await db.insert(t).values({ key, value }).onConflictDoUpdate({ target: t.key, set: { value } });
 }
 
 export async function deleteSetting(key: string): Promise<void> {
-  await db.delete(settings).where(eq(settings.key, key));
+  const t = settingsTable(key);
+  await db.delete(t).where(eq(t.key, key));
 }
 
 // ---------------------------------------------------------------------------
@@ -204,7 +215,7 @@ export async function addFoodEntry(
     /** Why it doesn't break a fast (see FoodEntry.fast_ok_note); omit when it does. */
     fast_ok_note?: string | null;
   },
-): Promise<number> {
+): Promise<string> {
   const stamp = stampOf(entry.eaten_at);
   const rows = await db
     .insert(foodEntries)
@@ -221,7 +232,7 @@ export async function addFoodEntry(
       fastOkNote: entry.fast_ok_note ?? null,
     })
     .returning({ id: foodEntries.id });
-  return rows[0]?.id ?? 0;
+  return insertedId(rows);
 }
 
 export async function updateFoodEntry(entry: FoodEntry): Promise<void> {
@@ -250,16 +261,16 @@ export async function updateFoodEntry(entry: FoodEntry): Promise<void> {
  * entry only: whether the next one breaks a fast depends on that fast's
  * purpose, which the diary agent judges as it logs it.
  */
-export async function setFoodEntryFastOk(id: number, note: string): Promise<void> {
+export async function setFoodEntryFastOk(id: string, note: string): Promise<void> {
   await db.update(foodEntries).set({ fastOkNote: note }).where(eq(foodEntries.id, id));
 }
 
 /** Make an entry count against fasts again. */
-export async function clearFastOk(id: number): Promise<void> {
+export async function clearFastOk(id: string): Promise<void> {
   await db.update(foodEntries).set({ fastOkNote: null }).where(eq(foodEntries.id, id));
 }
 
-export async function deleteFoodEntry(id: number): Promise<void> {
+export async function deleteFoodEntry(id: string): Promise<void> {
   await db.delete(foodEntries).where(eq(foodEntries.id, id));
   await deleteEntryMessages("meal", id);
 }
@@ -269,7 +280,7 @@ export async function listFoodEntriesForDay(day: string): Promise<FoodEntry[]> {
 }
 
 /** One entry by id; null when it's been deleted. */
-export async function getFoodEntry(id: number): Promise<FoodEntry | null> {
+export async function getFoodEntry(id: string): Promise<FoodEntry | null> {
   const rows = await db.select().from(foodEntries).where(eq(foodEntries.id, id)).limit(1);
   const row = rows[0];
   return row ? toFoodEntry(row) : null;
@@ -353,7 +364,7 @@ export type NewWorkout = Omit<
 > &
   Partial<Pick<Workout, "source" | "external_id" | "zone2_min" | "cardio" | "cardio_by_hand" | "avg_hr">>;
 
-export async function addWorkout(w: NewWorkout): Promise<number> {
+export async function addWorkout(w: NewWorkout): Promise<string> {
   const stamp = stampOf(w.performed_at);
   const avgHr = normalizeAverageHeartRate(w.avg_hr);
   // A supplied choice is manual unless a restored entry explicitly says it
@@ -381,7 +392,7 @@ export async function addWorkout(w: NewWorkout): Promise<number> {
       externalId: w.external_id ?? null,
     })
     .returning({ id: workouts.id });
-  return rows[0]?.id ?? 0;
+  return insertedId(rows);
 }
 
 /**
@@ -416,6 +427,8 @@ export async function upsertExternalWorkout(
   await db
     .insert(workouts)
     .values({
+      // Named after the record, so two devices importing it agree on its id.
+      id: await derivedId("workouts", w.external_id),
       day,
       tzOffsetMin,
       performedAt: w.performed_at,
@@ -484,7 +497,7 @@ export async function updateWorkout(w: Workout): Promise<void> {
 }
 
 /** Explicit on/off takes precedence; null returns to the automatic HR rule. */
-export async function setWorkoutCardio(id: number, cardio: boolean | null): Promise<void> {
+export async function setWorkoutCardio(id: string, cardio: boolean | null): Promise<void> {
   await db.update(workouts).set({
     cardio: cardio == null
       ? sql`case when ${workouts.avgHr} > ${CARDIO_MIN_AVG_HR} then 1 else 0 end`
@@ -494,7 +507,7 @@ export async function setWorkoutCardio(id: number, cardio: boolean | null): Prom
 }
 
 /** A deliberate toggle wins over text recognition, including an explicit off (0). */
-export async function setWorkoutZone2(id: number, enabled: boolean): Promise<void> {
+export async function setWorkoutZone2(id: string, enabled: boolean): Promise<void> {
   const rows = await db.update(workouts)
     .set({ zone2Min: enabled ? sql`${workouts.durationMin}` : 0 })
     .where(enabled ? and(eq(workouts.id, id), gt(workouts.durationMin, 0)) : eq(workouts.id, id))
@@ -503,13 +516,13 @@ export async function setWorkoutZone2(id: number, enabled: boolean): Promise<voi
 }
 
 /** One workout by id; null when it's been deleted. */
-export async function getWorkout(id: number): Promise<Workout | null> {
+export async function getWorkout(id: string): Promise<Workout | null> {
   const rows = await db.select().from(workouts).where(eq(workouts.id, id)).limit(1);
   const row = rows[0];
   return row ? toWorkout(row) : null;
 }
 
-export async function deleteWorkout(id: number): Promise<void> {
+export async function deleteWorkout(id: string): Promise<void> {
   await db.delete(workouts).where(eq(workouts.id, id));
   await deleteEntryMessages("workout", id);
   // A Garmin activity whose workout was deleted stays known, so the Garmin
@@ -634,7 +647,8 @@ export async function upsertSleepSession(
   const { day: _day, tzOffsetMin: _tz, ...withoutStamp } = values;
   await db
     .insert(sleepSessions)
-    .values(values)
+    // Named after the record, so two devices importing it agree on its id.
+    .values({ ...values, id: await derivedId("sleep_sessions", s.external_id) })
     .onConflictDoUpdate({
       target: sleepSessions.externalId,
       set: s.tz_offset_min != null ? values : withoutStamp,
@@ -651,7 +665,7 @@ export async function listAllSleepSessions(): Promise<SleepSession[]> {
 }
 
 /** One night by id; null when it's gone. */
-export async function getSleepSession(id: number): Promise<SleepSession | null> {
+export async function getSleepSession(id: string): Promise<SleepSession | null> {
   const rows = await db.select().from(sleepSessions).where(eq(sleepSessions.id, id)).limit(1);
   const row = rows[0];
   return row ? toSleepSession(row) : null;
@@ -783,7 +797,7 @@ function toCapture(r: CaptureRow): Capture {
 
 export async function addCapture(
   c: Omit<Capture, "id" | "status" | "error">,
-): Promise<number> {
+): Promise<string> {
   const rows = await db
     .insert(captures)
     .values({
@@ -795,7 +809,7 @@ export async function addCapture(
       error: null,
     })
     .returning({ id: captures.id });
-  return rows[0]?.id ?? 0;
+  return insertedId(rows);
 }
 
 export async function listCapturesForDay(day: string): Promise<Capture[]> {
@@ -812,21 +826,21 @@ export async function listPendingCaptures(): Promise<Capture[]> {
   return rows.map(toCapture);
 }
 
-export async function getCapture(id: number): Promise<Capture | null> {
+export async function getCapture(id: string): Promise<Capture | null> {
   const rows = await db.select().from(captures).where(eq(captures.id, id)).limit(1);
   const row = rows[0];
   return row ? toCapture(row) : null;
 }
 
 export async function setCaptureStatus(
-  id: number,
+  id: string,
   status: "pending" | "error",
   error: string | null,
 ): Promise<void> {
   await db.update(captures).set({ status, error }).where(eq(captures.id, id));
 }
 
-export async function deleteCapture(id: number): Promise<void> {
+export async function deleteCapture(id: string): Promise<void> {
   await db.delete(captures).where(eq(captures.id, id));
 }
 
@@ -947,7 +961,7 @@ export async function listSupplements(includeArchived = false): Promise<Suppleme
 // ---------------------------------------------------------------------------
 
 export async function updateSupplementLog(
-  id: number,
+  id: string,
   amount: number,
   takenAt: string,
   tzOffsetMin?: number | null,
@@ -965,7 +979,7 @@ export async function updateSupplementLog(
 
 /** One supplement dose by id, joined with its supplement; null when gone. */
 export async function getSupplementLog(
-  id: number,
+  id: string,
 ): Promise<SupplementLogWithSupplement | null> {
   const rows = await db
     .select({
@@ -988,7 +1002,7 @@ export async function getSupplementLog(
   return r ? { ...r, nutrients: sanitizeNutrients(r.nutrients) } : null;
 }
 
-export async function deleteSupplementLog(id: number): Promise<void> {
+export async function deleteSupplementLog(id: string): Promise<void> {
   await db.delete(supplementLogs).where(eq(supplementLogs.id, id));
 }
 
@@ -999,7 +1013,7 @@ export async function deleteSupplementLog(id: number): Promise<void> {
  * between can at worst leave both, never neither.
  */
 export async function convertSupplementLogToFood(
-  logId: number,
+  logId: string,
   entry: Omit<FoodEntry, "id" | "photo_path" | "fast_ok_note">,
 ): Promise<void> {
   await db.insert(foodEntries).values({
@@ -1076,7 +1090,7 @@ export async function listChats(limit = 50): Promise<ChatSummary[]> {
 }
 
 /** One chat's heading, without its transcript; null when it's gone. */
-export async function getChatSummary(id: number): Promise<ChatSummary | null> {
+export async function getChatSummary(id: string): Promise<ChatSummary | null> {
   const rows = await db
     .select({
       id: chats.id,
@@ -1094,7 +1108,7 @@ export async function getChatSummary(id: number): Promise<ChatSummary | null> {
 }
 
 /** Full transcript of a saved chat; null when the chat doesn't exist. */
-export async function getChatMessages(id: number): Promise<ChatMessage[] | null> {
+export async function getChatMessages(id: string): Promise<ChatMessage[] | null> {
   const rows = await db
     .select({ messages: chats.messages })
     .from(chats)
@@ -1109,17 +1123,17 @@ export async function getChatMessages(id: number): Promise<ChatMessage[] | null>
 export async function createChat(
   title: string,
   messages: ChatMessage[],
-): Promise<number> {
+): Promise<string> {
   const now = new Date().toISOString();
   const rows = await db
     .insert(chats)
     .values({ createdAt: now, updatedAt: now, title, messages })
     .returning({ id: chats.id });
-  return rows[0]?.id ?? 0;
+  return insertedId(rows);
 }
 
 export async function updateChatMessages(
-  id: number,
+  id: string,
   messages: ChatMessage[],
 ): Promise<void> {
   await db
@@ -1128,7 +1142,7 @@ export async function updateChatMessages(
     .where(eq(chats.id, id));
 }
 
-export async function deleteChat(id: number): Promise<void> {
+export async function deleteChat(id: string): Promise<void> {
   await db.delete(chats).where(eq(chats.id, id));
 }
 
@@ -1139,7 +1153,7 @@ export async function deleteChat(id: number): Promise<void> {
 export interface AiUsageRecord {
   /** The feature that spent it (an AiFeature, see lib/aiCost.ts). */
   source: string;
-  chatId: number | null;
+  chatId: string | null;
   model: string;
   requests: number;
   promptTokens: number;
@@ -1284,7 +1298,7 @@ export async function insertFast(
     })
     .returning({ id: fasts.id });
   return {
-    id: rows[0]?.id ?? 0,
+    id: insertedId(rows),
     started_at: startedAt,
     goal_hours: goalHours,
     purpose,
@@ -1299,12 +1313,12 @@ export async function insertFast(
  * Set or change what a fast is for — free to change mid-fast: it's what the
  * diary agent judges the next entries against, not a commitment.
  */
-export async function setFastPurpose(id: number, purpose: string | null): Promise<void> {
+export async function setFastPurpose(id: string, purpose: string | null): Promise<void> {
   await db.update(fasts).set({ purpose }).where(eq(fasts.id, id));
 }
 
 /** A fast is stamped at both ends: it can be broken in another timezone. */
-export async function markFastEnded(id: number, endedAt: string): Promise<void> {
+export async function markFastEnded(id: string, endedAt: string): Promise<void> {
   await db
     .update(fasts)
     .set({ endedAt, endDay: stampOf(endedAt).day })
@@ -1321,7 +1335,7 @@ export async function listRecentFasts(limit = 20): Promise<Fast[]> {
   return rows.map(toFast);
 }
 
-export async function deleteFast(id: number): Promise<void> {
+export async function deleteFast(id: string): Promise<void> {
   // A fast that never happened can't have been a trial either.
   await db.delete(experimentTrials).where(eq(experimentTrials.fastId, id));
   await db.delete(fasts).where(eq(fasts.id, id));
@@ -1391,7 +1405,7 @@ export async function listDocumentsForRange(
   return rows.map(toDocument);
 }
 
-export async function getDocument(id: number): Promise<LibraryDocument | null> {
+export async function getDocument(id: string): Promise<LibraryDocument | null> {
   const rows = await db.select().from(documents).where(eq(documents.id, id));
   const row = rows[0];
   return row ? toDocument(row) : null;
@@ -1402,7 +1416,7 @@ export async function addDocument(d: {
   note: string | null;
   /** Pages in order; the first doubles as the document's `photo_path`. */
   page_paths: string[];
-}): Promise<number> {
+}): Promise<string> {
   const rows = await db
     .insert(documents)
     .values({
@@ -1413,12 +1427,12 @@ export async function addDocument(d: {
       pagePaths: d.page_paths,
     })
     .returning({ id: documents.id });
-  return rows[0]?.id ?? 0;
+  return insertedId(rows);
 }
 
 /** Patch a document; absent fields are left alone. */
 export async function updateDocument(
-  id: number,
+  id: string,
   patch: Partial<
     Pick<
       LibraryDocument,
@@ -1448,7 +1462,7 @@ export async function updateDocument(
   await db.update(documents).set(set).where(eq(documents.id, id));
 }
 
-export async function deleteDocument(id: number): Promise<void> {
+export async function deleteDocument(id: string): Promise<void> {
   await db.delete(documents).where(eq(documents.id, id));
 }
 
@@ -1499,18 +1513,18 @@ export async function addCoachMemory(
   text: string,
   status: CoachMemory["status"] = null,
   followUpOn: string | null = null,
-): Promise<number> {
+): Promise<string> {
   const now = new Date().toISOString();
   const rows = await db
     .insert(coachMemory)
     .values({ kind, text, status, followUpOn, createdAt: now, updatedAt: now })
     .returning({ id: coachMemory.id });
-  return rows[0]?.id ?? 0;
+  return insertedId(rows);
 }
 
 /** Patch one row; absent fields are left alone. Returns false if it's gone. */
 export async function updateCoachMemory(
-  id: number,
+  id: string,
   patch: {
     text?: string;
     status?: CoachMemory["status"];
@@ -1530,7 +1544,7 @@ export async function updateCoachMemory(
   return rows.length > 0;
 }
 
-export async function deleteCoachMemory(id: number): Promise<void> {
+export async function deleteCoachMemory(id: string): Promise<void> {
   await db.delete(coachMemory).where(eq(coachMemory.id, id));
 }
 
@@ -1550,7 +1564,7 @@ export async function listDueFollowUps(day: string): Promise<CoachMemory[]> {
  * needs watching. Without this a follow-up the coach forgot to close would
  * come back every day and crowd out everything else.
  */
-export async function clearFollowUps(ids: number[]): Promise<void> {
+export async function clearFollowUps(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   const now = new Date().toISOString();
   for (const id of ids) {
@@ -1594,7 +1608,7 @@ export async function listManuals(): Promise<Manual[]> {
   return rows.map(toManual);
 }
 
-export async function getManual(id: number): Promise<Manual | null> {
+export async function getManual(id: string): Promise<Manual | null> {
   const rows = await db.select().from(manuals).where(eq(manuals.id, id)).limit(1);
   const row = rows[0];
   return row ? toManual(row) : null;
@@ -1623,7 +1637,7 @@ export interface ManualDraft {
  * Only one manual loads for a situation, so claiming one takes it off any
  * other — otherwise which one the coach saw would depend on the clock.
  */
-async function releaseTrigger(trigger: ManualTrigger | null, keep: number): Promise<void> {
+async function releaseTrigger(trigger: ManualTrigger | null, keep: string): Promise<void> {
   if (!trigger) return;
   await db
     .update(manuals)
@@ -1631,7 +1645,7 @@ async function releaseTrigger(trigger: ManualTrigger | null, keep: number): Prom
     .where(and(eq(manuals.appliesWhen, trigger), sql`${manuals.id} != ${keep}`));
 }
 
-export async function addManual(draft: ManualDraft, by: ManualAuthor): Promise<number> {
+export async function addManual(draft: ManualDraft, by: ManualAuthor): Promise<string> {
   const now = new Date().toISOString();
   const rows = await db
     .insert(manuals)
@@ -1645,7 +1659,7 @@ export async function addManual(draft: ManualDraft, by: ManualAuthor): Promise<n
       updatedAt: now,
     })
     .returning({ id: manuals.id });
-  const id = rows[0]?.id ?? 0;
+  const id = insertedId(rows);
   await releaseTrigger(draft.applies_when, id);
   return id;
 }
@@ -1656,7 +1670,7 @@ export async function addManual(draft: ManualDraft, by: ManualAuthor): Promise<n
  * Returns false if the manual is gone.
  */
 export async function updateManual(
-  id: number,
+  id: string,
   draft: ManualDraft,
   by: ManualAuthor,
 ): Promise<boolean> {
@@ -1691,13 +1705,13 @@ export async function updateManual(
   return true;
 }
 
-export async function deleteManual(id: number): Promise<void> {
+export async function deleteManual(id: string): Promise<void> {
   await db.delete(manualRevisions).where(eq(manualRevisions.manualId, id));
   await db.delete(manuals).where(eq(manuals.id, id));
 }
 
 /** A manual's earlier versions, newest first. */
-export async function listManualRevisions(manualId: number): Promise<ManualRevision[]> {
+export async function listManualRevisions(manualId: string): Promise<ManualRevision[]> {
   const rows = await db
     .select()
     .from(manualRevisions)
@@ -1770,7 +1784,7 @@ export async function listExperiments(): Promise<Experiment[]> {
   return rows.map(toExperiment);
 }
 
-export async function getExperiment(id: number): Promise<Experiment | null> {
+export async function getExperiment(id: string): Promise<Experiment | null> {
   const rows = await db.select().from(experiments).where(eq(experiments.id, id)).limit(1);
   const row = rows[0];
   return row ? toExperiment(row) : null;
@@ -1796,7 +1810,7 @@ export interface ExperimentDraft {
   target_per_arm: number;
 }
 
-export async function addExperiment(draft: ExperimentDraft): Promise<number> {
+export async function addExperiment(draft: ExperimentDraft): Promise<string> {
   const now = new Date().toISOString();
   const rows = await db
     .insert(experiments)
@@ -1813,16 +1827,16 @@ export async function addExperiment(draft: ExperimentDraft): Promise<number> {
       updatedAt: now,
     })
     .returning({ id: experiments.id });
-  return rows[0]?.id ?? 0;
+  return insertedId(rows);
 }
 
 export interface ExperimentPatch extends Partial<ExperimentDraft> {
   status?: ExperimentStatus | undefined;
   conclusion?: string | null | undefined;
-  manual_id?: number | null | undefined;
+  manual_id?: string | null | undefined;
 }
 
-export async function updateExperiment(id: number, patch: ExperimentPatch): Promise<void> {
+export async function updateExperiment(id: string, patch: ExperimentPatch): Promise<void> {
   const set: Partial<typeof experiments.$inferInsert> = { updatedAt: new Date().toISOString() };
   if (patch.title !== undefined) set.title = patch.title;
   if (patch.hypothesis !== undefined) set.hypothesis = patch.hypothesis;
@@ -1840,13 +1854,13 @@ export async function updateExperiment(id: number, patch: ExperimentPatch): Prom
   await db.update(experiments).set(set).where(eq(experiments.id, id));
 }
 
-export async function deleteExperiment(id: number): Promise<void> {
+export async function deleteExperiment(id: string): Promise<void> {
   await db.delete(experimentTrials).where(eq(experimentTrials.experimentId, id));
   await db.delete(experiments).where(eq(experiments.id, id));
 }
 
 /** An experiment's trials, oldest first. */
-export async function listTrials(experimentId: number): Promise<ExperimentTrial[]> {
+export async function listTrials(experimentId: string): Promise<ExperimentTrial[]> {
   const rows = await db
     .select()
     .from(experimentTrials)
@@ -1855,7 +1869,7 @@ export async function listTrials(experimentId: number): Promise<ExperimentTrial[
   return rows.map(toTrial);
 }
 
-export async function getTrial(id: number): Promise<ExperimentTrial | null> {
+export async function getTrial(id: string): Promise<ExperimentTrial | null> {
   const rows = await db
     .select()
     .from(experimentTrials)
@@ -1866,7 +1880,7 @@ export async function getTrial(id: number): Promise<ExperimentTrial | null> {
 }
 
 /** Trials anchored to a fast, across every experiment. */
-export async function listTrialsForFast(fastId: number): Promise<ExperimentTrial[]> {
+export async function listTrialsForFast(fastId: string): Promise<ExperimentTrial[]> {
   const rows = await db
     .select()
     .from(experimentTrials)
@@ -1876,12 +1890,12 @@ export async function listTrialsForFast(fastId: number): Promise<ExperimentTrial
 }
 
 export async function addTrial(t: {
-  experiment_id: number;
+  experiment_id: string;
   arm: string;
-  fast_id: number | null;
+  fast_id: string | null;
   started_at: string;
   note?: string | null;
-}): Promise<number> {
+}): Promise<string> {
   const now = new Date().toISOString();
   const stamp = stampOf(t.started_at);
   const rows = await db
@@ -1902,7 +1916,7 @@ export async function addTrial(t: {
     .update(experiments)
     .set({ updatedAt: now })
     .where(eq(experiments.id, t.experiment_id));
-  return rows[0]?.id ?? 0;
+  return insertedId(rows);
 }
 
 export interface TrialPatch {
@@ -1912,7 +1926,7 @@ export interface TrialPatch {
   excluded?: boolean | undefined;
 }
 
-export async function updateTrial(id: number, patch: TrialPatch): Promise<void> {
+export async function updateTrial(id: string, patch: TrialPatch): Promise<void> {
   const set: Partial<typeof experimentTrials.$inferInsert> = {
     updatedAt: new Date().toISOString(),
   };
@@ -1925,7 +1939,7 @@ export async function updateTrial(id: number, patch: TrialPatch): Promise<void> 
   await db.update(experimentTrials).set(set).where(eq(experimentTrials.id, id));
 }
 
-export async function deleteTrial(id: number): Promise<void> {
+export async function deleteTrial(id: string): Promise<void> {
   await db.delete(experimentTrials).where(eq(experimentTrials.id, id));
 }
 
@@ -1958,7 +1972,7 @@ export async function listCoachRunsSince(sinceDay: string): Promise<CoachRun[]> 
 export async function addCoachRun(
   triggerKey: string,
   day: string,
-  chatId: number | null,
+  chatId: string | null,
 ): Promise<void> {
   await db.insert(coachRuns).values({
     triggerKey,
@@ -2099,7 +2113,7 @@ export async function addBloodReading(reading: {
   photoPath?: string | null;
   /** ISO instant; defaults to now. */
   measuredAt?: string;
-}): Promise<number> {
+}): Promise<string> {
   const measuredAt = reading.measuredAt ?? new Date().toISOString();
   const stamp = stampOf(measuredAt);
   const rows = await db
@@ -2114,10 +2128,10 @@ export async function addBloodReading(reading: {
       photoPath: reading.photoPath ?? null,
     })
     .returning({ id: bloodReadings.id });
-  return rows[0]?.id ?? 0;
+  return insertedId(rows);
 }
 
-export async function getBloodReading(id: number): Promise<BloodReading | null> {
+export async function getBloodReading(id: string): Promise<BloodReading | null> {
   const rows = await db.select().from(bloodReadings).where(eq(bloodReadings.id, id)).limit(1);
   const row = rows[0];
   return row ? toBloodReading(row) : null;
@@ -2138,7 +2152,7 @@ export async function updateBloodReading(reading: BloodReading): Promise<void> {
     .where(eq(bloodReadings.id, reading.id));
 }
 
-export async function deleteBloodReading(id: number): Promise<void> {
+export async function deleteBloodReading(id: string): Promise<void> {
   await db.delete(bloodReadings).where(eq(bloodReadings.id, id));
 }
 
@@ -2204,7 +2218,7 @@ export async function addPerformanceLog(log: {
   /** ISO instant; defaults to now. */
   measuredAt?: string;
   stats: { metric: string; label: string; value: number; unit: string | null }[];
-}): Promise<number> {
+}): Promise<string> {
   const measuredAt = log.measuredAt ?? new Date().toISOString();
   const stamp = stampOf(measuredAt);
   const rows = await db
@@ -2219,7 +2233,7 @@ export async function addPerformanceLog(log: {
       tzOffsetMin: stamp.tz_offset_min,
     })
     .returning({ id: performanceLogs.id });
-  const id = rows[0]?.id ?? 0;
+  const id = insertedId(rows);
   if (id && log.stats.length > 0) {
     await db.insert(performanceStats).values(
       log.stats.map((s) => ({
@@ -2234,7 +2248,7 @@ export async function addPerformanceLog(log: {
   return id;
 }
 
-export async function getPerformanceLog(id: number): Promise<PerformanceLog | null> {
+export async function getPerformanceLog(id: string): Promise<PerformanceLog | null> {
   const rows = await db.select().from(performanceLogs).where(eq(performanceLogs.id, id)).limit(1);
   return (await withStats(rows))[0] ?? null;
 }
@@ -2253,16 +2267,16 @@ export async function updatePerformanceLog(log: PerformanceLog): Promise<void> {
     .where(eq(performanceLogs.id, log.id));
 }
 
-export async function updatePerformanceStat(id: number, value: number): Promise<void> {
+export async function updatePerformanceStat(id: string, value: number): Promise<void> {
   await db.update(performanceStats).set({ value }).where(eq(performanceStats.id, id));
 }
 
-export async function deletePerformanceStat(id: number): Promise<void> {
+export async function deletePerformanceStat(id: string): Promise<void> {
   await db.delete(performanceStats).where(eq(performanceStats.id, id));
 }
 
 /** Deletes the log and its stats; the caller cleans up the photo after. */
-export async function deletePerformanceLog(id: number): Promise<void> {
+export async function deletePerformanceLog(id: string): Promise<void> {
   await db.delete(performanceStats).where(eq(performanceStats.logId, id));
   await db.delete(performanceLogs).where(eq(performanceLogs.id, id));
 }
@@ -2305,7 +2319,7 @@ export async function listSavedMeals(): Promise<SavedMeal[]> {
   return rows.map(toSavedMeal);
 }
 
-export async function getSavedMeal(id: number): Promise<SavedMeal | null> {
+export async function getSavedMeal(id: string): Promise<SavedMeal | null> {
   const rows = await db.select().from(savedMeals).where(eq(savedMeals.id, id)).limit(1);
   const row = rows[0];
   return row ? toSavedMeal(row) : null;
@@ -2321,8 +2335,8 @@ export async function saveMeal(meal: {
   description: string | null;
   nutrients: SavedMeal["nutrients"];
   icon: string | null;
-  source_entry_id: number | null;
-}): Promise<{ id: number; updated: boolean }> {
+  source_entry_id: string | null;
+}): Promise<{ id: string; updated: boolean }> {
   const now = new Date().toISOString();
   const name = meal.name.trim();
   const existing = await db
@@ -2347,11 +2361,11 @@ export async function saveMeal(meal: {
     .insert(savedMeals)
     .values({ ...values, createdAt: now })
     .returning({ id: savedMeals.id });
-  return { id: rows[0]?.id ?? 0, updated: false };
+  return { id: insertedId(rows), updated: false };
 }
 
 /** Rename a saved meal; false when there is no such meal. */
-export async function renameSavedMeal(id: number, name: string): Promise<boolean> {
+export async function renameSavedMeal(id: string, name: string): Promise<boolean> {
   const rows = await db
     .update(savedMeals)
     .set({ name: name.trim(), updatedAt: new Date().toISOString() })
@@ -2361,7 +2375,7 @@ export async function renameSavedMeal(id: number, name: string): Promise<boolean
 }
 
 /** False when there was no such meal. */
-export async function deleteSavedMeal(id: number): Promise<boolean> {
+export async function deleteSavedMeal(id: string): Promise<boolean> {
   const rows = await db
     .delete(savedMeals)
     .where(eq(savedMeals.id, id))
@@ -2430,7 +2444,7 @@ function toEntryNote(r: EntryNoteRow): EntryNote | null {
 /** Does the entry a note would go on exist? A short title for it when it does. */
 export async function describeNotedEntry(
   kind: NotedEntryKind,
-  id: number,
+  id: string,
 ): Promise<string | null> {
   if (kind === "meal") {
     const r = await db.select({ t: foodEntries.title }).from(foodEntries).where(eq(foodEntries.id, id)).limit(1);
@@ -2463,17 +2477,17 @@ export async function describeNotedEntry(
 
 export async function addEntryNote(
   kind: NotedEntryKind,
-  entryId: number,
+  entryId: string,
   text: string,
-): Promise<number> {
+): Promise<string> {
   const rows = await db
     .insert(entryNotes)
     .values({ entryKind: kind, entryId, text, createdAt: new Date().toISOString() })
     .returning({ id: entryNotes.id });
-  return rows[0]?.id ?? 0;
+  return insertedId(rows);
 }
 
-export async function listEntryNotes(kind: NotedEntryKind, entryId: number): Promise<EntryNote[]> {
+export async function listEntryNotes(kind: NotedEntryKind, entryId: string): Promise<EntryNote[]> {
   const rows = await db
     .select()
     .from(entryNotes)
@@ -2485,9 +2499,9 @@ export async function listEntryNotes(kind: NotedEntryKind, entryId: number): Pro
 /** Notes on many entries of one kind at once, grouped by entry id. */
 export async function listEntryNotesFor(
   kind: NotedEntryKind,
-  entryIds: number[],
-): Promise<Map<number, string[]>> {
-  const out = new Map<number, string[]>();
+  entryIds: string[],
+): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
   if (entryIds.length === 0) return out;
   const rows = await db
     .select()
@@ -2498,12 +2512,12 @@ export async function listEntryNotesFor(
   return out;
 }
 
-export async function deleteEntryNote(id: number): Promise<void> {
+export async function deleteEntryNote(id: string): Promise<void> {
   await db.delete(entryNotes).where(eq(entryNotes.id, id));
 }
 
 /** Called when an entry is deleted, so its notes don't outlive it. */
-export async function deleteEntryNotesOf(kind: NotedEntryKind, entryId: number): Promise<void> {
+export async function deleteEntryNotesOf(kind: NotedEntryKind, entryId: string): Promise<void> {
   await db
     .delete(entryNotes)
     .where(and(eq(entryNotes.entryKind, kind), eq(entryNotes.entryId, entryId)));
@@ -2536,7 +2550,7 @@ async function withTags(rows: StateRow[]): Promise<StateLog[]> {
           .from(stateLogTags)
           .where(inArray(stateLogTags.logId, ids))
           .orderBy(stateLogTags.id);
-  const byLog = new Map<number, StateTag[]>();
+  const byLog = new Map<string, StateTag[]>();
   for (const t of tagRows) {
     const list = byLog.get(t.logId) ?? [];
     list.push({ label: t.label, icon: t.icon });
@@ -2559,7 +2573,7 @@ async function withTags(rows: StateRow[]): Promise<StateLog[]> {
   });
 }
 
-async function writeTags(logId: number, tags: StateTag[]): Promise<void> {
+async function writeTags(logId: string, tags: StateTag[]): Promise<void> {
   await db.delete(stateLogTags).where(eq(stateLogTags.logId, logId));
   // The same tag twice on one observation says nothing the first didn't.
   const seen = new Set<string>();
@@ -2582,7 +2596,7 @@ export async function addStateLog(log: {
   tagging?: TaggingStatus | null;
   /** ISO instant; defaults to now. */
   loggedAt?: string;
-}): Promise<number> {
+}): Promise<string> {
   const loggedAt = log.loggedAt ?? new Date().toISOString();
   const stamp = stampOf(loggedAt);
   const rows = await db
@@ -2595,12 +2609,12 @@ export async function addStateLog(log: {
       tzOffsetMin: stamp.tz_offset_min,
     })
     .returning({ id: stateLogs.id });
-  const id = rows[0]?.id ?? 0;
+  const id = insertedId(rows);
   await writeTags(id, log.tags);
   return id;
 }
 
-export async function getStateLog(id: number): Promise<StateLog | null> {
+export async function getStateLog(id: string): Promise<StateLog | null> {
   const rows = await db.select().from(stateLogs).where(eq(stateLogs.id, id)).limit(1);
   const [log] = await withTags(rows);
   return log ?? null;
@@ -2623,7 +2637,7 @@ export async function updateStateLog(log: StateLog): Promise<void> {
 
 /** Replace an observation's tags, and settle (or set) where tagging stands. */
 export async function setStateLogTags(
-  id: number,
+  id: string,
   tags: StateTag[],
   tagging: TaggingStatus | null = null,
 ): Promise<void> {
@@ -2631,7 +2645,7 @@ export async function setStateLogTags(
   await db.update(stateLogs).set({ tagging }).where(eq(stateLogs.id, id));
 }
 
-export async function deleteStateLog(id: number): Promise<void> {
+export async function deleteStateLog(id: string): Promise<void> {
   await db.delete(stateLogTags).where(eq(stateLogTags.logId, id));
   await db.delete(stateLogs).where(eq(stateLogs.id, id));
 }
@@ -2698,14 +2712,14 @@ export async function addStateCategory(
     .insert(stateCategories)
     .values({ label: name, icon, createdAt: created_at })
     .returning({ id: stateCategories.id });
-  return { id: rows[0]?.id ?? 0, label: name, icon, created_at };
+  return { id: insertedId(rows), label: name, icon, created_at };
 }
 
 /**
  * Take one off the list. States already logged under it keep their name and
  * their emoji — they are a record of a day, not a reference to this row.
  */
-export async function deleteStateCategory(id: number): Promise<void> {
+export async function deleteStateCategory(id: string): Promise<void> {
   await db.delete(stateCategories).where(eq(stateCategories.id, id));
 }
 
@@ -2717,7 +2731,7 @@ export async function deleteStateCategory(id: number): Promise<void> {
 /** The conversation on one entry, oldest first. */
 export async function listEntryMessages(
   kind: EntryKind,
-  entryId: number,
+  entryId: string,
 ): Promise<EntryMessage[]> {
   const rows = await db
     .select()
@@ -2736,7 +2750,7 @@ export async function listEntryMessages(
 
 export async function addEntryMessage(m: {
   kind: EntryKind;
-  entryId: number;
+  entryId: string;
   role: "user" | "assistant";
   text: string;
   /** What it changed, already worded for display. */
@@ -2762,7 +2776,7 @@ export async function addEntryMessage(m: {
  */
 export async function deleteEntryMessages(
   kind: EntryKind,
-  entryId: number,
+  entryId: string,
 ): Promise<void> {
   await db
     .delete(entryMessages)

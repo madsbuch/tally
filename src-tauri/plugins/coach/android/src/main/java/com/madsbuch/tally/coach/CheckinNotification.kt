@@ -11,7 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.core.app.NotificationCompat
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * The check-in notification, and the tap on it.
@@ -47,17 +47,18 @@ internal object CheckinNotification {
     private const val REQUEST_CODE = 4219
 
     private const val PREFS = "tally_coach"
-    private const val KEY_LAST_OPENED = "lastOpenedCheckinChat"
+    /** Renamed when chat ids became strings: the old key holds a Long. */
+    private const val KEY_LAST_OPENED = "lastOpenedCheckinChatId"
 
-    /** The chat a tap asked for and the app hasn't taken yet; 0 for none. */
-    private val pending = AtomicLong(0)
+    /** The chat a tap asked for and the app hasn't taken yet; null for none. */
+    private val pending = AtomicReference<String?>(null)
     private val watching = AtomicBoolean(false)
 
     /**
      * Post the check-in for `chatId`, replacing any earlier one. False when
      * notifications aren't allowed.
      */
-    fun post(ctx: Context, chatId: Long, title: String, message: String): Boolean {
+    fun post(ctx: Context, chatId: String?, title: String, message: String): Boolean {
         if (Build.VERSION.SDK_INT >= 33 &&
             ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
@@ -73,13 +74,13 @@ internal object CheckinNotification {
             .setStyle(NotificationCompat.BigTextStyle().bigText(plain))
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-        tapIntent(ctx, chatId)?.let { b.setContentIntent(it) }
+        if (chatId != null) tapIntent(ctx, chatId)?.let { b.setContentIntent(it) }
         val mgr = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         mgr.notify(CoachCheckinService.CHECKIN_NOTIFICATION_ID, b.build())
         return true
     }
 
-    private fun tapIntent(ctx: Context, chatId: Long): PendingIntent? {
+    private fun tapIntent(ctx: Context, chatId: String): PendingIntent? {
         val launch = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName) ?: return null
         launch.putExtra(EXTRA_CHAT_ID, chatId)
         return PendingIntent.getActivity(
@@ -96,20 +97,22 @@ internal object CheckinNotification {
         if (intent == null) return false
         // Reopened from Recents: the intent is whatever first started the task.
         if ((intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return false
-        val chatId = intent.getLongExtra(EXTRA_CHAT_ID, 0L)
-        if (chatId <= 0L) return false
+        // A tap on a notification posted before chat ids were strings carries
+        // a Long here, which reads as null: that chat's id has changed anyway.
+        val chatId = intent.getStringExtra(EXTRA_CHAT_ID)
+        if (chatId.isNullOrEmpty()) return false
         // An activity rebuilt after its process died is handed the intent it
         // was first started with — an old tap, already followed.
-        if (prefs(ctx).getLong(KEY_LAST_OPENED, 0L) == chatId) return false
+        if (prefs(ctx).getString(KEY_LAST_OPENED, null) == chatId) return false
         pending.set(chatId)
         return true
     }
 
     /** The chat a tap asked for since the last call, if any. */
-    fun take(ctx: Context): Long? {
-        val chatId = pending.getAndSet(0)
-        if (chatId <= 0L) return null
-        prefs(ctx).edit().putLong(KEY_LAST_OPENED, chatId).apply()
+    fun take(ctx: Context): String? {
+        val chatId = pending.getAndSet(null)
+        if (chatId.isNullOrEmpty()) return null
+        prefs(ctx).edit().putString(KEY_LAST_OPENED, chatId).apply()
         return chatId
     }
 

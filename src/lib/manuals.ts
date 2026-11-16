@@ -19,6 +19,7 @@ import { addManual, deleteManual, updateManual } from "./db";
 import type { ManualDraft } from "./db";
 import { cacheCoachPromptPrefix } from "./coach";
 import type { Manual, ManualAuthor, ManualTrigger } from "./types";
+import { parseRowId } from "./ids";
 
 export const MANUALS_CHANGED_EVENT = "tally:manuals-changed";
 
@@ -34,15 +35,13 @@ export function isManualTrigger(v: unknown): v is ManualTrigger {
 }
 
 /** A manual's address: a page under the Coach tab. */
-export function manualPath(id: number): string {
+export function manualPath(id: string): string {
   return `/assistant/manuals/${id}`;
 }
 
 /** The manual id in a `:manualId` param, or null when it isn't one. */
-export function parseManualId(raw: string | undefined): number | null {
-  if (!raw || !/^[1-9]\d*$/.test(raw)) return null;
-  const id = Number(raw);
-  return Number.isSafeInteger(id) ? id : null;
+export function parseManualId(raw: string | undefined): string | null {
+  return parseRowId(raw);
 }
 
 function shortDate(iso: string): string {
@@ -82,14 +81,14 @@ async function changed(): Promise<void> {
   await cacheCoachPromptPrefix();
 }
 
-export async function createManual(draft: ManualDraft, by: ManualAuthor): Promise<number> {
+export async function createManual(draft: ManualDraft, by: ManualAuthor): Promise<string> {
   const id = await addManual(draft, by);
   await changed();
   return id;
 }
 
 export async function saveManual(
-  id: number,
+  id: string,
   draft: ManualDraft,
   by: ManualAuthor,
 ): Promise<boolean> {
@@ -98,7 +97,7 @@ export async function saveManual(
   return ok;
 }
 
-export async function removeManual(id: number): Promise<void> {
+export async function removeManual(id: string): Promise<void> {
   await deleteManual(id);
   await changed();
 }

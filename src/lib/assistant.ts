@@ -84,6 +84,7 @@ import {
   readCalories,
 } from "./calories";
 import { SETTING_KEYS } from "./types";
+import { idArg } from "./ids";
 import { coachModelFor, coachReasoning } from "./coachModel";
 import type { CoachPurpose } from "./coachModel";
 import type { Nutrients } from "./types";
@@ -324,7 +325,7 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
               "Which table the entry is in: meal = food_entries, workout = workouts, reading = blood_readings, " +
               "state = state_logs, performance = performance_logs, sleep = sleep_sessions.",
           },
-          id: { type: "number", description: "The entry's id, from a query_* tool or run_sql." },
+          id: { type: "string", description: "The entry's id, from a query_* tool or run_sql." },
           text: {
             type: "string",
             description:
@@ -398,7 +399,7 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
       parameters: {
         type: "object",
         properties: {
-          id: { type: "number", description: "The food entry's id (food_entries.id)." },
+          id: { type: "string", description: "The food entry's id (food_entries.id)." },
           name: {
             type: "string",
             description: "What they'd call it, brand or shop included. Omit to use the entry's title.",
@@ -419,7 +420,7 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
       parameters: {
         type: "object",
         properties: {
-          id: { type: "number", description: "Saved meal id." },
+          id: { type: "string", description: "Saved meal id." },
           action: { type: "string", enum: ["rename", "delete"] },
           name: { type: "string", description: "The new name, for rename." },
         },
@@ -468,7 +469,7 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
       parameters: {
         type: "object",
         properties: {
-          id: { type: "number", description: "The id shown in square brackets." },
+          id: { type: "string", description: "The id shown in square brackets." },
           text: { type: "string", description: "Replacement text; omit to keep it." },
           status: {
             type: "string",
@@ -500,7 +501,7 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
       parameters: {
         type: "object",
         properties: {
-          id: { type: "number", description: "The id shown in square brackets." },
+          id: { type: "string", description: "The id shown in square brackets." },
         },
         required: ["id"],
         additionalProperties: false,
@@ -516,7 +517,7 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
       parameters: {
         type: "object",
         properties: {
-          id: { type: "number", description: "The id shown in square brackets." },
+          id: { type: "string", description: "The id shown in square brackets." },
         },
         required: ["id"],
         additionalProperties: false,
@@ -533,7 +534,7 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
         type: "object",
         properties: {
           id: {
-            type: "number",
+            type: "string",
             description: "The manual to rewrite. Omit to start a new one.",
           },
           title: { type: "string", description: 'Short, e.g. "Fasting".' },
@@ -566,7 +567,7 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
       parameters: {
         type: "object",
         properties: {
-          id: { type: "number", description: "The id shown in square brackets." },
+          id: { type: "string", description: "The id shown in square brackets." },
         },
         required: ["id"],
         additionalProperties: false,
@@ -582,7 +583,7 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
       parameters: {
         type: "object",
         properties: {
-          id: { type: "number", description: "The experiment to revise. Omit to start a new one." },
+          id: { type: "string", description: "The experiment to revise. Omit to start a new one." },
           title: { type: "string", description: 'Short, e.g. "How I refeed".' },
           hypothesis: {
             type: "string",
@@ -654,7 +655,7 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
       parameters: {
         type: "object",
         properties: {
-          id: { type: "number", description: "The id shown in square brackets." },
+          id: { type: "string", description: "The id shown in square brackets." },
         },
         required: ["id"],
         additionalProperties: false,
@@ -670,8 +671,8 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
       parameters: {
         type: "object",
         properties: {
-          experiment_id: { type: "number" },
-          trial_id: { type: "number", description: "The trial to update. Omit to log a new one." },
+          experiment_id: { type: "string" },
+          trial_id: { type: "string", description: "The trial to update. Omit to log a new one." },
           arm: {
             type: "string",
             description: "Option key (A, B…) actually followed. New trials default to the next option.",
@@ -705,14 +706,14 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
       parameters: {
         type: "object",
         properties: {
-          id: { type: "number" },
+          id: { type: "string" },
           status: { type: "string", enum: ["concluded", "dropped", "running"] },
           conclusion: {
             type: "string",
             description: "Two or three sentences: what the numbers showed and how firmly.",
           },
           manual_id: {
-            type: "number",
+            type: "string",
             description: "The manual the result went into, if you wrote it into one.",
           },
         },
@@ -1265,8 +1266,8 @@ export async function executeAssistantTool(
     if (!isNotedEntryKind(kind)) {
       throw new Error('kind must be one of "meal", "workout", "reading", "state", "performance", "sleep"');
     }
-    const id = typeof args["id"] === "number" ? Math.round(args["id"]) : NaN;
-    if (!isFinite(id)) throw new Error("id is required");
+    const id = idArg(args["id"]);
+    if (!id) throw new Error("id is required");
     const text = typeof args["text"] === "string" ? args["text"].trim() : "";
     if (!text) throw new Error("text is required");
     if (text.length > 500) throw new Error("Keep the note to a sentence or two.");
@@ -1464,8 +1465,8 @@ export async function executeAssistantTool(
   }
 
   if (name === "save_meal") {
-    const id = typeof args["id"] === "number" ? Math.round(args["id"]) : NaN;
-    if (!isFinite(id)) throw new Error("id is required");
+    const id = idArg(args["id"]);
+    if (!id) throw new Error("id is required");
     const entry = await getFoodEntry(id);
     if (!entry) throw new Error(`There is no meal #${id}.`);
     const given = typeof args["name"] === "string" ? args["name"].trim() : "";
@@ -1487,8 +1488,8 @@ export async function executeAssistantTool(
   }
 
   if (name === "edit_saved_meal") {
-    const id = typeof args["id"] === "number" ? Math.round(args["id"]) : NaN;
-    if (!isFinite(id)) throw new Error("id is required");
+    const id = idArg(args["id"]);
+    if (!id) throw new Error("id is required");
     if (args["action"] === "delete") {
       const ok = await deleteSavedMeal(id);
       return JSON.stringify(ok ? { deleted_saved_meal: id } : { error: `No saved meal #${id}.` });
@@ -1523,8 +1524,8 @@ export async function executeAssistantTool(
   }
 
   if (name === "update_memory") {
-    const id = typeof args["id"] === "number" ? args["id"] : NaN;
-    if (!isFinite(id)) throw new Error("id is required");
+    const id = idArg(args["id"]);
+    if (!id) throw new Error("id is required");
     const patch: {
       text?: string;
       status?: "open" | "done" | "dropped";
@@ -1549,15 +1550,15 @@ export async function executeAssistantTool(
   }
 
   if (name === "forget") {
-    const id = typeof args["id"] === "number" ? args["id"] : NaN;
-    if (!isFinite(id)) throw new Error("id is required");
+    const id = idArg(args["id"]);
+    if (!id) throw new Error("id is required");
     await deleteCoachMemory(id);
     return JSON.stringify({ forgot: id });
   }
 
   if (name === "read_manual") {
-    const id = typeof args["id"] === "number" ? args["id"] : NaN;
-    if (!isFinite(id)) throw new Error("id is required");
+    const id = idArg(args["id"]);
+    if (!id) throw new Error("id is required");
     const m = await getManual(id);
     if (!m) return JSON.stringify({ error: `No manual with id ${id}.` });
     return JSON.stringify({
@@ -1582,8 +1583,9 @@ export async function executeAssistantTool(
     if (!draft.title || !draft.situation || !draft.body) {
       throw new Error("title, situation and body are all required");
     }
-    if (typeof args["id"] === "number") {
-      const id = args["id"];
+    const givenId = idArg(args["id"]);
+    if (givenId) {
+      const id = givenId;
       // Leaving applies_when out keeps what the manual had, rather than
       // quietly unhooking the fasting manual on an ordinary rewrite.
       if (args["applies_when"] === undefined) {
@@ -1597,8 +1599,8 @@ export async function executeAssistantTool(
   }
 
   if (name === "delete_manual") {
-    const id = typeof args["id"] === "number" ? args["id"] : NaN;
-    if (!isFinite(id)) throw new Error("id is required");
+    const id = idArg(args["id"]);
+    if (!id) throw new Error("id is required");
     await removeManual(id);
     return JSON.stringify({ deleted_manual: id });
   }
@@ -1625,8 +1627,9 @@ export async function executeAssistantTool(
       assignment: d.assignment,
       target_per_arm: d.target_per_arm,
     };
-    if (typeof args["id"] === "number") {
-      const id = args["id"];
+    const givenId = idArg(args["id"]);
+    if (givenId) {
+      const id = givenId;
       if (!(await getExperiment(id))) return JSON.stringify({ error: `No experiment with id ${id}.` });
       await saveExperiment(id, draft);
       return JSON.stringify({ revised_experiment: id });
@@ -1636,8 +1639,8 @@ export async function executeAssistantTool(
   }
 
   if (name === "read_experiment") {
-    const id = typeof args["id"] === "number" ? args["id"] : NaN;
-    if (!isFinite(id)) throw new Error("id is required");
+    const id = idArg(args["id"]);
+    if (!id) throw new Error("id is required");
     const e = await getExperiment(id);
     if (!e) return JSON.stringify({ error: `No experiment with id ${id}.` });
     const trials = await listTrials(id);
@@ -1690,8 +1693,8 @@ export async function executeAssistantTool(
   }
 
   if (name === "record_trial") {
-    const expId = typeof args["experiment_id"] === "number" ? args["experiment_id"] : NaN;
-    if (!isFinite(expId)) throw new Error("experiment_id is required");
+    const expId = idArg(args["experiment_id"]);
+    if (!expId) throw new Error("experiment_id is required");
     const e = await getExperiment(expId);
     if (!e) return JSON.stringify({ error: `No experiment with id ${expId}.` });
     const armArg = typeof args["arm"] === "string" ? args["arm"].trim().toUpperCase() : undefined;
@@ -1713,11 +1716,12 @@ export async function executeAssistantTool(
     const note = typeof args["note"] === "string" ? args["note"].trim() || null : undefined;
     const excluded = typeof args["excluded"] === "boolean" ? args["excluded"] : undefined;
 
-    let trialId: number;
-    if (typeof args["trial_id"] === "number") {
-      const t = await getTrial(args["trial_id"]);
+    let trialId: string;
+    const trialArg = idArg(args["trial_id"]);
+    if (trialArg) {
+      const t = await getTrial(trialArg);
       if (!t || t.experiment_id !== e.id) {
-        return JSON.stringify({ error: `No trial ${args["trial_id"]} in experiment ${e.id}.` });
+        return JSON.stringify({ error: `No trial ${trialArg} in experiment ${e.id}.` });
       }
       trialId = t.id;
       await saveTrial(t.id, {
@@ -1751,20 +1755,21 @@ export async function executeAssistantTool(
   }
 
   if (name === "conclude_experiment") {
-    const id = typeof args["id"] === "number" ? args["id"] : NaN;
-    if (!isFinite(id)) throw new Error("id is required");
+    const id = idArg(args["id"]);
+    if (!id) throw new Error("id is required");
     const status = args["status"];
     if (status !== "concluded" && status !== "dropped" && status !== "running") {
       throw new Error('status must be "concluded", "dropped" or "running"');
     }
     if (!(await getExperiment(id))) return JSON.stringify({ error: `No experiment with id ${id}.` });
     const conclusion = typeof args["conclusion"] === "string" ? args["conclusion"].trim() || null : undefined;
-    let manualId: number | undefined;
-    if (typeof args["manual_id"] === "number") {
-      if (!(await getManual(args["manual_id"]))) {
-        return JSON.stringify({ error: `No manual with id ${args["manual_id"]}.` });
+    let manualId: string | undefined;
+    const manualArg = idArg(args["manual_id"]);
+    if (manualArg) {
+      if (!(await getManual(manualArg))) {
+        return JSON.stringify({ error: `No manual with id ${manualArg}.` });
       }
-      manualId = args["manual_id"];
+      manualId = manualArg;
     }
     await saveExperiment(id, { status, conclusion, manual_id: manualId });
     return JSON.stringify({ experiment: id, status });
@@ -1832,7 +1837,7 @@ export interface AssistantTurnOptions {
   /** Most requests this turn may make. Default MAX_ROUNDS. */
   maxRounds?: number;
   /** The conversation it runs in, so its cost is logged against it. */
-  chatId?: number | null;
+  chatId?: string | null;
 }
 
 /** Tools that only hand something to the user; everything else is work. */

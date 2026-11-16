@@ -42,7 +42,7 @@ function MemoryRow({
 }: {
   m: CoachMemory;
   today: string;
-  onForget: (id: number) => void;
+  onForget: (id: string) => void;
 }) {
   const parts: string[] = [];
   if (m.kind === "commitment") parts.push(m.status === "open" ? "Commitment" : `Commitment · ${m.status}`);
@@ -88,7 +88,7 @@ export default function MemoryPage() {
     };
   }, []);
 
-  async function forget(id: number) {
+  async function forget(id: string) {
     await deleteCoachMemory(id);
     setMemory(await listCoachMemory());
     await cacheCoachPromptPrefix();

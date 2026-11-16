@@ -128,7 +128,7 @@ function Editor({
 }
 
 function History({ revisions }: { revisions: ManualRevision[] }) {
-  const [open, setOpen] = useState<number | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
   if (revisions.length === 0) return null;
   return (
     <details className="memory-group">

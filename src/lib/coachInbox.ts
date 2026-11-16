@@ -23,7 +23,7 @@ import { SETTING_KEYS } from "./types";
 const CHANGED_EVENT = "tally:coach-inbox";
 
 export interface UnreadCheckin {
-  id: number;
+  id: string;
   title: string;
 }
 
@@ -32,7 +32,7 @@ function announce(): void {
 }
 
 /** Point the inbox at a freshly written check-in. */
-export async function markCheckinUnread(chatId: number): Promise<void> {
+export async function markCheckinUnread(chatId: string): Promise<void> {
   await setSetting(SETTING_KEYS.coachUnreadChat, String(chatId));
   announce();
 }
@@ -46,8 +46,7 @@ export async function markCheckinUnread(chatId: number): Promise<void> {
 export async function getUnreadCheckin(): Promise<UnreadCheckin | null> {
   const raw = await getSetting(SETTING_KEYS.coachUnreadChat).catch(() => null);
   if (!raw) return null;
-  const id = Number(raw);
-  if (!Number.isInteger(id) || id <= 0) return null;
+  const id = raw;
   const chat = await getChatSummary(id).catch(() => null);
   if (!chat) {
     await clearUnreadCheckin();
@@ -63,7 +62,7 @@ export async function clearUnreadCheckin(): Promise<void> {
 }
 
 /** Clear it only if `chatId` is the one waiting (opening it counts as reading). */
-export async function markCheckinRead(chatId: number): Promise<void> {
+export async function markCheckinRead(chatId: string): Promise<void> {
   const unread = await getUnreadCheckin();
   if (unread?.id === chatId) await clearUnreadCheckin();
 }
@@ -76,10 +75,10 @@ let lastTakenAt = 0;
  * any — each tap is handed out once. Null everywhere but Android, where there
  * are no taps to hand over.
  */
-export async function takeOpenedCheckin(): Promise<number | null> {
+export async function takeOpenedCheckin(): Promise<string | null> {
   try {
-    const id = await invoke<number | null>("plugin:coach|take_opened_checkin");
-    if (typeof id !== "number" || !Number.isInteger(id) || id <= 0) return null;
+    const id = await invoke<string | null>("plugin:coach|take_opened_checkin");
+    if (typeof id !== "string" || !id) return null;
     lastTakenAt = Date.now();
     return id;
   } catch {

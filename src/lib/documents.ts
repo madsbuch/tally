@@ -52,7 +52,7 @@ export function onLibraryChanged(handler: () => void): () => void {
   return () => window.removeEventListener(LIBRARY_CHANGED_EVENT, handler);
 }
 
-const inFlight = new Set<number>();
+const inFlight = new Set<string>();
 
 async function readDocument(doc: LibraryDocument): Promise<void> {
   const apiKey = await getSetting(SETTING_KEYS.openrouterApiKey);
@@ -90,7 +90,7 @@ async function readDocument(doc: LibraryDocument): Promise<void> {
   });
 }
 
-async function processDocument(id: number): Promise<void> {
+async function processDocument(id: string): Promise<void> {
   if (inFlight.has(id)) return;
   inFlight.add(id);
   const startedAt = Date.now();
@@ -135,7 +135,7 @@ export interface AddDocumentOptions {
  * File a document and start reading it. Returns as soon as it's stored, so
  * the library shows it immediately.
  */
-export async function addLibraryDocument(opts: AddDocumentOptions): Promise<number> {
+export async function addLibraryDocument(opts: AddDocumentOptions): Promise<string> {
   if (opts.pagesBase64.length === 0) throw new Error("Nothing to file");
   const pagePaths: string[] = [];
   for (const page of opts.pagesBase64) pagePaths.push(await savePhoto(page));
@@ -162,7 +162,7 @@ export async function addLibraryDocument(opts: AddDocumentOptions): Promise<numb
 }
 
 /** Re-read a document whose first attempt failed. */
-export async function retryDocument(id: number): Promise<void> {
+export async function retryDocument(id: string): Promise<void> {
   await updateDocument(id, { status: "pending", error: null });
   notifyLibraryChanged();
   void processDocument(id);

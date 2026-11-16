@@ -345,7 +345,7 @@ export function parseEntryChanges(raw: unknown): string[] {
  * half-restored entry gets saved.
  */
 const FoodEntrySnapshotSchema = z.object({
-  id: z.number(),
+  id: z.string(),
   eaten_at: z.string(),
   title: z.string(),
   description: z.string().nullable(),
@@ -360,7 +360,7 @@ const FoodEntrySnapshotSchema = z.object({
 });
 
 const WorkoutSnapshotSchema = z.object({
-  id: z.number(),
+  id: z.string(),
   performed_at: z.string(),
   title: z.string(),
   description: z.string().nullable(),

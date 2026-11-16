@@ -100,8 +100,47 @@ internal object CoachDb {
     fun open(path: String): SQLiteDatabase =
         SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READWRITE)
 
+    // -- ids -----------------------------------------------------------------
+
+    private val random = java.security.SecureRandom()
+
+    /**
+     * A fresh UUIDv7 row id, the same shape `newId()` makes on the JS side
+     * (src/lib/ids.ts): rows are keyed by strings so two devices in a vault
+     * never hand out the same one.
+     */
+    fun newId(): String {
+        val b = ByteArray(16)
+        random.nextBytes(b)
+        val ms = System.currentTimeMillis()
+        for (i in 0..5) b[i] = (ms shr (8 * (5 - i))).toByte()
+        b[6] = ((b[6].toInt() and 0x0f) or 0x70).toByte()
+        b[8] = ((b[8].toInt() and 0x3f) or 0x80).toByte()
+        val hex = b.joinToString("") { String.format("%02x", it.toInt() and 0xff) }
+        return "${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-" +
+            "${hex.substring(16, 20)}-${hex.substring(20)}"
+    }
+
+    // -- settings -------------------------------------------------------------
+
+    /**
+     * Keys that belong to this device and live in `device_settings` rather
+     * than the synced `settings`. Mirrors DEVICE_SETTING_KEYS in
+     * src/lib/types.ts — only the ones this worker touches need be here, but
+     * keeping the list whole stops the next one from slipping through.
+     */
+    private val DEVICE_KEYS = setOf(
+        "models_cache", "models_cache_at",
+        "health_connect_last_sync_at", "health_connect_history_synced", "health_connect_resync_version",
+        "garmin_last_sync_at", "garmin_display_name", "garmin_activities_backfilled",
+        "garmin_wellness_through", "garmin_wellness_back_to", "garmin_paused_until",
+        "coach_morning_hour", "coach_prompt_prefix", "coach_unread_chat",
+    )
+
+    private fun settingsTable(key: String) = if (key in DEVICE_KEYS) "device_settings" else "settings"
+
     fun setting(db: SQLiteDatabase, key: String): String? {
-        db.rawQuery("SELECT value FROM settings WHERE key = ?", arrayOf(key)).use { c ->
+        db.rawQuery("SELECT value FROM ${settingsTable(key)} WHERE key = ?", arrayOf(key)).use { c ->
             return if (c.moveToFirst()) c.getString(0) else null
         }
     }
@@ -112,7 +151,7 @@ internal object CoachDb {
      */
     fun putSetting(db: SQLiteDatabase, key: String, value: String) {
         val stmt = db.compileStatement(
-            "INSERT INTO settings (key, value) VALUES (?, ?) " +
+            "INSERT INTO ${settingsTable(key)} (key, value) VALUES (?, ?) " +
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         )
         stmt.bindString(1, key)
@@ -135,7 +174,7 @@ internal object CoachDb {
     }
 
     /** A memory whose reminder has come due on or before `day`. */
-    data class DueFollowUp(val id: Long, val text: String, val followUpOn: String)
+    data class DueFollowUp(val id: String, val text: String, val followUpOn: String)
 
     fun dueFollowUps(db: SQLiteDatabase, day: String): List<DueFollowUp> {
         val out = ArrayList<DueFollowUp>()
@@ -145,14 +184,14 @@ internal object CoachDb {
             arrayOf(day),
         ).use { c ->
             while (c.moveToNext()) {
-                out.add(DueFollowUp(c.getLong(0), c.getString(1), c.getString(2)))
+                out.add(DueFollowUp(c.getString(0), c.getString(1), c.getString(2)))
             }
         }
         return out
     }
 
     /** A manual the app loads by itself while its situation is on. */
-    data class ActiveManual(val id: Long, val title: String, val body: String)
+    data class ActiveManual(val id: String, val title: String, val body: String)
 
     /**
      * The manual tied to `trigger` ("fasting"), if any. Null on any failure —
@@ -166,7 +205,7 @@ internal object CoachDb {
                     "ORDER BY updated_at DESC LIMIT 1",
                 arrayOf(trigger),
             ).use { c ->
-                if (c.moveToFirst()) ActiveManual(c.getLong(0), c.getString(1), c.getString(2)) else null
+                if (c.moveToFirst()) ActiveManual(c.getString(0), c.getString(1), c.getString(2)) else null
             }
         } catch (e: Exception) {
             null
@@ -178,7 +217,7 @@ internal object CoachDb {
      * from inside the turn if the thing still needs watching — otherwise one
      * it forgot to close would come back every day.
      */
-    fun clearFollowUps(db: SQLiteDatabase, ids: List<Long>) {
+    fun clearFollowUps(db: SQLiteDatabase, ids: List<String>) {
         if (ids.isEmpty()) return
         val now = nowIso()
         for (id in ids) {
@@ -186,7 +225,7 @@ internal object CoachDb {
                 "UPDATE coach_memory SET follow_up_on = NULL, updated_at = ? WHERE id = ?",
             )
             stmt.bindString(1, now)
-            stmt.bindLong(2, id)
+            stmt.bindString(2, id)
             stmt.use { it.executeUpdateDelete() }
         }
     }
@@ -492,7 +531,7 @@ internal object CoachDb {
      * [system, assistant] — no user message, because the user didn't write
      * one; the frontend renders that as the coach speaking first.
      */
-    fun insertChat(db: SQLiteDatabase, title: String, system: String, message: String): Long {
+    fun insertChat(db: SQLiteDatabase, title: String, system: String, message: String): String? {
         val messages = JSONArray()
         messages.put(JSONObject().put("role", "system").put("content", system))
         messages.put(
@@ -525,24 +564,28 @@ internal object CoachDb {
         )
 
         val now = nowIso()
+        val id = newId()
         val stmt = db.compileStatement(
-            "INSERT INTO chats (created_at, updated_at, title, messages) VALUES (?, ?, ?, ?)",
+            "INSERT INTO chats (id, created_at, updated_at, title, messages) VALUES (?, ?, ?, ?, ?)",
         )
-        stmt.bindString(1, now)
+        stmt.bindString(1, id)
         stmt.bindString(2, now)
-        stmt.bindString(3, title)
-        stmt.bindString(4, messages.toString())
-        return stmt.use { it.executeInsert() }
+        stmt.bindString(3, now)
+        stmt.bindString(4, title)
+        stmt.bindString(5, messages.toString())
+        // executeInsert answers -1 when the row didn't go in.
+        return if (stmt.use { it.executeInsert() } == -1L) null else id
     }
 
-    fun insertRun(db: SQLiteDatabase, triggerKey: String, day: String, chatId: Long) {
+    fun insertRun(db: SQLiteDatabase, triggerKey: String, day: String, chatId: String) {
         val stmt = db.compileStatement(
-            "INSERT INTO coach_runs (trigger_key, day, created_at, chat_id) VALUES (?, ?, ?, ?)",
+            "INSERT INTO coach_runs (id, trigger_key, day, created_at, chat_id) VALUES (?, ?, ?, ?, ?)",
         )
-        stmt.bindString(1, triggerKey)
-        stmt.bindString(2, day)
-        stmt.bindString(3, nowIso())
-        stmt.bindLong(4, chatId)
+        stmt.bindString(1, newId())
+        stmt.bindString(2, triggerKey)
+        stmt.bindString(3, day)
+        stmt.bindString(4, nowIso())
+        stmt.bindString(5, chatId)
         stmt.use { it.executeInsert() }
     }
 
@@ -565,7 +608,7 @@ internal object CoachDb {
     fun insertUsage(
         db: SQLiteDatabase,
         day: String,
-        chatId: Long?,
+        chatId: String?,
         model: String,
         promptTokens: Long,
         cachedTokens: Long,
@@ -574,18 +617,19 @@ internal object CoachDb {
     ) {
         try {
             val stmt = db.compileStatement(
-                "INSERT INTO ai_usage (created_at, day, source, chat_id, model, requests, " +
+                "INSERT INTO ai_usage (id, created_at, day, source, chat_id, model, requests, " +
                     "prompt_tokens, cached_tokens, completion_tokens, cost_usd) " +
-                    "VALUES (?, ?, 'checkin', ?, ?, 1, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, 'checkin', ?, ?, 1, ?, ?, ?, ?)",
             )
-            stmt.bindString(1, nowIso())
-            stmt.bindString(2, day)
-            if (chatId != null && chatId > 0) stmt.bindLong(3, chatId) else stmt.bindNull(3)
-            stmt.bindString(4, model)
-            stmt.bindLong(5, promptTokens)
-            stmt.bindLong(6, cachedTokens)
-            stmt.bindLong(7, completionTokens)
-            stmt.bindDouble(8, costUsd)
+            stmt.bindString(1, newId())
+            stmt.bindString(2, nowIso())
+            stmt.bindString(3, day)
+            if (chatId != null) stmt.bindString(4, chatId) else stmt.bindNull(4)
+            stmt.bindString(5, model)
+            stmt.bindLong(6, promptTokens)
+            stmt.bindLong(7, cachedTokens)
+            stmt.bindLong(8, completionTokens)
+            stmt.bindDouble(9, costUsd)
             stmt.use { it.executeInsert() }
         } catch (e: Exception) {
             android.util.Log.w("Tally", "Could not log check-in spend", e)

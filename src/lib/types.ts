@@ -56,19 +56,19 @@ export type Nutrients = Partial<Record<NutrientKey, number>>;
 
 /** A meal kept for reuse (the `saved_meals` table). */
 export interface SavedMeal {
-  id: number;
+  id: string;
   name: string;
   description: string | null;
   /** Totals for one portion. */
   nutrients: Nutrients;
   icon: string | null;
-  source_entry_id: number | null;
+  source_entry_id: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface FoodEntry {
-  id: number;
+  id: string;
   /** ISO 8601 UTC timestamp of when the food was eaten. */
   eaten_at: string;
   title: string;
@@ -97,7 +97,7 @@ export interface FoodEntry {
 }
 
 export interface Supplement {
-  id: number;
+  id: string;
   name: string;
   /** Default dose, e.g. 500 (mg) or 1 (capsule). */
   dose_amount: number | null;
@@ -109,8 +109,8 @@ export interface Supplement {
 }
 
 export interface SupplementLog {
-  id: number;
-  supplement_id: number;
+  id: string;
+  supplement_id: string;
   /** ISO 8601 UTC timestamp. */
   taken_at: string;
   /** Multiplier of the supplement's default dose (1 = one dose). */
@@ -133,7 +133,7 @@ export interface SupplementLogWithSupplement extends SupplementLog {
 }
 
 export interface Fast {
-  id: number;
+  id: string;
   /** ISO 8601 UTC timestamp. */
   started_at: string;
   goal_hours: number;
@@ -154,7 +154,7 @@ export interface Fast {
  * Successful captures are deleted once the agent has logged real entries.
  */
 export interface Capture {
-  id: number;
+  id: string;
   /** ISO 8601 UTC timestamp of when the capture was taken. */
   created_at: string;
   /** Local diary day ("YYYY-MM-DD") it was added to. */
@@ -167,7 +167,7 @@ export interface Capture {
 
 /** An exercise session, usually imported from a workout-app screenshot. */
 export interface Workout {
-  id: number;
+  id: string;
   /** ISO 8601 UTC timestamp. */
   performed_at: string;
   title: string;
@@ -206,7 +206,7 @@ export interface Workout {
 
 /** One of the states they keep an eye on (see lib/states.ts). */
 export interface StateCategory {
-  id: number;
+  id: string;
   label: string;
   /** The emoji itself, picked by the model when the category was created. */
   icon: string;
@@ -231,7 +231,7 @@ export type TaggingStatus = "pending" | "failed";
  * tags and the note; either can be missing, not both.
  */
 export interface StateLog {
-  id: number;
+  id: string;
   /** ISO 8601 UTC timestamp. */
   logged_at: string;
   tags: StateTag[];
@@ -249,7 +249,7 @@ export type ReadingKind = "glucose" | "ketone";
 
 /** One finger-prick reading off a blood meter. */
 export interface BloodReading {
-  id: number;
+  id: string;
   /** ISO 8601 UTC timestamp. */
   measured_at: string;
   kind: ReadingKind;
@@ -269,17 +269,17 @@ export type NotedEntryKind = "meal" | "workout" | "reading" | "state" | "perform
 
 /** A note the coach attached to a diary entry (see db/schema.ts entry_notes). */
 export interface EntryNote {
-  id: number;
+  id: string;
   entry_kind: NotedEntryKind;
-  entry_id: number;
+  entry_id: string;
   text: string;
   created_at: string;
 }
 
 /** One number off a performance screen (see lib/performance.ts). */
 export interface PerformanceStat {
-  id: number;
-  log_id: number;
+  id: string;
+  log_id: string;
   /** Catalogue key ("ftp", "vo2max", …) or a slug of the label. */
   metric: string;
   label: string;
@@ -290,7 +290,7 @@ export interface PerformanceStat {
 
 /** A screenshot (or note) of performance stats, with the numbers it showed. */
 export interface PerformanceLog {
-  id: number;
+  id: string;
   /** ISO 8601 UTC timestamp. */
   measured_at: string;
   title: string;
@@ -315,7 +315,7 @@ export type EntryKind = "meal" | "workout";
  * every message that only asked or only answered, which is most of them.
  */
 export interface EntryMessage {
-  id: number;
+  id: string;
   role: "user" | "assistant";
   text: string;
   changes: string[];
@@ -326,7 +326,7 @@ export interface EntryMessage {
 
 /** A night of sleep synced from Health Connect (written by e.g. Garmin). */
 export interface SleepSession {
-  id: number;
+  id: string;
   /** Health Connect record UID for dedup. */
   external_id: string;
   /** ISO 8601 UTC timestamps. */
@@ -377,7 +377,7 @@ export interface DayGoalAdjustment {
 
 /** A progress selfie (Summary → Progress photos). */
 export interface ProgressPhoto {
-  id: number;
+  id: string;
   /** ISO 8601 UTC timestamp of when it was taken. */
   taken_at: string;
   /** Local day it was taken on. */
@@ -389,7 +389,7 @@ export interface ProgressPhoto {
 
 /** A photographed document in the library (see lib/documents.ts). */
 export interface LibraryDocument {
-  id: number;
+  id: string;
   /** ISO 8601 UTC timestamp of when it was added. */
   created_at: string;
   /** Local day the document itself refers to; null until it's been read. */
@@ -414,7 +414,7 @@ export interface LibraryDocument {
 
 /** One thing the coach knows about you (see lib/coach.ts). */
 export interface CoachMemory {
-  id: number;
+  id: string;
   kind: "goal" | "commitment" | "preference" | "note";
   text: string;
   /** Commitments only; null for other kinds. */
@@ -433,7 +433,7 @@ export type ManualAuthor = "coach" | "you";
 
 /** A page of what works for this person in one situation (see lib/manuals.ts). */
 export interface Manual {
-  id: number;
+  id: string;
   title: string;
   /** One line: when it applies. */
   situation: string;
@@ -448,8 +448,8 @@ export interface Manual {
 
 /** An earlier version of a manual, kept when it changed. */
 export interface ManualRevision {
-  id: number;
-  manual_id: number;
+  id: string;
+  manual_id: string;
   title: string;
   situation: string;
   body: string;
@@ -465,7 +465,7 @@ export type ExperimentAssignment = "balanced" | "choose";
 
 /** Something that might work, under test (see lib/experiments.ts). */
 export interface Experiment {
-  id: number;
+  id: string;
   title: string;
   hypothesis: string;
   /** "fasting": every fast that ends while it runs is a trial. */
@@ -476,7 +476,7 @@ export interface Experiment {
   target_per_arm: number;
   status: ExperimentStatus;
   conclusion: string | null;
-  manual_id: number | null;
+  manual_id: string | null;
   created_at: string;
   updated_at: string;
   ended_at: string | null;
@@ -484,10 +484,10 @@ export interface Experiment {
 
 /** One go at an experiment. */
 export interface ExperimentTrial {
-  id: number;
-  experiment_id: number;
+  id: string;
+  experiment_id: string;
   arm: string;
-  fast_id: number | null;
+  fast_id: string | null;
   started_at: string;
   day: string;
   tz_offset_min: number;
@@ -501,17 +501,17 @@ export interface ExperimentTrial {
 
 /** A check-in the coach started (see lib/coachTriggers.ts). */
 export interface CoachRun {
-  id: number;
+  id: string;
   trigger_key: string;
   /** Local day "YYYY-MM-DD". */
   day: string;
   created_at: string;
-  chat_id: number | null;
+  chat_id: string | null;
 }
 
 /** A saved assistant conversation (without its transcript). */
 export interface ChatSummary {
-  id: number;
+  id: string;
   title: string;
   /** ISO 8601 UTC timestamps. */
   created_at: string;
@@ -619,6 +619,31 @@ export const SETTING_KEYS = {
   /** "mmol" | "mgdl": how glucose readings are typed in and shown. */
   glucoseUnit: "glucose_unit",
 } as const;
+
+/**
+ * Settings that belong to this device rather than to the person, kept in
+ * `device_settings` so they never travel to the rest of the vault: sync
+ * bookmarks (each device keeps its own place in Health Connect and Garmin),
+ * caches, and the state of this device's own check-in and badge.
+ * `getSetting`/`setSetting` route these keys there by themselves; the list is
+ * mirrored in migration 0038 and in the Android coach worker (CoachDb.kt).
+ */
+export const DEVICE_SETTING_KEYS: ReadonlySet<string> = new Set<string>([
+  SETTING_KEYS.modelsCache,
+  SETTING_KEYS.modelsCacheAt,
+  SETTING_KEYS.healthConnectLastSyncAt,
+  SETTING_KEYS.healthConnectHistorySynced,
+  SETTING_KEYS.healthConnectResyncVersion,
+  SETTING_KEYS.garminLastSyncAt,
+  SETTING_KEYS.garminDisplayName,
+  SETTING_KEYS.garminActivitiesBackfilled,
+  SETTING_KEYS.garminWellnessThrough,
+  SETTING_KEYS.garminWellnessBackTo,
+  SETTING_KEYS.garminPausedUntil,
+  SETTING_KEYS.coachCheckinHour,
+  SETTING_KEYS.coachPromptPrefix,
+  SETTING_KEYS.coachUnreadChat,
+]);
 
 export const DEFAULT_VISION_MODEL = "google/gemini-2.5-flash";
 export const DEFAULT_FAST_HOURS = 16;

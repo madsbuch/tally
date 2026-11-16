@@ -54,12 +54,12 @@ internal object CoachWorker {
 
     private data class Candidate(val trigger: Trigger, val fact: String)
 
-    /** `chatId` is the chat the check-in was saved as; 0 when none was. */
+    /** `chatId` is the chat the check-in was saved as; null when none was. */
     class Result(
         val sent: Boolean,
         val title: String?,
         val message: String?,
-        val chatId: Long = 0,
+        val chatId: String? = null,
     )
 
     private fun enabled(config: JSONObject?, t: Trigger): Boolean =
@@ -233,12 +233,12 @@ internal object CoachWorker {
                 db, day, chatId, modelId,
                 reply.promptTokens, reply.cachedTokens, reply.completionTokens, reply.costUsd,
             )
-            if (chatId > 0) {
+            if (chatId != null) {
                 CoachDb.insertRun(db, winner.trigger.key, day, chatId)
                 // The notification carries the chat's id, so a tap opens it;
                 // this marks it unread for when the notification is swiped
                 // away instead (lib/coachInbox.ts).
-                CoachDb.putSetting(db, "coach_unread_chat", chatId.toString())
+                CoachDb.putSetting(db, "coach_unread_chat", chatId)
             }
             if (winner.trigger.key == "follow_up_due") {
                 CoachDb.clearFollowUps(db, due.map { it.id })

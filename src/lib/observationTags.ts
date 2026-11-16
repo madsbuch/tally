@@ -32,10 +32,10 @@ import { tagsFromList } from "./states";
 import { SETTING_KEYS } from "./types";
 
 /** Observations being tagged right now, so a resume doesn't start a second run. */
-const running = new Set<number>();
+const running = new Set<string>();
 
 /** Tag one observation that is waiting for it. Never throws. */
-export async function tagObservation(id: number): Promise<void> {
+export async function tagObservation(id: string): Promise<void> {
   if (running.has(id)) return;
   running.add(id);
   try {

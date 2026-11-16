@@ -40,6 +40,22 @@ on its tab and back from a tab leaves the app. Don't push or replace around it
 use `useUp()`. A new page goes under its tab's path (`/assistant/…`) — that's
 how `tabOf()` knows which tab it belongs to; the Diary, being `/`, owns the rest.
 
+## Data rules (sync-ready)
+
+The database is meant to sync between devices, so:
+
+- Every table is keyed by a UUIDv7 string (`rowId()` in `src/db/schema.ts`,
+  `newId()` in `src/lib/ids.ts`) — never an auto-increment integer. Rows
+  imported from an external system get `derivedId(namespace, externalKey)` so
+  two devices importing the same record agree on its id. Raw SQL inserts
+  (Kotlin `CoachDb`, Rust, tests) must supply the id themselves.
+- Settings that belong to one device (sync bookmarks, caches, the unread
+  badge) are listed in `DEVICE_SETTING_KEYS` (`src/lib/types.ts`) and live in
+  `device_settings`; `getSetting`/`setSetting` route them. Keep the Kotlin
+  mirror in `CoachDb.kt` in step.
+- Photos are named by the SHA-256 of their bytes (`photos.rs`), so a name
+  always means the same image.
+
 ## Commands
 
 - `bun run dev` — Vite dev server

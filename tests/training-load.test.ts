@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { sqlite } from "./testDb";
 import { TRAINING, focusOf, loadOf } from "../src/lib/storeModels";
 import { parseGarminLoadBalance, parseStoredTrainingStatusRaw } from "../src/lib/schemas";
+import { newId } from "../src/lib/ids";
 
 beforeAll(() => {
   sqlite.exec("DELETE FROM garmin_activities; DELETE FROM garmin_days; DELETE FROM workouts;");
@@ -24,9 +25,9 @@ describe("training load", () => {
       const at = `${day(d)}T07:00:00.000Z`;
       const r = sqlite
         .query(
-          "INSERT INTO workouts (performed_at, title, calories_burned, duration_min, day, tz_offset_min) VALUES (?, 'Run', 500, 50, ?, 60) RETURNING id",
+          "INSERT INTO workouts (id, performed_at, title, calories_burned, duration_min, day, tz_offset_min) VALUES (?, ?, 'Run', 500, 50, ?, 60) RETURNING id",
         )
-        .get(at, day(d)) as { id: number };
+        .get(newId(), at, day(d)) as { id: string };
       if (d >= 6) {
         sqlite
           .query(

@@ -244,6 +244,12 @@ fn migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0037_workout_average_hr.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 39,
+            description: "uuid_ids",
+            sql: include_str!("../migrations/0038_uuid_ids.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
@@ -278,11 +284,7 @@ async fn save_photo(app: tauri::AppHandle, data_base64: String) -> Result<String
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data_base64.as_bytes())
         .map_err(|e| e.to_string())?;
-    let millis = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| e.to_string())?
-        .as_millis();
-    photos::save(&db_pool(&app).await?, &bytes, millis).await
+    photos::save(&db_pool(&app).await?, &bytes).await
 }
 
 /// Reads a stored photo back as base64. (The WebView can't fetch it any other
@@ -303,7 +305,7 @@ async fn delete_photo(app: tauri::AppHandle, filename: String) -> Result<(), Str
 #[tauri::command]
 async fn save_document_file(
     app: tauri::AppHandle,
-    document_id: i64,
+    document_id: String,
     filename: String,
     media_type: String,
     data_base64: String,
@@ -311,13 +313,13 @@ async fn save_document_file(
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data_base64.as_bytes())
         .map_err(|e| e.to_string())?;
-    document_files::save(&db_pool(&app).await?, document_id, &filename, &media_type, &bytes).await
+    document_files::save(&db_pool(&app).await?, &document_id, &filename, &media_type, &bytes).await
 }
 
 /// Reads a library document's original file back as base64.
 #[tauri::command]
-async fn read_document_file(app: tauri::AppHandle, document_id: i64) -> Result<String, String> {
-    let data = document_files::read(&db_pool(&app).await?, document_id).await?;
+async fn read_document_file(app: tauri::AppHandle, document_id: String) -> Result<String, String> {
+    let data = document_files::read(&db_pool(&app).await?, &document_id).await?;
     Ok(base64::engine::general_purpose::STANDARD.encode(data))
 }
 
