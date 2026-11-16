@@ -1,0 +1,55 @@
+name: macOS app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+
+      # Both architectures, so one universal build runs on Apple Silicon and Intel Macs.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      # Unsigned: macOS Gatekeeper will ask the user to allow it on first launch
+      # (right-click → Open). Add APPLE_CERTIFICATE / APPLE_ID secrets and the
+      # matching env vars here to sign and notarize.
+      - name: Build app
+        run: bun run tauri build --target universal-apple-darwin --bundles app,dmg
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: tally-macos
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+      # The Android workflow owns the "latest" tag; this only adds the DMG to the
+      # same release, creating it if this job happens to finish first.
+      - name: Publish DMG to "latest" release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view latest >/dev/null 2>&1 || \
+            gh release create latest --prerelease --target "$GITHUB_SHA" \
+              --title "Latest build" \
+              --notes "Automated builds from main. Updated on every push." || \
+            gh release view latest >/dev/null
+          gh release upload latest \
+            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg --clobber
