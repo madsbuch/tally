@@ -23,7 +23,6 @@ import {
   listStateLogsAwaitingTags,
   setStateLogTags,
 } from "./db";
-import { notifyDiaryChanged } from "./agent";
 import { onAppResume } from "./appLifecycle";
 import { withBackgroundTask } from "./background";
 import { coachModelFor } from "./coachModel";
@@ -75,7 +74,6 @@ export async function tagObservation(id: string): Promise<void> {
     console.error("Tagging observation failed", e);
   } finally {
     running.delete(id);
-    notifyDiaryChanged();
   }
 }
 

@@ -3,11 +3,13 @@ import { Link } from "react-router-dom";
 import { aiSpendSince, todayStr } from "../lib/db";
 import { shiftDay } from "../lib/daystamp";
 import { formatUsd } from "../lib/aiCost";
+import { useTablesVersion } from "../lib/live";
 
 /** Settings' way into the cost center, with the last 30 days at a glance. */
 export default function CostCenterLink() {
   const [month, setMonth] = useState<number | null>(null);
 
+  const live = useTablesVersion(["ai_usage"]);
   useEffect(() => {
     let alive = true;
     aiSpendSince(shiftDay(todayStr(), -29))
@@ -18,7 +20,7 @@ export default function CostCenterLink() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [live]);
 
   return (
     <Link

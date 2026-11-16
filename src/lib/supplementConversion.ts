@@ -19,7 +19,6 @@ import {
   listAllSupplementLogs,
 } from "./db";
 import { analyzeSupplement } from "./openrouter";
-import { notifyDiaryChanged } from "./agent";
 import { sanitizeNutrients, scaleNutrients } from "./nutrients";
 import { DEFAULT_VISION_MODEL, SETTING_KEYS } from "./types";
 import type { Nutrients, SupplementLogWithSupplement } from "./types";
@@ -120,6 +119,5 @@ async function run(): Promise<number> {
     });
     moved++;
   }
-  if (moved > 0) notifyDiaryChanged();
   return moved;
 }

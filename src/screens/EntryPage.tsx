@@ -44,7 +44,6 @@ import {
   updateSupplementLog,
   updateWorkout,
 } from "../lib/db";
-import { notifyDiaryChanged, onDiaryChanged } from "../lib/agent";
 import { NUTRIENT_DEFS } from "../lib/nutrients";
 import type { NutrientKey } from "../lib/types";
 import type {
@@ -111,6 +110,7 @@ import GarminWorkoutDetails from "../components/GarminWorkoutDetails";
 import EntryChat from "../components/EntryChat";
 import { parseRowId } from "../lib/ids";
 import { confirmAction } from "../lib/confirm";
+import { DIARY_TABLES, onTablesChanged } from "../lib/live";
 
 type Kind = "meal" | "workout" | "supplement" | "sleep" | "state" | "reading" | "performance";
 
@@ -338,15 +338,11 @@ export default function EntryPage() {
     void load();
   }, [load]);
 
-  // An observation the model is still tagging: show the tags when they land.
-  const awaitingTags = felt?.tagging === "pending";
-  useEffect(() => {
-    if (!awaitingTags) return;
-    return onDiaryChanged(() => void load());
-  }, [awaitingTags, load]);
+  // Live: the entry edited or deleted elsewhere (another device, the coach),
+  // tags landing on an observation, a note added.
+  useEffect(() => onTablesChanged([...DIARY_TABLES, "settings"], () => void load()), [load]);
 
   async function afterChange() {
-    notifyDiaryChanged();
     await load();
   }
 
@@ -379,7 +375,6 @@ export default function EntryPage() {
         await deletePhotoIfUnused(perf.photo_path);
       }
       if (id && isNotedEntryKind(kind)) await deleteEntryNotesOf(kind, id);
-      notifyDiaryChanged();
       back();
     } catch (e) {
       setError(errMsg(e));

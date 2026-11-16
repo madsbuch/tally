@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getDb } from "./db";
+import { notifyTablesChanged } from "./live";
 
 /**
  * Decode an image file to an ImageBitmap.
@@ -67,7 +68,10 @@ export async function compressImage(
 /** Persist a base64 JPEG; returns the filename it's stored under. */
 export async function savePhoto(base64: string): Promise<string> {
   await getDb();
-  return invoke<string>("save_photo", { dataBase64: base64 });
+  const name = await invoke<string>("save_photo", { dataBase64: base64 });
+  // Written by Rust, past db.ts: say so here (lib/live.ts).
+  notifyTablesChanged(["photos"]);
+  return name;
 }
 
 /**
@@ -84,6 +88,7 @@ export async function saveDocumentFile(documentId: string, file: File): Promise<
     mediaType: file.type || "application/pdf",
     dataBase64,
   });
+  notifyTablesChanged(["document_files"]);
 }
 
 /** A blob's bytes as base64, without building the string a byte at a time. */
@@ -135,6 +140,7 @@ export async function deletePhoto(filename: string): Promise<void> {
   try {
     await getDb();
     await invoke("delete_photo", { filename });
+    notifyTablesChanged(["photos"]);
   } catch (e) {
     console.warn("Failed to delete photo", filename, e);
   }

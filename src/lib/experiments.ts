@@ -46,8 +46,7 @@ import { AUTO_METRIC_INFO, REFEED_WINDOW_H } from "./experimentMetrics";
 export { AUTO_METRIC_INFO, REFEED_WINDOW_H };
 import type { Experiment, ExperimentTrial, Fast } from "./types";
 import { parseRowId } from "./ids";
-
-export const EXPERIMENTS_CHANGED_EVENT = "tally:experiments-changed";
+import { EXPERIMENT_TABLES, onTablesChanged } from "./live";
 
 export const EXPERIMENT_GLYPH = "🧪";
 
@@ -61,15 +60,8 @@ export function parseExperimentId(raw: string | undefined): string | null {
   return parseRowId(raw);
 }
 
-export function notifyExperimentsChanged(): void {
-  // Also called from lib code that runs where there's no window (tests).
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent(EXPERIMENTS_CHANGED_EVENT));
-}
-
 export function onExperimentsChanged(handler: () => void): () => void {
-  window.addEventListener(EXPERIMENTS_CHANGED_EVENT, handler);
-  return () => window.removeEventListener(EXPERIMENTS_CHANGED_EVENT, handler);
+  return onTablesChanged(EXPERIMENT_TABLES, handler);
 }
 
 /**
@@ -78,7 +70,6 @@ export function onExperimentsChanged(handler: () => void): () => void {
  * check-in has to follow), and so does any screen showing them.
  */
 async function changed(): Promise<void> {
-  notifyExperimentsChanged();
   await cacheCoachPromptPrefix();
 }
 

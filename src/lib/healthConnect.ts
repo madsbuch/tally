@@ -9,7 +9,6 @@ import {
   upsertSleepSession,
 } from "./db";
 import { SETTING_KEYS } from "./types";
-import { notifyDiaryChanged } from "./agent";
 import { dayOf } from "./daystamp";
 import { adoptGarminSleep, adoptGarminWorkout, fillHealthMetricsFromGarmin } from "./garminDb";
 
@@ -335,6 +334,5 @@ async function runSync(): Promise<HealthConnectSyncResult> {
   }
   await setSetting(SETTING_KEYS.healthConnectResyncVersion, RESYNC_VERSION);
   // Day metrics count too: the Diary's steps and total burn come from them.
-  if (workoutCount > 0 || sleepCount > 0 || dayCount > 0) notifyDiaryChanged();
   return { status, workouts: workoutCount, newWorkouts: newWorkoutCount, sleep: sleepCount, days: dayCount };
 }

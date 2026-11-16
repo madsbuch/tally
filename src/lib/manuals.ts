@@ -20,8 +20,7 @@ import type { ManualDraft } from "./db";
 import { cacheCoachPromptPrefix } from "./coach";
 import type { Manual, ManualAuthor, ManualTrigger } from "./types";
 import { parseRowId } from "./ids";
-
-export const MANUALS_CHANGED_EVENT = "tally:manuals-changed";
+import { MANUAL_TABLES, onTablesChanged } from "./live";
 
 export const MANUAL_GLYPH = "📖";
 
@@ -62,13 +61,8 @@ export function writtenLabel(at: string, by: ManualAuthor): string {
   return `${shortDate(at)}, by ${authorName(by)}`;
 }
 
-export function notifyManualsChanged(): void {
-  window.dispatchEvent(new CustomEvent(MANUALS_CHANGED_EVENT));
-}
-
 export function onManualsChanged(handler: () => void): () => void {
-  window.addEventListener(MANUALS_CHANGED_EVENT, handler);
-  return () => window.removeEventListener(MANUALS_CHANGED_EVENT, handler);
+  return onTablesChanged(MANUAL_TABLES, handler);
 }
 
 /**
@@ -77,7 +71,6 @@ export function onManualsChanged(handler: () => void): () => void {
  * screen showing the list.
  */
 async function changed(): Promise<void> {
-  notifyManualsChanged();
   await cacheCoachPromptPrefix();
 }
 

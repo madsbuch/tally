@@ -15,6 +15,7 @@ import type { UsageGroup, UsageRow } from "../lib/aiCost";
 import AssistantChart from "../components/AssistantChart";
 import InfoButton from "../components/InfoButton";
 import type { ChartSpec } from "../lib/assistant";
+import { useTablesVersion } from "../lib/live";
 
 type Period = 7 | 30 | 90 | "all";
 
@@ -132,9 +133,12 @@ export default function CostCenterPage() {
   const [error, setError] = useState<string | null>(null);
   const today = todayStr();
 
+  const live = useTablesVersion(["ai_usage"]);
+  // A different period starts from a blank; a live update keeps what's shown
+  // until the new numbers are in.
+  useEffect(() => setRows(null), [period]);
   useEffect(() => {
     let alive = true;
-    setRows(null);
     void (async () => {
       try {
         const first = await firstAiUsageDay();
@@ -151,7 +155,7 @@ export default function CostCenterPage() {
     return () => {
       alive = false;
     };
-  }, [period, today]);
+  }, [period, today, live]);
 
   const view = useMemo(() => {
     if (!rows) return null;

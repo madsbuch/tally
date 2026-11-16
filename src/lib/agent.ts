@@ -77,20 +77,15 @@ import type {
   Workout,
 } from "./types";
 import { DEFAULT_VISION_MODEL, SETTING_KEYS } from "./types";
+import { DIARY_TABLES, onTablesChanged } from "./live";
 
 // ---------------------------------------------------------------------------
-// Change notifications (DiaryPage refreshes on these)
+// Change notifications: any change to the diary's tables, from this app,
+// another device or the background worker (see lib/live.ts).
 // ---------------------------------------------------------------------------
-
-export const DIARY_CHANGED_EVENT = "tally:diary-changed";
-
-export function notifyDiaryChanged(): void {
-  window.dispatchEvent(new CustomEvent(DIARY_CHANGED_EVENT));
-}
 
 export function onDiaryChanged(handler: () => void): () => void {
-  window.addEventListener(DIARY_CHANGED_EVENT, handler);
-  return () => window.removeEventListener(DIARY_CHANGED_EVENT, handler);
+  return onTablesChanged(DIARY_TABLES, handler);
 }
 
 // ---------------------------------------------------------------------------
@@ -794,7 +789,6 @@ async function executeTool(
     ) {
       void unlockAchievement("quick_draw");
     }
-    notifyDiaryChanged();
     return `Logged meal "${title}" at ${time}${fromLabel}.`;
   }
 
@@ -823,7 +817,6 @@ async function executeTool(
       fast_ok_note: fastOk(args["fast_ok"]),
     });
     ctx.logged++;
-    notifyDiaryChanged();
     return `Logged "${title}" at ${time}, copied from #${source.id}.`;
   }
 
@@ -850,7 +843,6 @@ async function executeTool(
       fast_ok_note: fastOk(args["fast_ok"]),
     });
     ctx.logged++;
-    notifyDiaryChanged();
     return `Logged saved meal "${title}" at ${time}.`;
   }
 
@@ -873,7 +865,6 @@ async function executeTool(
       icon: icon(args["icon"]),
     });
     ctx.logged++;
-    notifyDiaryChanged();
     return `Logged workout "${title}" at ${time}.`;
   }
 
@@ -910,7 +901,6 @@ async function executeTool(
     // The meter's unit is the one to show glucose in from here on.
     if (kind === "glucose" && unit) await setGlucoseUnit(unit);
     ctx.logged++;
-    notifyDiaryChanged();
     return `Logged ${label.toLowerCase()} ${raw}${unitArg ? ` ${args["unit"]}` : ""} at ${time}.`;
   }
 
@@ -949,7 +939,6 @@ async function executeTool(
       stats,
     });
     ctx.logged++;
-    notifyDiaryChanged();
     return (
       `Logged ${stats.length} performance stat${stats.length === 1 ? "" : "s"} at ${time}.` +
       (rejected.length > 0
@@ -971,7 +960,6 @@ async function executeTool(
     }
     await addStateLog({ tags, note, loggedAt: time });
     ctx.logged++;
-    notifyDiaryChanged();
     const dropped = raw.length - tags.length;
     return (
       `Logged an observation${tags.length ? ` tagged ${tags.map((t) => t.label).join(", ")}` : " (untagged)"} at ${time}.` +
@@ -1097,7 +1085,6 @@ async function runCapture(capture: Capture): Promise<void> {
     if (ctx.logged > 0 && !dissolved) {
       dissolved = true;
       await deleteCapture(capture.id);
-      notifyDiaryChanged();
     }
   }
 
@@ -1115,7 +1102,6 @@ async function runCapture(capture: Capture): Promise<void> {
     // in case a produced entry happens to share the filename.
     await deletePhotoIfUnused(ctx.photoToAttach);
   }
-  notifyDiaryChanged();
 }
 
 async function processCapture(id: string): Promise<void> {
@@ -1141,7 +1127,6 @@ async function processCapture(id: string): Promise<void> {
       } else {
         await setCaptureStatus(id, "error", msg);
       }
-      notifyDiaryChanged();
     }
   } finally {
     inFlight.delete(id);
@@ -1172,7 +1157,6 @@ export async function enqueueCapture(opts: EnqueueOptions): Promise<string> {
     note: opts.note?.trim() || null,
     photo_path: photoPath,
   });
-  notifyDiaryChanged();
   void processCapture(id);
   return id;
 }
@@ -1180,7 +1164,6 @@ export async function enqueueCapture(opts: EnqueueOptions): Promise<string> {
 /** Re-run a failed capture. */
 export async function retryCapture(id: string): Promise<void> {
   await setCaptureStatus(id, "pending", null);
-  notifyDiaryChanged();
   void processCapture(id);
 }
 
@@ -1193,7 +1176,6 @@ export async function retryCapture(id: string): Promise<void> {
 export async function discardCapture(capture: Capture): Promise<void> {
   await deleteCapture(capture.id);
   await deletePhotoIfUnused(capture.photo_path);
-  notifyDiaryChanged();
 }
 
 /** Resume captures that were interrupted (call once on app start). */

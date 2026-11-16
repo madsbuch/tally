@@ -13,7 +13,6 @@
  * All of it is read from the diary (lib/body.ts); nothing here is logged.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { onDiaryChanged } from "../lib/agent";
 import { useGo } from "../lib/navigation";
 import { setSetting } from "../lib/db";
 import { SETTING_KEYS } from "../lib/types";
@@ -59,6 +58,7 @@ import {
   TrainingCard,
 } from "./BodyStores";
 import FastingSection from "./FastingSection";
+import { DIARY_TABLES, onTablesChanged } from "../lib/live";
 
 const WORKING_PCT = Math.round(CREATINE_WORKING * 100);
 
@@ -101,7 +101,7 @@ export default function BodyPage() {
 
   useEffect(() => {
     void load();
-    return onDiaryChanged(() => void load());
+    return onTablesChanged([...DIARY_TABLES, "settings"], () => void load());
   }, [load]);
 
   // The levels move by the minute; re-read them from what's already loaded.

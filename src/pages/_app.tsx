@@ -34,10 +34,7 @@ import { syncHealthConnect, syncHealthConnectIfStale } from "../lib/healthConnec
 import { syncGarminIfStale } from "../lib/garmin";
 import { scanAchievements } from "../lib/achievements";
 import { onSyncChanged, startSync } from "../lib/sync";
-import { notifyDiaryChanged } from "../lib/agent";
-import { notifyLibraryChanged } from "../lib/documents";
-import { notifyManualsChanged } from "../lib/manuals";
-import { notifyExperimentsChanged } from "../lib/experiments";
+import { notifyTablesChanged, onTablesChanged } from "../lib/live";
 import { notifyCoachInboxChanged } from "../lib/coachInbox";
 import { openAssistantChat } from "../lib/assistantRunner";
 import AchievementToast from "../components/AchievementToast";
@@ -213,15 +210,31 @@ export default function App() {
     };
   }, []);
 
+  // What the coach knows changed (here or, through sync, elsewhere): the
+  // prompt cached for the Android check-in follows. It's written to
+  // device_settings, which wakes nobody, so this can't loop.
+  useEffect(
+    () =>
+      onTablesChanged(["coach_memory", "manuals", "experiments", "experiment_trials", "settings"], () =>
+        void cacheCoachPromptPrefix().catch(() => {}),
+      ),
+    [],
+  );
+
+  // A fast started or ended on another device: the phone's ongoing fasting
+  // notification follows (a no-op elsewhere).
+  useEffect(() => onTablesChanged(["fasts"], () => void resyncFastNotification()), []);
+
+  // Back in front: the Android check-in worker may have written while the
+  // app was away, so every screen re-reads what it shows.
+  useEffect(() => onAppResume(() => notifyTablesChanged("all")), []);
+
   // Another device's data arrived: every screen reloads what it shows, and
   // an open conversation picks up turns written elsewhere.
   useEffect(
     () =>
       onSyncChanged(() => {
-        notifyDiaryChanged();
-        notifyLibraryChanged();
-        notifyManualsChanged();
-        notifyExperimentsChanged();
+        notifyTablesChanged("all");
         notifyCoachInboxChanged();
         const a = getAssistantState();
         if (a.status !== "running" && a.chatId) void openAssistantChat(a.chatId);

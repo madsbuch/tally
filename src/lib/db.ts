@@ -88,6 +88,7 @@ import { isGlucoseUnit, isReadingKind } from "./readings";
 import type { GlucoseUnit } from "./readings";
 import { deletePhoto } from "./photos";
 import { derivedId } from "./ids";
+import { notifyTablesChanged, writtenTable } from "./live";
 import {
   parseChatTranscript,
   parseDocumentPages,
@@ -146,12 +147,42 @@ export const db = drizzle(async (query, params, method) => {
   const conn = await sqlite();
   if (method === "run") {
     await conn.execute(query, params);
+    await noteWrite(conn, query);
     return { rows: [] };
   }
   const rows = (await conn.select(query, params)) as Record<string, unknown>[];
+  // An INSERT … RETURNING comes through here too.
+  await noteWrite(conn, query);
   const values = rows.map((r) => Object.values(r));
   return { rows: method === "get" ? (values[0] ?? []) : values };
 });
+
+/** Sync's change counter as last seen here (see `noteWrite`). */
+let lastSeq: number | null = null;
+
+/**
+ * Tells the screens (lib/live.ts) that a write changed `query`'s table —
+ * when it really changed something. The sync triggers bump `sync_state.seq`
+ * only for a real change to a synced table, so a write that changed nothing
+ * (a setting saved with the value it had) wakes nobody, and no screen whose
+ * load writes something back can set itself off in a loop.
+ */
+async function noteWrite(conn: Database, query: string): Promise<void> {
+  const table = writtenTable(query);
+  if (!table) return;
+  try {
+    const rows = (await conn.select("SELECT seq FROM sync_state WHERE id = 1")) as { seq?: unknown }[];
+    const seq = typeof rows[0]?.seq === "number" ? rows[0].seq : null;
+    if (seq === null) {
+      notifyTablesChanged([table]);
+    } else if (lastSeq === null || seq > lastSeq) {
+      lastSeq = seq;
+      notifyTablesChanged([table]);
+    }
+  } catch {
+    notifyTablesChanged([table]);
+  }
+}
 
 /**
  * Rows whose current version was written on this device. Work waiting on a

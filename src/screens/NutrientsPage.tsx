@@ -7,7 +7,6 @@ import {
   todayStr,
 } from "../lib/db";
 import { onAppResume } from "../lib/appLifecycle";
-import { onDiaryChanged } from "../lib/agent";
 import SummaryGoals from "../components/SummaryGoals";
 import { Link } from "../router";
 import InfoButton from "../components/InfoButton";
@@ -29,6 +28,7 @@ import type {
   Workout,
 } from "../lib/types";
 import { DEFAULT_KETO_NET_CARB_LIMIT_G, SETTING_KEYS } from "../lib/types";
+import { DIARY_TABLES, onTablesChanged } from "../lib/live";
 
 // ---------------------------------------------------------------------------
 // Day helpers
@@ -256,7 +256,7 @@ export default function NutrientsPage() {
       setDay((current) => current === previous ? now : current);
       setReloadKey((k) => k + 1);
     };
-    const offDiary = onDiaryChanged(refresh);
+    const offDiary = onTablesChanged([...DIARY_TABLES, "settings"], refresh);
     const offResume = onAppResume(refresh);
     const timer = window.setInterval(refresh, 60_000);
     return () => { offDiary(); offResume(); window.clearInterval(timer); };

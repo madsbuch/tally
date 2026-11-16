@@ -12,6 +12,7 @@ import { cacheCoachPromptPrefix } from "../lib/coach";
 import type { CoachMemory } from "../lib/types";
 import InfoButton from "../components/InfoButton";
 import { useUp } from "../lib/navigation";
+import { useTablesVersion } from "../lib/live";
 
 function shortDay(day: string): string {
   const [y = 0, m = 1, d = 1] = day.slice(0, 10).split("-").map(Number);
@@ -74,6 +75,8 @@ export default function MemoryPage() {
   const up = useUp();
   const today = todayStr();
 
+  // Live: what the coach (here or on another device) remembers or forgets.
+  const live = useTablesVersion(["coach_memory"]);
   useEffect(() => {
     let alive = true;
     listCoachMemory()
@@ -86,7 +89,7 @@ export default function MemoryPage() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [live]);
 
   async function forget(id: string) {
     await deleteCoachMemory(id);

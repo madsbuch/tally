@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Fast, FoodEntry, Manual } from "../lib/types";
 import { DEFAULT_FAST_HOURS, SETTING_KEYS } from "../lib/types";
-import { notifyDiaryChanged, onDiaryChanged } from "../lib/agent";
+import { onDiaryChanged } from "../lib/agent";
 import {
   deleteFast,
   getActiveFast,
@@ -31,6 +31,7 @@ import FastingExperiments from "../components/FastingExperiments";
 import { MANUAL_GLYPH, manualPath, onManualsChanged } from "../lib/manuals";
 import { useGo } from "../lib/navigation";
 import { confirmAction } from "../lib/confirm";
+import { useTablesVersion } from "../lib/live";
 
 const PRESET_HOURS = [13, 16, 18, 24, 48, 72];
 const MIN_HOURS = 1;
@@ -293,6 +294,25 @@ export default function FastingSection() {
     };
   }, [manualVersion]);
 
+  // Live: a fast started, ended or deleted on another device (or by the
+  // coach). Only the fasts — the default-hours form isn't reset under you.
+  const fastsVersion = useTablesVersion(["fasts"]);
+  useEffect(() => {
+    if (fastsVersion === 0) return;
+    let alive = true;
+    void Promise.all([getActiveFast(), listRecentFasts(30), listAllFasts()])
+      .then(([fast, fasts, all]) => {
+        if (!alive) return;
+        setActive(fast);
+        setHistory(fasts);
+        setAllFasts(all);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [fastsVersion]);
+
   const loadHistory = useCallback(async () => {
     const [recent, all] = await Promise.all([listRecentFasts(30), listAllFasts()]);
     setHistory(recent);
@@ -449,8 +469,6 @@ export default function FastingSection() {
       await setFoodEntryFastOk(meal.id, exemptNote.trim() || "Doesn't break a fast");
       setExempting(null);
       setExemptNote("");
-      // Refreshes this card too (it listens), plus anything else showing the diary.
-      notifyDiaryChanged();
     } catch {
       setError("Could not save that.");
     } finally {

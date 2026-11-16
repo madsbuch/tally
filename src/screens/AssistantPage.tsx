@@ -22,6 +22,7 @@ import { chatPath, parseChatId, useGo, useUp } from "../lib/navigation";
 import InfoButton from "../components/InfoButton";
 import CoachShelf from "../components/CoachShelf";
 import { confirmAction } from "../lib/confirm";
+import { useTablesVersion } from "../lib/live";
 
 const SUGGESTIONS = [
   "How is my week going?",
@@ -153,6 +154,9 @@ export default function AssistantPage() {
     if (!inChat) closeAssistantChat();
   }, [inChat]);
 
+  // Live: chats started, continued or deleted here, by the check-in, or on
+  // another device.
+  const chatsVersion = useTablesVersion(["chats"]);
   useEffect(() => {
     if (!inChat) {
       void listChats()
@@ -162,7 +166,7 @@ export default function AssistantPage() {
         })
         .catch(console.error);
     }
-  }, [inChat, status]);
+  }, [inChat, status, chatsVersion]);
 
   useEffect(() => {
     if (inChat) {

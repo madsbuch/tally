@@ -55,7 +55,6 @@ import {
   summarize,
 } from "./experiments";
 import { chatWithTools } from "./openrouter";
-import { notifyDiaryChanged } from "./agent";
 import type { ChatMessage, ToolDef } from "./openrouter";
 import { AUTO_METRICS, ExperimentDesignSchema, RatingArgsSchema, parseToolArgs } from "./schemas";
 import type { AutoMetric } from "./schemas";
@@ -1251,7 +1250,6 @@ export async function executeAssistantTool(
     // A moment they're telling you about has happened; it isn't in the future.
     const loggedAt = new Date(Math.min(atMs, Date.now())).toISOString();
     const id = await addStateLog({ tags, note: note || null, loggedAt });
-    notifyDiaryChanged();
     const dropped = raw.filter((r) => !tags.some((t) => t.label.toLowerCase() === r.trim().toLowerCase()));
     return JSON.stringify(
       compact({
@@ -1274,7 +1272,6 @@ export async function executeAssistantTool(
     const what = await describeNotedEntry(kind, id);
     if (what == null) throw new Error(`There is no ${kind} #${id}.`);
     const noteId = await addEntryNote(kind, id, text);
-    notifyDiaryChanged();
     return JSON.stringify({ noted: { id: noteId, on: `${kind} #${id} (${what})`, text } });
   }
 

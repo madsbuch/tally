@@ -28,8 +28,7 @@ import { onAppResume, wasSuspendedSince } from "./appLifecycle";
 import { cacheCoachPromptPrefix } from "./coach";
 import { DEFAULT_VISION_MODEL, SETTING_KEYS } from "./types";
 import type { LibraryDocument } from "./types";
-
-export const LIBRARY_CHANGED_EVENT = "tally:library-changed";
+import { LIBRARY_TABLES, onTablesChanged } from "./live";
 
 /**
  * A document's pages, in order.
@@ -43,13 +42,8 @@ export function documentPages(doc: LibraryDocument): string[] {
   return doc.photo_path ? [doc.photo_path] : [];
 }
 
-export function notifyLibraryChanged(): void {
-  window.dispatchEvent(new CustomEvent(LIBRARY_CHANGED_EVENT));
-}
-
 export function onLibraryChanged(handler: () => void): () => void {
-  window.addEventListener(LIBRARY_CHANGED_EVENT, handler);
-  return () => window.removeEventListener(LIBRARY_CHANGED_EVENT, handler);
+  return onTablesChanged(LIBRARY_TABLES, handler);
 }
 
 const inFlight = new Set<string>();
@@ -99,7 +93,6 @@ async function processDocument(id: string): Promise<void> {
     if (!doc) return;
     try {
       await withBackgroundTask("Reading your document", () => readDocument(doc));
-      notifyLibraryChanged();
       // A new result is part of what the coach knows, and the scheduled
       // check-in reads that from the cached prefix.
       void cacheCoachPromptPrefix();
@@ -112,7 +105,6 @@ async function processDocument(id: string): Promise<void> {
       } else {
         await updateDocument(id, { status: "error", error: msg });
       }
-      notifyLibraryChanged();
     }
   } finally {
     inFlight.delete(id);
@@ -156,7 +148,6 @@ export async function addLibraryDocument(opts: AddDocumentOptions): Promise<stri
       throw e;
     }
   }
-  notifyLibraryChanged();
   void processDocument(id);
   return id;
 }
@@ -164,7 +155,6 @@ export async function addLibraryDocument(opts: AddDocumentOptions): Promise<stri
 /** Re-read a document whose first attempt failed. */
 export async function retryDocument(id: string): Promise<void> {
   await updateDocument(id, { status: "pending", error: null });
-  notifyLibraryChanged();
   void processDocument(id);
 }
 
@@ -175,7 +165,6 @@ export async function retryDocument(id: string): Promise<void> {
 export async function removeDocument(doc: LibraryDocument): Promise<void> {
   await deleteDocument(doc.id);
   for (const page of documentPages(doc)) await deletePhotoIfUnused(page);
-  notifyLibraryChanged();
   void cacheCoachPromptPrefix();
 }
 

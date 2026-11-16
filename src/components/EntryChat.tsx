@@ -16,6 +16,7 @@ import { isSaveLine, sendEntryMessage, undoEntryChange } from "../lib/entryChat"
 import InfoButton from "./InfoButton";
 import { errMsg } from "./EntryBits";
 import type { EntryMessage, FoodEntry, Workout } from "../lib/types";
+import { useTablesVersion } from "../lib/live";
 
 const PLACEHOLDER = "Ask about it, or correct it";
 
@@ -61,9 +62,11 @@ export default function EntryChat({
     }
   }, [kind, entryId]);
 
+  // Live: a question asked about this entry on another device shows up here.
+  const live = useTablesVersion(["entry_messages"]);
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, live]);
 
   async function send() {
     const message = text.trim();

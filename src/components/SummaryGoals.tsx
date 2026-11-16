@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { CARDIO_MIN_AVG_HR, exerciseTarget } from "../lib/exerciseGoals";
 import { cardioMinutes, getCardioTarget, getDayGoal, getProteinTarget, loadGoalSettings } from "../lib/goals";
 import type { Workout } from "../lib/types";
+import { useTablesVersion } from "../lib/live";
 
 interface Targets {
   /** Net kcal per day; null = no calorie target set. */
@@ -88,6 +89,8 @@ export default function SummaryGoals({
   const [reload, setReload] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
+  // Live: targets changed here or on another device.
+  const live = useTablesVersion(["settings", "day_goal_adjustments"]);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -116,7 +119,7 @@ export default function SummaryGoals({
     return () => {
       cancelled = true;
     };
-  }, [day, days, reload]);
+  }, [day, days, reload, live]);
 
   const perDay = days > 1 ? " · avg/day" : "";
 

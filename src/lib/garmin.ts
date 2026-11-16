@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { deleteSetting, getSetting, setSetting, todayStr } from "./db";
 import { SETTING_KEYS } from "./types";
-import { notifyDiaryChanged } from "./agent";
 import { shiftDay } from "./daystamp";
 import {
   activitiesMissingLaps,
@@ -233,7 +232,6 @@ async function runSync(manual: boolean, newWorkout: boolean): Promise<GarminSync
     const result = await syncAll(status);
     await setSetting(SETTING_KEYS.garminLastSyncAt, new Date().toISOString());
     if (result.linkedExact + result.linkedByTime + result.created + result.updated + result.days + result.nights > 0) {
-      notifyDiaryChanged();
     }
     return result;
   } catch (e) {

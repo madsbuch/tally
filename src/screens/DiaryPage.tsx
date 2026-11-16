@@ -58,8 +58,6 @@ import {
 import {
   discardCapture,
   enqueueCapture,
-  notifyDiaryChanged,
-  onDiaryChanged,
   retryCapture,
 } from "../lib/agent";
 import { compressImage, savePhoto } from "../lib/photos";
@@ -99,6 +97,7 @@ import type { DayGoal, PeriodGoal } from "../lib/goals";
 import { CARDIO_MIN_AVG_HR } from "../lib/exerciseGoals";
 import BackupReminder from "../components/BackupReminder";
 import { confirmAction } from "../lib/confirm";
+import { DIARY_TABLES, onTablesChanged } from "../lib/live";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -989,7 +988,9 @@ export default function DiaryPage() {
 
   // Refresh whenever the background agent changes diary data — this is how a
   // pending capture row appears instantly and later turns into real entries.
-  useEffect(() => onDiaryChanged(() => setRefresh((n) => n + 1)), []);
+  // Live: the day's entries, and the targets it's measured against, changed
+  // here, by the capture agent, or on another device (lib/live.ts).
+  useEffect(() => onTablesChanged([...DIARY_TABLES, "settings"], () => setRefresh((n) => n + 1)), []);
 
   // Streak follows every diary change (refresh bumps on those).
   useEffect(() => {
@@ -1909,7 +1910,6 @@ export default function DiaryPage() {
               setDayIncomplete(day, next)
                 .then(() => {
                   setIncomplete(next);
-                  notifyDiaryChanged();
                 })
                 .catch((err: unknown) => setLoadError(errMsg(err)))
                 .finally(() => setIncompleteSaving(false));

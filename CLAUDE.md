@@ -40,6 +40,18 @@ on its tab and back from a tab leaves the app. Don't push or replace around it
 use `useUp()`. A new page goes under its tab's path (`/assistant/…`) — that's
 how `tabOf()` knows which tab it belongs to; the Diary, being `/`, owns the rest.
 
+## Live data
+
+Screens show what's in the database now, whoever changed it: this device,
+another one through sync, or the Android check-in worker while the app was
+away. A screen that reads data subscribes to the tables it shows —
+`useTablesVersion([...])` in its load effect's dependencies, or
+`onTablesChanged` (`src/lib/live.ts`) — rather than loading once. Writes
+through `db.ts` announce themselves (only real changes, judged by sync's
+change counter); anything written past it (Rust commands like `save_photo`)
+calls `notifyTablesChanged` itself. Forms that hold a draft (Settings) load
+once on open, so a sync never overwrites what you're typing.
+
 ## Data rules (sync-ready)
 
 The database is meant to sync between devices, so:

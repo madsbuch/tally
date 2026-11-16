@@ -13,6 +13,7 @@ import { useUp } from "../lib/navigation";
 import { useSheetHistory } from "../lib/sheetHistory";
 import type { ProgressPhoto } from "../lib/types";
 import InfoButton from "../components/InfoButton";
+import { useTablesVersion } from "../lib/live";
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -160,6 +161,7 @@ export default function ProgressPhotosPage() {
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
 
+  const live = useTablesVersion(["progress_photos"]);
   useEffect(() => {
     let alive = true;
     listProgressPhotos()
@@ -172,7 +174,7 @@ export default function ProgressPhotosPage() {
     return () => {
       alive = false;
     };
-  }, [refresh]);
+  }, [refresh, live]);
 
   async function onPick(e: React.ChangeEvent<HTMLInputElement>, fromCamera: boolean) {
     const file = e.target.files?.[0];
