@@ -454,3 +454,68 @@ async fn a_release_build_is_refused_by_a_development_build() {
     let err = check_peer(&joiner.pool, &mine, &theirs, &host_key, None).await.unwrap_err();
     assert!(err.contains("development builds never sync"), "{err}");
 }
+
+#[tokio::test]
+async fn an_idle_sync_skips_the_full_comparison_only_when_it_is_safe() {
+    let h = host().await;
+    let joiner = device().await;
+    let first = join(&joiner.pool, &offer_from(&h).await, false).await.unwrap();
+    assert!(first.complete && !first.digest_skipped);
+
+    // Nothing new on either side, after an identical sync: skipped, still complete.
+    let idle = sync_now(&joiner.pool, h.addr).await.unwrap();
+    assert!(idle.digest_skipped && idle.complete);
+
+    // Anything moving brings the comparison back.
+    exec(&h.device.pool, "INSERT INTO food_entries (id, eaten_at, title, nutrients) VALUES ('n', 'now', 'Tea', '{}')").await;
+    let moved = sync_now(&joiner.pool, h.addr).await.unwrap();
+    assert!(!moved.digest_skipped && moved.complete);
+    exec(&joiner.pool, "INSERT INTO fasts (id, started_at, goal_hours) VALUES ('f', 'now', 16)").await;
+    let pushed = sync_now(&joiner.pool, h.addr).await.unwrap();
+    assert!(!pushed.digest_skipped && pushed.complete);
+    assert_same(&h.device.pool, &joiner.pool).await;
+
+    // After a sync that ended different, an idle one still compares.
+    let host_id = identity(&h.device.pool).await.unwrap().device_id;
+    exec(&joiner.pool, &format!("UPDATE sync_peers SET complete = 0 WHERE device_id = '{host_id}'")).await;
+    let after_incomplete = sync_now(&joiner.pool, h.addr).await.unwrap();
+    assert!(!after_incomplete.digest_skipped && after_incomplete.complete);
+}
+
+#[test]
+fn a_hello_from_an_older_version_never_skips() {
+    // An older app's hello has no skips_idle_digest: it reads as false.
+    let old = Hello {
+        protocol: PROTOCOL,
+        device_id: "d".into(),
+        name: "Phone".into(),
+        platform: "android".into(),
+        schema: 40,
+        vault_id: Some("v".into()),
+        epoch: "e".into(),
+        build: String::new(),
+        skips_idle_digest: false,
+    };
+    #[derive(serde::Serialize)]
+    struct OldHello<'a> {
+        protocol: u32,
+        device_id: &'a str,
+        name: &'a str,
+        platform: &'a str,
+        schema: i64,
+        vault_id: Option<&'a str>,
+        epoch: &'a str,
+    }
+    let bytes = rmp_serde::to_vec_named(&OldHello {
+        protocol: PROTOCOL,
+        device_id: "d",
+        name: "Phone",
+        platform: "android",
+        schema: 40,
+        vault_id: Some("v"),
+        epoch: "e",
+    })
+    .unwrap();
+    let read: Hello = rmp_serde::from_slice(&bytes).unwrap();
+    assert_eq!(read, old);
+}

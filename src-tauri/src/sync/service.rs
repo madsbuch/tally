@@ -16,8 +16,16 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{Notify, OnceCell};
 
-/// Syncs at least this often while the app runs, changes or not.
-const IDLE_ROUND: Duration = Duration::from_secs(60);
+/// Syncs at least this often while the app runs, changes or not. The
+/// computer asks often: the phone's own pushes may not reach it (a Mac
+/// firewall turns away incoming connections to an unsigned app), so its
+/// asking is what brings the phone's changes over. Idle syncs are cheap (no
+/// full comparison when nothing moved). The phone asks less, for the battery.
+const IDLE_ROUND: Duration = if cfg!(any(target_os = "android", target_os = "ios")) {
+    Duration::from_secs(60)
+} else {
+    Duration::from_secs(10)
+};
 /// After a local change, wait this long for more before syncing.
 const DEBOUNCE: Duration = Duration::from_secs(3);
 

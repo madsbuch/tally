@@ -66,6 +66,10 @@ pub struct Hello {
     /// version before this existed: a release). The two never sync.
     #[serde(default)]
     pub build: String,
+    /// Understands [`Msg::SkipDigest`] (absent from older versions, which
+    /// then always get the full comparison).
+    #[serde(default)]
+    pub skips_idle_digest: bool,
 }
 
 /// What kind of build this is, for [`Hello::build`].
@@ -101,6 +105,9 @@ pub enum Msg {
     YourTurn,
     Finished,
     Digest(Digest),
+    /// Nothing moved either way and the last sync ended identical: they still
+    /// are, so the full comparison (a pass over every table) is skipped.
+    SkipDigest,
     Refused { reason: String },
 }
 
@@ -163,6 +170,7 @@ async fn hello(pool: &SqlitePool, me: &Identity) -> Result<Hello> {
         vault_id: me.vault_id.clone(),
         epoch: current_epoch(pool).await?,
         build: build_kind().into(),
+        skips_idle_digest: true,
     })
 }
 
@@ -304,6 +312,9 @@ pub struct Outcome {
     pub complete: bool,
     /// Tables that differed, when not.
     pub differences: Vec<String>,
+    /// Nothing moved and the last sync had ended identical, so the full
+    /// comparison was skipped.
+    pub digest_skipped: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize)]
@@ -381,14 +392,17 @@ async fn pull(ch: &mut Channel, pool: &SqlitePool, peer: &str) -> Result<Receive
 }
 
 /// Answers the far side's pulls until it hands the turn back with `end`.
-async fn serve_pulls(ch: &mut Channel, pool: &SqlitePool, peer: &str, end: &Msg) -> Result<()> {
+/// Returns how many changes it sent.
+async fn serve_pulls(ch: &mut Channel, pool: &SqlitePool, peer: &str, end: &Msg) -> Result<usize> {
+    let mut sent = 0;
     loop {
         match expect(ch).await? {
             Msg::Pull { since } => {
                 let batch = engine::export(pool, since, peer, BATCH_ROWS, BATCH_BYTES).await?;
+                sent += batch.changes.len();
                 ch.send(&Msg::Batch(batch)).await?;
             }
-            m if &m == end => return Ok(()),
+            m if &m == end => return Ok(sent),
             other => return Err(format!("unexpected message: {other:?}")),
         }
     }
@@ -426,7 +440,26 @@ async fn client_session(
     check_not_stale(pool, pulled_from_you, last_epoch).await?;
     let received = pull(ch, pool, &theirs.device_id).await?;
     ch.send(&Msg::YourTurn).await?;
-    serve_pulls(ch, pool, &theirs.device_id, &Msg::Finished).await?;
+    let sent = serve_pulls(ch, pool, &theirs.device_id, &Msg::Finished).await?;
+    // A sync that moved nothing, after one that ended identical: still
+    // identical. Skipping the comparison makes the frequent idle syncs cheap.
+    let idle = !received.changed_anything()
+        && sent == 0
+        && me.skips_idle_digest
+        && theirs.skips_idle_digest
+        && was_complete(pool, &theirs.device_id).await?;
+    if idle {
+        ch.send(&Msg::SkipDigest).await?;
+        record_outcome(pool, &theirs.device_id, &theirs.epoch, addr, true).await?;
+        return Ok(Outcome {
+            peer_id: theirs.device_id,
+            peer_name: theirs.name,
+            received,
+            complete: true,
+            differences: vec![],
+            digest_skipped: true,
+        });
+    }
     ch.send(&Msg::Digest(engine::digest(pool).await?)).await?;
     let Msg::Digest(their_digest) = expect(ch).await? else {
         return Err("expected a digest".into());
@@ -434,7 +467,17 @@ async fn client_session(
     let (complete, differences) = compare_digests(pool, &their_digest).await?;
     record_outcome(pool, &theirs.device_id, &theirs.epoch, addr, complete).await?;
     engine::remove_orphans(pool).await?;
-    Ok(Outcome { peer_id: theirs.device_id, peer_name: theirs.name, received, complete, differences })
+    Ok(Outcome { peer_id: theirs.device_id, peer_name: theirs.name, received, complete, differences, digest_skipped: false })
+}
+
+/// Whether the last finished sync with `peer` ended with both identical.
+async fn was_complete(pool: &SqlitePool, peer: &str) -> Result<bool> {
+    Ok(sqlx::query_scalar::<_, i64>("SELECT complete FROM sync_peers WHERE device_id = ?")
+        .bind(peer)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?
+        == Some(1))
 }
 
 async fn server_session(ch: &mut Channel, pool: &SqlitePool, me: &Hello, theirs: Hello) -> Result<Outcome> {
@@ -455,14 +498,27 @@ async fn server_session(ch: &mut Channel, pool: &SqlitePool, me: &Hello, theirs:
     serve_pulls(ch, pool, &theirs.device_id, &Msg::YourTurn).await?;
     let received = pull(ch, pool, &theirs.device_id).await?;
     ch.send(&Msg::Finished).await?;
-    let Msg::Digest(their_digest) = expect(ch).await? else {
-        return Err("expected a digest".into());
+    let their_digest = match expect(ch).await? {
+        Msg::Digest(d) => d,
+        // The client saw nothing move after a sync that ended identical.
+        Msg::SkipDigest if me.skips_idle_digest => {
+            record_outcome(pool, &theirs.device_id, &theirs.epoch, None, true).await?;
+            return Ok(Outcome {
+                peer_id: theirs.device_id,
+                peer_name: theirs.name,
+                received,
+                complete: true,
+                differences: vec![],
+                digest_skipped: true,
+            });
+        }
+        _ => return Err("expected a digest".into()),
     };
     ch.send(&Msg::Digest(engine::digest(pool).await?)).await?;
     let (complete, differences) = compare_digests(pool, &their_digest).await?;
     record_outcome(pool, &theirs.device_id, &theirs.epoch, None, complete).await?;
     engine::remove_orphans(pool).await?;
-    Ok(Outcome { peer_id: theirs.device_id, peer_name: theirs.name, received, complete, differences })
+    Ok(Outcome { peer_id: theirs.device_id, peer_name: theirs.name, received, complete, differences, digest_skipped: false })
 }
 
 // ---------------------------------------------------------------------------
