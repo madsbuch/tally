@@ -2,6 +2,7 @@ import {
   blob,
   index,
   integer,
+  primaryKey,
   real,
   sqliteTable,
   text,
@@ -953,4 +954,103 @@ export const garminDays = sqliteTable("garmin_days", {
    */
   raw: text("raw", { mode: "json" }).$type<Record<string, unknown>>(),
   fetchedAt: text("fetched_at").notNull(),
+});
+
+// ---------------------------------------------------------------------------
+// Sync (see src-tauri/src/sync/). These are kept up to date by triggers on
+// every synced table, generated into the migration that created them — so
+// every writer is covered, the Android check-in worker and Rust included.
+// The app never writes them itself.
+// ---------------------------------------------------------------------------
+
+/**
+ * This device's own sync state (one row, `id` = 1): who it is, its clock,
+ * and how far its change counter has got. Never synced.
+ */
+export const syncState = sqliteTable("sync_state", {
+  id: integer("id").primaryKey(),
+  /** This device's id; a new one on joining a vault. */
+  deviceId: text("device_id").notNull(),
+  /** Hybrid logical clock: last physical ms used, and a counter within it. */
+  hlcMs: integer("hlc_ms").notNull().default(0),
+  hlcCounter: integer("hlc_counter").notNull().default(0),
+  /** Bumped by every recorded change; peers pull "everything since N". */
+  seq: integer("seq").notNull().default(0),
+  /** 1 while the sync engine applies a peer's changes: triggers stand down. */
+  applying: integer("applying").notNull().default(0),
+  /** The vault this device belongs to; null until it creates or joins one. */
+  vaultId: text("vault_id"),
+  /** Noise static key pair (X25519), made on first use. */
+  secretKey: blob("secret_key", { mode: "buffer" }),
+  publicKey: blob("public_key", { mode: "buffer" }),
+});
+
+/**
+ * The current version of every row of every synced table, deleted ones
+ * included (tombstones). Never synced: it *is* what's exchanged.
+ */
+export const syncRows = sqliteTable(
+  "sync_rows",
+  {
+    tbl: text("tbl").notNull(),
+    pk: text("pk").notNull(),
+    /** "<13-digit ms>.<6-digit counter>" — sorts as text. */
+    hlc: text("hlc").notNull(),
+    /** Device that wrote this version. */
+    origin: text("origin").notNull(),
+    deleted: integer("deleted").notNull().default(0),
+    /** This device's change counter when the version was recorded here. */
+    seq: integer("seq").notNull(),
+    /** The peer this exact version came from, so it isn't sent back to it. */
+    fromPeer: text("from_peer"),
+  },
+  (t) => [
+    primaryKey({ columns: [t.tbl, t.pk] }),
+    index("idx_sync_rows_seq").on(t.seq),
+  ],
+);
+
+/**
+ * Version vectors: how many changes each device has made to each row. Two
+ * versions where neither has seen all of the other's changes were made
+ * concurrently — the case a chat is split for. Never synced.
+ */
+export const syncVv = sqliteTable(
+  "sync_vv",
+  {
+    tbl: text("tbl").notNull(),
+    pk: text("pk").notNull(),
+    device: text("device").notNull(),
+    counter: integer("counter").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.tbl, t.pk, t.device] })],
+);
+
+/** What this device knows about each peer it syncs with. Never synced. */
+export const syncPeers = sqliteTable("sync_peers", {
+  deviceId: text("device_id").primaryKey(),
+  /** Their change counter up to which everything has been pulled. */
+  lastPulledSeq: integer("last_pulled_seq").notNull().default(0),
+  /** "ip:port" they were last reached at. */
+  lastAddr: text("last_addr"),
+  lastSyncAt: text("last_sync_at"),
+  /** Last time both sides were found to hold exactly the same data. */
+  lastCompleteAt: text("last_complete_at"),
+  /** 1 when the last finished sync ended with both sides identical. */
+  complete: integer("complete").notNull().default(0),
+});
+
+/**
+ * The devices in the vault, and the keys they're recognised by. Synced like
+ * any other table, so adding or removing a device reaches every member.
+ */
+export const vaultDevices = sqliteTable("vault_devices", {
+  /** The device's id (`sync_state.device_id` over there). */
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  /** X25519 public key, hex. */
+  publicKey: text("public_key").notNull(),
+  /** "android" | "desktop". */
+  platform: text("platform").notNull(),
+  addedAt: text("added_at").notNull(),
 });

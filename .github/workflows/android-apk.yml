@@ -38,6 +38,12 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # The Android check-in worker opens the database with Android's own
+      # SQLite (3.39 on Android 14, the minimum). Every migration — the sync
+      # triggers especially — has to parse and behave on that version.
+      - name: Check migrations on Android's SQLite
+        run: cargo run --quiet --manifest-path tools/sqlite-android-compat/Cargo.toml -- .
+
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
