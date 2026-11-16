@@ -28,6 +28,7 @@ import {
   getChatMessages,
   getChatSummary,
   updateChatMessages,
+  updateChatMessagesIf,
 } from "./db";
 import { runAssistantTurn, sanitizeChart } from "./assistant";
 import { buildCoachContext, buildCoachSystemPrompt, cacheCoachPromptPrefix } from "./coach";
@@ -299,8 +300,22 @@ let persistAgain = false;
  */
 let basis: string | null = null;
 
-async function versionOf(id: string): Promise<string | null> {
-  return (await chatVersion(id).catch(() => null))?.hlc ?? null;
+/** The basis after reading chat `id`: whatever version it was at. */
+async function versionRead(id: string): Promise<string | null> {
+  const v = await chatVersion(id).catch(() => null);
+  if (!v) return null;
+  return v.deleted ? "superseded" : v.hlc;
+}
+
+/**
+ * The basis after writing chat `id`: the version this device just wrote. If
+ * the version found isn't its own — another device's landed right after —
+ * a basis that matches nothing, so the next save keeps both.
+ */
+async function versionWritten(id: string): Promise<string | null> {
+  const v = await chatVersion(id).catch(() => null);
+  if (!v) return null;
+  return v.mine && !v.deleted ? v.hlc : "superseded";
 }
 
 /**
@@ -326,21 +341,22 @@ async function persist(): Promise<void> {
           typeof firstUser?.content === "string" ? firstUser.content : "Chat",
         );
         chatId = await createChat(title, transcript);
-        basis = await versionOf(chatId);
+        basis = await versionWritten(chatId);
         emit();
       } else {
-        const current = await chatVersion(chatId).catch(() => null);
-        if (current && (current.deleted || (basis !== null && current.hlc !== basis))) {
+        const written =
+          basis === null
+            ? (await updateChatMessages(chatId, transcript), true)
+            : await updateChatMessagesIf(chatId, transcript, basis);
+        if (!written) {
           // Continued (or deleted) on another device while this ran here:
           // both conversations are kept.
           const summary = await getChatSummary(chatId).catch(() => null);
           const title = `${summary?.title ?? chatTitle("Chat")} (continued in parallel)`;
           chatId = await createChat(title, transcript);
           emit();
-        } else {
-          await updateChatMessages(chatId, transcript);
         }
-        basis = await versionOf(chatId);
+        basis = await versionWritten(chatId);
       }
     } while (persistAgain);
   } catch (e) {
@@ -468,7 +484,7 @@ export async function startAssistantChat(text: string): Promise<string | null> {
     const opening: ChatMessage[] = [{ role: "user", content: trimmed }];
     const id = await createChat(chatTitle(trimmed), opening);
     if (!id) return null;
-    const version = await versionOf(id);
+    const version = await versionWritten(id);
     if (isRunning()) {
       // A turn resumed while this was saving; it keeps the runner.
       await deleteChat(id).catch(() => {});
@@ -534,8 +550,10 @@ export async function openAssistantChat(
 ): Promise<"opened" | "missing" | "skipped"> {
   if (status === "running") return "skipped";
   const seq = ++openSeq;
+  // The version first: a sync landing between the two reads then makes the
+  // next save keep both, never overwrite.
+  const version = await versionRead(id);
   const saved = await getChatMessages(id);
-  const version = await versionOf(id);
   if (seq !== openSeq || isRunning()) return "skipped";
   if (!saved) return "missing";
   transcript = saved;

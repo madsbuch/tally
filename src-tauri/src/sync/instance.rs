@@ -83,41 +83,54 @@ pub async fn check(pool: &SqlitePool, db_path: &Path) -> Result<Check, String> {
 }
 
 /// Gives this database a new device id (and marker), keeping its data and
-/// key. Its entry in the vault's device list moves to the new id, as an
-/// ordinary change that syncs. Returns the new id.
+/// key. The new id is added to the vault's device list as an ordinary change
+/// that syncs; the old entry stays — if the original is still in use
+/// somewhere (a folder copied to a second computer), it must stay listed.
+/// Returns the new id.
 pub async fn rotate(pool: &SqlitePool) -> Result<String, String> {
-    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-    let (old_id, vault): (String, Option<String>) =
-        sqlx::query_as("SELECT device_id, vault_id FROM sync_state WHERE id = 1")
-            .fetch_one(&mut *tx)
+    let mut conn = pool.acquire().await.map_err(|e| e.to_string())?;
+    // The write lock up front: a writer slipping in between the read and the
+    // update can't make the rotation fail half-way.
+    sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await.map_err(|e| e.to_string())?;
+    let result = async {
+        let (old_id, vault): (String, Option<String>) =
+            sqlx::query_as("SELECT device_id, vault_id FROM sync_state WHERE id = 1")
+                .fetch_one(&mut *conn)
+                .await
+                .map_err(|e| e.to_string())?;
+        let new_id = super::new_uuid();
+        sqlx::query("UPDATE sync_state SET device_id = ?, instance = ? WHERE id = 1")
+            .bind(&new_id)
+            .bind(super::new_uuid())
+            .execute(&mut *conn)
             .await
             .map_err(|e| e.to_string())?;
-    let new_id = super::new_uuid();
-    sqlx::query("UPDATE sync_state SET device_id = ?, instance = ? WHERE id = 1")
-        .bind(&new_id)
-        .bind(super::new_uuid())
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-    if vault.is_some() {
-        // Recorded by the triggers under the new id.
-        sqlx::query(
-            "INSERT INTO vault_devices (id, name, public_key, platform, added_at)
-             SELECT ?, name, public_key, platform, added_at FROM vault_devices WHERE id = ?",
-        )
-        .bind(&new_id)
-        .bind(&old_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-        sqlx::query("DELETE FROM vault_devices WHERE id = ?")
+        if vault.is_some() {
+            // Recorded by the triggers under the new id.
+            sqlx::query(
+                "INSERT INTO vault_devices (id, name, public_key, platform, added_at)
+                 SELECT ?, name, public_key, platform, ? FROM vault_devices WHERE id = ?",
+            )
+            .bind(&new_id)
+            .bind(super::now_iso())
             .bind(&old_id)
-            .execute(&mut *tx)
+            .execute(&mut *conn)
             .await
             .map_err(|e| e.to_string())?;
+        }
+        Ok::<_, String>(new_id)
     }
-    tx.commit().await.map_err(|e| e.to_string())?;
-    Ok(new_id)
+    .await;
+    match result {
+        Ok(id) => {
+            sqlx::query("COMMIT").execute(&mut *conn).await.map_err(|e| e.to_string())?;
+            Ok(id)
+        }
+        Err(e) => {
+            let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
+            Err(e)
+        }
+    }
 }
 
 /// Marks a copy the app made of its database (snapshot, export, backup) as a

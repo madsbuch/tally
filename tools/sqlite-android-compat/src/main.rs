@@ -26,7 +26,15 @@ fn main() {
     conn.execute("INSERT INTO coach_memory (id, kind, text, created_at, updated_at, follow_up_on) VALUES ('m1', 'note', 't', 'now', 'now', '2026-11-16')", []).unwrap();
     conn.execute("UPDATE coach_memory SET follow_up_on = NULL, updated_at = 'later' WHERE id = 'm1'", []).unwrap();
     conn.execute("DELETE FROM chats WHERE id = 'c1'", []).unwrap();
-    let mut q = conn.prepare("SELECT tbl, pk, deleted, seq, (SELECT counter FROM sync_vv v WHERE v.tbl = r.tbl AND v.pk = r.pk) FROM sync_rows r WHERE tbl <> 'state_categories' ORDER BY seq").unwrap();
+    // An update that changes nothing records nothing (the WHEN clause).
+    let before: i64 = conn.query_row("SELECT seq FROM sync_state", [], |r| r.get(0)).unwrap();
+    conn.execute("UPDATE coach_memory SET follow_up_on = NULL WHERE id = 'm1'", []).unwrap();
+    let after: i64 = conn.query_row("SELECT seq FROM sync_state", [], |r| r.get(0)).unwrap();
+    assert_eq!(before, after, "a no-op update was recorded");
+    // The version-vector entry is the clock of the latest change, as one
+    // integer: what's checked is that it's there and that a second change
+    // (the coach memory's update) moved it on — see `changes` below.
+    let mut q = conn.prepare("SELECT tbl, pk, deleted, seq, (SELECT count(*) FROM sync_vv v WHERE v.tbl = r.tbl AND v.pk = r.pk AND v.counter > 1000000) FROM sync_rows r WHERE tbl <> 'state_categories' ORDER BY seq").unwrap();
     let rows: Vec<(String, String, i64, i64, i64)> = q
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))
         .unwrap()
@@ -39,8 +47,8 @@ fn main() {
         ("settings", "openrouter_api_key", 0, 1),
         ("coach_runs", "r1", 0, 1),
         ("ai_usage", "u1", 0, 1),
-        ("coach_memory", "m1", 0, 2),
-        ("chats", "c1", 1, 2),
+        ("coach_memory", "m1", 0, 1),
+        ("chats", "c1", 1, 1),
     ];
     assert_eq!(rows.len(), expect.len(), "device_settings must not be tracked");
     for ((t, p, d, c), r) in expect.iter().zip(&rows) {

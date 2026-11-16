@@ -33,6 +33,9 @@ const CHUNK: usize = 65_000;
 const MAX_MESSAGE: usize = 256 * 1024 * 1024;
 /// A peer that goes quiet this long is gone.
 const IO_TIMEOUT: Duration = Duration::from_secs(60);
+/// Until the handshake is done the other side has proven nothing: it gets
+/// little time to hold a connection open.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// A new X25519 static key pair: (secret, public).
 pub fn generate_keypair() -> (Vec<u8>, Vec<u8>) {
@@ -50,10 +53,14 @@ pub struct Channel {
 }
 
 async fn read_frame(stream: &mut TcpStream) -> Result<Vec<u8>> {
+    read_frame_within(stream, IO_TIMEOUT).await
+}
+
+async fn read_frame_within(stream: &mut TcpStream, limit: Duration) -> Result<Vec<u8>> {
     let mut len = [0u8; 2];
-    timeout(IO_TIMEOUT, stream.read_exact(&mut len)).await.map_err(|_| "timed out")?.map_err(|e| e.to_string())?;
+    timeout(limit, stream.read_exact(&mut len)).await.map_err(|_| "timed out")?.map_err(|e| e.to_string())?;
     let mut buf = vec![0u8; u16::from_be_bytes(len) as usize];
-    timeout(IO_TIMEOUT, stream.read_exact(&mut buf)).await.map_err(|_| "timed out")?.map_err(|e| e.to_string())?;
+    timeout(limit, stream.read_exact(&mut buf)).await.map_err(|_| "timed out")?.map_err(|e| e.to_string())?;
     Ok(buf)
 }
 
@@ -91,7 +98,7 @@ impl Channel {
         let n = hs.write_message(&[], &mut buf).map_err(|e| e.to_string())?;
         write_frame(&mut stream, &buf[..n]).await?;
         // <- e, ee, s, es
-        let msg = read_frame(&mut stream).await?;
+        let msg = read_frame_within(&mut stream, HANDSHAKE_TIMEOUT).await?;
         hs.read_message(&msg, &mut buf).map_err(|_| "handshake failed")?;
         // -> s, se (+ psk)
         let n = hs.write_message(&[], &mut buf).map_err(|e| e.to_string())?;
@@ -102,7 +109,7 @@ impl Channel {
     /// Reads the purpose byte of an incoming connection.
     pub async fn purpose(stream: &mut TcpStream) -> Result<u8> {
         let mut p = [0u8; 1];
-        timeout(IO_TIMEOUT, stream.read_exact(&mut p)).await.map_err(|_| "timed out")?.map_err(|e| e.to_string())?;
+        timeout(HANDSHAKE_TIMEOUT, stream.read_exact(&mut p)).await.map_err(|_| "timed out")?.map_err(|e| e.to_string())?;
         Ok(p[0])
     }
 
@@ -112,11 +119,11 @@ impl Channel {
         stream.set_nodelay(true).ok();
         let mut hs = builder(secret, psk)?.build_responder().map_err(|e| e.to_string())?;
         let mut buf = vec![0u8; 65_535];
-        let msg = read_frame(&mut stream).await?;
+        let msg = read_frame_within(&mut stream, HANDSHAKE_TIMEOUT).await?;
         hs.read_message(&msg, &mut buf).map_err(|_| "handshake failed")?;
         let n = hs.write_message(&[], &mut buf).map_err(|e| e.to_string())?;
         write_frame(&mut stream, &buf[..n]).await?;
-        let msg = read_frame(&mut stream).await?;
+        let msg = read_frame_within(&mut stream, HANDSHAKE_TIMEOUT).await?;
         hs.read_message(&msg, &mut buf).map_err(|_| "handshake failed")?;
         finish(stream, hs).await
     }

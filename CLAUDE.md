@@ -58,9 +58,11 @@ The database is meant to sync between devices, so:
 - Every table syncs between the vault's devices (`src-tauri/src/sync/`)
   unless it's listed in `LOCAL_TABLES` (`scripts/sync-triggers.ts`). Sync
   rides on triggers: a migration that adds a table must add its triggers
-  (`bun scripts/sync-triggers.ts <table>` prints them), and one that rebuilds
-  a table must re-create them — dropping a table drops its triggers.
-  `tests/sync-tracking.test.ts` fails for any table that's neither.
+  (`bun scripts/sync-triggers.ts <table>` prints them); one that rebuilds a
+  table must re-create them (dropping a table drops its triggers); and one
+  that adds a column must re-create that table's triggers
+  (`--retrigger <table>`), since the update trigger lists the columns it
+  watches. `tests/sync-tracking.test.ts` fails for any of these left undone.
   Trigger SQL must run on Android 14's SQLite 3.39 (the coach worker opens
   the database with it); CI checks with `tools/sqlite-android-compat`.
 - Work waiting on a row (a capture to analyse, a document to read) is done

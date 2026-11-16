@@ -23,6 +23,8 @@ pub(crate) mod tests;
 /// Regression tests from an adversarial review of the first version.
 #[cfg(test)]
 mod review_tests;
+#[cfg(test)]
+mod review2_tests;
 
 /// A random UUID (v4), for device and vault ids.
 pub fn new_uuid() -> String {

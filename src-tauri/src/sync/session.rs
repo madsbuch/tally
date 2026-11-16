@@ -60,6 +60,8 @@ pub struct Hello {
     pub platform: String,
     pub schema: i64,
     pub vault_id: Option<String>,
+    /// This device's current epoch (see `sync_epochs` in schema.ts).
+    pub epoch: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -67,10 +69,12 @@ pub enum Msg {
     Hello(Hello),
     Join { device_id: String, name: String, platform: String },
     Welcome { vault_id: String },
-    /// How far the sender has pulled from the receiver. More than the
-    /// receiver has ever recorded means the receiver is an older copy of
-    /// itself (restored from a backup) — see [`check_not_stale`].
-    Seen { pulled_from_you: i64 },
+    /// What the sender knows of the receiver's history: how far it has
+    /// pulled from it, and the epoch it last saw it in. Further than the
+    /// receiver has recorded, or an epoch it never had, means the receiver
+    /// is an older copy of itself (restored from a backup) — see
+    /// [`check_not_stale`].
+    Seen { pulled_from_you: i64, last_epoch: Option<String> },
     Pull { since: i64 },
     Batch(Batch),
     YourTurn,
@@ -136,7 +140,44 @@ async fn hello(pool: &SqlitePool, me: &Identity) -> Result<Hello> {
         platform: me.platform.clone(),
         schema: engine::schema_version(pool).await?,
         vault_id: me.vault_id.clone(),
+        epoch: current_epoch(pool).await?,
     })
+}
+
+/// The epoch to introduce this device with: the latest, or a new one if
+/// anything has been written since it began. Peers remember it; a copy of
+/// this database from before it — restored from a backup, a folder copied
+/// back — never had it, and the first peer to meet that copy says so.
+async fn current_epoch(pool: &SqlitePool) -> Result<String> {
+    let seq = engine::local_state(pool).await?.seq;
+    let latest: Option<(String, i64)> =
+        sqlx::query_as("SELECT epoch, seq FROM sync_epochs ORDER BY rowid DESC LIMIT 1")
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+    match latest {
+        Some((epoch, at)) if at >= seq => Ok(epoch),
+        _ => {
+            let epoch = super::new_uuid();
+            sqlx::query("INSERT INTO sync_epochs (epoch, seq, created_at) VALUES (?, ?, ?)")
+                .bind(&epoch)
+                .bind(seq)
+                .bind(now_iso())
+                .execute(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(epoch)
+        }
+    }
+}
+
+async fn last_epoch_of(pool: &SqlitePool, peer: &str) -> Result<Option<String>> {
+    Ok(sqlx::query_scalar::<_, Option<String>>("SELECT last_epoch FROM sync_peers WHERE device_id = ?")
+        .bind(peer)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?
+        .flatten())
 }
 
 /// Before anything else is read from an incoming connection: whether the key
@@ -201,13 +242,21 @@ async fn check_peer(pool: &SqlitePool, me: &Hello, theirs: &Hello, proven_key: &
     }
 }
 
-/// After the hellos, each side says how far it has pulled from the other. A
-/// device that's been pulled from further than it has ever recorded is an
-/// older copy of itself: it takes a new id (`instance::rotate`) and the sync
-/// stops here — the next one starts clean.
-async fn check_not_stale(pool: &SqlitePool, pulled_from_me: i64) -> Result<()> {
+/// After the hellos, each side says what it knows of the other's history. A
+/// device that's been pulled from further than it has ever recorded, or seen
+/// in an epoch it never had, is an older copy of itself: it takes a new id
+/// (`instance::rotate`) and the sync stops here — the next one starts clean.
+async fn check_not_stale(pool: &SqlitePool, pulled_from_me: i64, last_epoch: Option<String>) -> Result<()> {
     let mine = engine::local_state(pool).await?.seq;
-    if pulled_from_me > mine {
+    let unknown_epoch = match &last_epoch {
+        Some(e) => !sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM sync_epochs WHERE epoch = ?)")
+            .bind(e)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?,
+        None => false,
+    };
+    if pulled_from_me > mine || unknown_epoch {
         super::instance::rotate(pool).await?;
         return Err("this device's database is an older copy of itself (restored?); it has taken a new id and will sync from scratch".into());
     }
@@ -249,21 +298,23 @@ impl Received {
 
 use super::now_iso;
 
-async fn record_outcome(pool: &SqlitePool, peer: &str, addr: Option<SocketAddr>, complete: bool) -> Result<()> {
+async fn record_outcome(pool: &SqlitePool, peer: &str, epoch: &str, addr: Option<SocketAddr>, complete: bool) -> Result<()> {
     let now = now_iso();
     sqlx::query(
-        "INSERT INTO sync_peers (device_id, last_addr, last_sync_at, complete, last_complete_at)
-         VALUES (?1, ?2, ?3, ?4, CASE WHEN ?4 = 1 THEN ?3 END)
+        "INSERT INTO sync_peers (device_id, last_addr, last_sync_at, complete, last_complete_at, last_epoch)
+         VALUES (?1, ?2, ?3, ?4, CASE WHEN ?4 = 1 THEN ?3 END, ?5)
          ON CONFLICT (device_id) DO UPDATE SET
            last_addr = coalesce(excluded.last_addr, last_addr),
            last_sync_at = excluded.last_sync_at,
            complete = excluded.complete,
-           last_complete_at = CASE WHEN excluded.complete = 1 THEN excluded.last_sync_at ELSE last_complete_at END",
+           last_complete_at = CASE WHEN excluded.complete = 1 THEN excluded.last_sync_at ELSE last_complete_at END,
+           last_epoch = excluded.last_epoch",
     )
     .bind(peer)
     .bind(addr.map(|a| a.to_string()))
     .bind(&now)
     .bind(complete as i64)
+    .bind(epoch)
     .execute(pool)
     .await
     .map_err(|e| e.to_string())?;
@@ -327,15 +378,22 @@ async fn client_session(
     vouched: Option<&[u8]>,
 ) -> Result<Outcome> {
     ch.send(&Msg::Hello(me.clone())).await?;
-    let Msg::Hello(theirs) = expect(ch).await? else {
+    let Msg::Hello(theirs) = (match ch.recv_limited::<Msg>(PRE_AUTH_LIMIT).await? {
+        Msg::Refused { reason } => return Err(reason),
+        m => m,
+    }) else {
         return Err("expected a hello".into());
     };
     check_peer(pool, me, &theirs, &ch.remote_key, vouched).await?;
-    ch.send(&Msg::Seen { pulled_from_you: engine::pulled_from(pool, &theirs.device_id).await? }).await?;
-    let Msg::Seen { pulled_from_you } = expect(ch).await? else {
+    ch.send(&Msg::Seen {
+        pulled_from_you: engine::pulled_from(pool, &theirs.device_id).await?,
+        last_epoch: last_epoch_of(pool, &theirs.device_id).await?,
+    })
+    .await?;
+    let Msg::Seen { pulled_from_you, last_epoch } = expect(ch).await? else {
         return Err("expected how far it has pulled".into());
     };
-    check_not_stale(pool, pulled_from_you).await?;
+    check_not_stale(pool, pulled_from_you, last_epoch).await?;
     let received = pull(ch, pool, &theirs.device_id).await?;
     ch.send(&Msg::YourTurn).await?;
     serve_pulls(ch, pool, &theirs.device_id, &Msg::Finished).await?;
@@ -344,7 +402,7 @@ async fn client_session(
         return Err("expected a digest".into());
     };
     let (complete, differences) = compare_digests(pool, &their_digest).await?;
-    record_outcome(pool, &theirs.device_id, addr, complete).await?;
+    record_outcome(pool, &theirs.device_id, &theirs.epoch, addr, complete).await?;
     engine::remove_orphans(pool).await?;
     Ok(Outcome { peer_id: theirs.device_id, peer_name: theirs.name, received, complete, differences })
 }
@@ -355,11 +413,15 @@ async fn server_session(ch: &mut Channel, pool: &SqlitePool, me: &Hello, theirs:
         return Err(reason);
     }
     ch.send(&Msg::Hello(me.clone())).await?;
-    let Msg::Seen { pulled_from_you } = expect(ch).await? else {
+    let Msg::Seen { pulled_from_you, last_epoch } = expect(ch).await? else {
         return Err("expected how far it has pulled".into());
     };
-    ch.send(&Msg::Seen { pulled_from_you: engine::pulled_from(pool, &theirs.device_id).await? }).await?;
-    check_not_stale(pool, pulled_from_you).await?;
+    ch.send(&Msg::Seen {
+        pulled_from_you: engine::pulled_from(pool, &theirs.device_id).await?,
+        last_epoch: last_epoch_of(pool, &theirs.device_id).await?,
+    })
+    .await?;
+    check_not_stale(pool, pulled_from_you, last_epoch).await?;
     serve_pulls(ch, pool, &theirs.device_id, &Msg::YourTurn).await?;
     let received = pull(ch, pool, &theirs.device_id).await?;
     ch.send(&Msg::Finished).await?;
@@ -368,7 +430,7 @@ async fn server_session(ch: &mut Channel, pool: &SqlitePool, me: &Hello, theirs:
     };
     ch.send(&Msg::Digest(engine::digest(pool).await?)).await?;
     let (complete, differences) = compare_digests(pool, &their_digest).await?;
-    record_outcome(pool, &theirs.device_id, None, complete).await?;
+    record_outcome(pool, &theirs.device_id, &theirs.epoch, None, complete).await?;
     engine::remove_orphans(pool).await?;
     Ok(Outcome { peer_id: theirs.device_id, peer_name: theirs.name, received, complete, differences })
 }
@@ -410,6 +472,11 @@ pub async fn sync_with(pool: &SqlitePool, addr: SocketAddr) -> Result<Option<Out
         .map_err(|_| format!("{addr}: no answer"))?
         .map_err(|e| format!("{addr}: {e}"))?;
     let mut ch = Channel::initiate(stream, PURPOSE_SYNC, &me.secret, None).await?;
+    // Whoever answered at a discovered address has to be one of the vault's
+    // devices before this one sends or reads anything more.
+    if !key_known(pool, &ch.remote_key).await? {
+        return Err(format!("{addr}: answered by a device outside the vault"));
+    }
     let hello = hello(pool, &me).await?;
     match client_session(&mut ch, pool, &hello, Some(addr), None).await {
         // The other side is mid-sync with someone (or just finishing with
@@ -520,15 +587,10 @@ pub async fn join(pool: &SqlitePool, offer: &PairingOffer) -> Result<Outcome> {
         return Err("a sync is running; try again in a moment".into());
     };
     // A fresh key for a fresh member: a device once removed (its key revoked)
-    // can be paired again, and a key never outlives the device's place.
+    // can be paired again, and a key never outlives the device's place. Kept
+    // in memory until the host lets this device in: a failed join changes
+    // nothing here.
     let (secret, public) = wire::generate_keypair();
-    sqlx::query("UPDATE sync_state SET secret_key = ?, public_key = ? WHERE id = 1")
-        .bind(&secret)
-        .bind(&public)
-        .execute(pool)
-        .await
-        .map_err(|e| e.to_string())?;
-    let me = identity(pool).await?;
     let new_id = super::new_uuid();
     let mut last_error = String::from("the code holds no address");
     for addr in &offer.addrs {
@@ -544,7 +606,7 @@ pub async fn join(pool: &SqlitePool, offer: &PairingOffer) -> Result<Outcome> {
                 continue;
             }
         };
-        let mut ch = match Channel::initiate(stream, PURPOSE_PAIR, &me.secret, Some(&offer.token)).await {
+        let mut ch = match Channel::initiate(stream, PURPOSE_PAIR, &secret, Some(&offer.token)).await {
             Ok(ch) => ch,
             Err(_) => return Err("the code has expired or was already used; show a new one".into()),
         };
@@ -558,7 +620,7 @@ pub async fn join(pool: &SqlitePool, offer: &PairingOffer) -> Result<Outcome> {
             Msg::Welcome { vault_id } if vault_id == offer.vault_id => {}
             _ => return Err("the host didn't let this device in".into()),
         }
-        engine::reset_for_join(pool, &offer.vault_id, &new_id).await?;
+        engine::reset_for_join(pool, &offer.vault_id, &new_id, Some((&secret, &public))).await?;
         let me = identity(pool).await?;
         let hello = hello(pool, &me).await?;
         let host_key = offer.host_key.clone();

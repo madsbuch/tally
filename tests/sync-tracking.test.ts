@@ -7,7 +7,7 @@ import { LOCAL_TABLES } from "../scripts/sync-triggers";
 // Change tracking (migration 0039): every write to a synced table, whichever
 // code path makes it, leaves a version in sync_rows and a count in sync_vv.
 
-const { addFoodEntry, updateFoodEntry, deleteFoodEntry, getFoodEntry, setSetting, addCapture, listPendingCaptures } = await import("../src/lib/db");
+const { addFoodEntry, updateFoodEntry, deleteFoodEntry, getFoodEntry, setSetting, addCapture, listPendingCaptures, createChat, chatVersion, updateChatMessagesIf } = await import("../src/lib/db");
 
 const rust = readFileSync(new URL("../src-tauri/src/lib.rs", import.meta.url), "utf8");
 const files = [...rust.matchAll(/include_str!\("\.\.\/migrations\/([^"]+)"\)/g)].map((m) => m[1]!);
@@ -53,29 +53,47 @@ describe("sync tracking", () => {
     expect(tables.length - LOCAL_TABLES.filter((t) => tables.includes(t)).length).toBeGreaterThan(30);
   });
 
+  test("every update trigger watches every column of its table", () => {
+    // A column added later (ALTER TABLE … ADD) must be added to the trigger's
+    // list too — `bun scripts/sync-triggers.ts --retrigger <table>` — or
+    // changes to it alone would never sync.
+    const triggers = sqlite.query("SELECT tbl_name, sql FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'sync\\_%\\_au' ESCAPE '\\'").all() as { tbl_name: string; sql: string }[];
+    expect(triggers.length).toBeGreaterThan(30);
+    for (const t of triggers) {
+      const watched = [...t.sql.matchAll(/OLD\.`([^`]+)` IS NOT NEW\./g)].map((m) => m[1]!).sort();
+      const columns = (sqlite.query(`PRAGMA table_info("${t.tbl_name}")`).all() as { name: string }[]).map((c) => c.name).sort();
+      expect({ table: t.tbl_name, watched }).toEqual({ table: t.tbl_name, watched: columns });
+    }
+  });
+
   test("inserts, updates and deletes from the app are recorded", async () => {
     const id = await addFoodEntry(meal);
     const v1 = versionOf(sqlite, "food_entries", id)!;
-    expect(v1).toMatchObject({ deleted: 0, vv: 1 });
+    expect(v1.deleted).toBe(0);
+    expect(v1.vv).toBeGreaterThan(0);
     const device = (sqlite.query("SELECT device_id FROM sync_state").get() as { device_id: string }).device_id;
     expect(v1.origin).toBe(device);
 
     await updateFoodEntry({ ...(await getFoodEntry(id))!, title: "Porridge" });
     const v2 = versionOf(sqlite, "food_entries", id)!;
-    expect(v2.vv).toBe(2);
+    expect(v2.vv).toBeGreaterThan(v1.vv);
     expect(v2.seq).toBeGreaterThan(v1.seq);
     expect(v2.hlc > v1.hlc).toBe(true);
 
     await deleteFoodEntry(id);
     const v3 = versionOf(sqlite, "food_entries", id)!;
-    expect(v3).toMatchObject({ deleted: 1, vv: 3 });
+    expect(v3.deleted).toBe(1);
+    expect(v3.vv).toBeGreaterThan(v2.vv);
     expect(v3.hlc > v2.hlc).toBe(true);
   });
 
   test("upserts are recorded; device-local settings are not", async () => {
     await setSetting("calorie_target_kcal", "2000");
+    const first = versionOf(sqlite, "settings", "calorie_target_kcal")!;
     await setSetting("calorie_target_kcal", "2100");
-    expect(versionOf(sqlite, "settings", "calorie_target_kcal")).toMatchObject({ deleted: 0, vv: 2 });
+    const second = versionOf(sqlite, "settings", "calorie_target_kcal")!;
+    expect(second.deleted).toBe(0);
+    expect(second.seq).toBeGreaterThan(first.seq);
     await setSetting("garmin_last_sync_at", "x");
     expect(versionOf(sqlite, "device_settings", "garmin_last_sync_at")).toBeNull();
   });
@@ -107,6 +125,27 @@ describe("sync tracking", () => {
     sqlite.exec("PRAGMA foreign_keys = ON");
     sqlite.exec("DELETE FROM state_logs WHERE id = 'cascade-log'");
     expect(versionOf(sqlite, "state_log_tags", "cascade-tag")).toMatchObject({ deleted: 1 });
+  });
+});
+
+describe("saving a chat", () => {
+  test("only overwrites the version it was built on", async () => {
+    const id = await createChat("Plan", [{ role: "user", content: "q1" }]);
+    const v = (await chatVersion(id))!;
+    expect(v.mine).toBe(true);
+    expect(await updateChatMessagesIf(id, [{ role: "user", content: "q1" }, { role: "assistant", content: "a1" }], v.hlc)).toBe(true);
+    const v2 = (await chatVersion(id))!;
+    expect(v2.hlc > v.hlc).toBe(true);
+    // Another device's version lands (as the sync engine writes it).
+    sqlite.exec(`UPDATE sync_state SET applying = 1;
+      UPDATE chats SET messages = '[{"role":"user","content":"q1"},{"role":"user","content":"from the mac"}]' WHERE id = '${id}';
+      UPDATE sync_rows SET hlc = '9999999999998.000000', origin = 'the-mac' WHERE tbl = 'chats' AND pk = '${id}';
+      UPDATE sync_state SET applying = 0;`);
+    expect((await chatVersion(id))!.mine).toBe(false);
+    // A save built on the old version doesn't touch theirs.
+    expect(await updateChatMessagesIf(id, [{ role: "user", content: "stale" }], v2.hlc)).toBe(false);
+    const row = sqlite.query("SELECT messages FROM chats WHERE id = ?").get(id) as { messages: string };
+    expect(row.messages).toContain("from the mac");
   });
 });
 

@@ -559,7 +559,7 @@ async fn joining_needs_an_empty_device_and_then_receives_everything() {
 
     // A device with data of its own is refused, and keeps it.
     exec(&b.pool, "INSERT INTO fasts (id, started_at, goal_hours) VALUES ('f', 'now', 16)").await;
-    assert!(engine::reset_for_join(&b.pool, "v", "new-b").await.is_err());
+    assert!(engine::reset_for_join(&b.pool, "v", "new-b", None).await.is_err());
     let n: i64 = sqlx::query_scalar("SELECT count(*) FROM fasts").fetch_one(&b.pool).await.unwrap();
     assert_eq!(n, 1);
 
@@ -568,7 +568,7 @@ async fn joining_needs_an_empty_device_and_then_receives_everything() {
     exec(&c.pool, "INSERT INTO settings (key, value) VALUES ('calorie_target_kcal', '1800')").await;
     let old_id = c.id.clone();
     let new_id = crate::sync::new_uuid();
-    engine::reset_for_join(&c.pool, "v", &new_id).await.unwrap();
+    engine::reset_for_join(&c.pool, "v", &new_id, None).await.unwrap();
     assert_ne!(new_id, old_id);
     let c = Device { id: new_id, ..c };
     engine::pull_all(&c.pool, &a.pool, 10, 1 << 20).await.unwrap();
@@ -644,4 +644,23 @@ async fn an_update_that_changes_nothing_is_not_a_new_version() {
     exec(&a.pool, "UPDATE food_entries SET title = 'Porridge' WHERE id = 'm'").await;
     let changed: (String, i64) = sqlx::query_as("SELECT hlc, seq FROM sync_rows WHERE pk = 'm'").fetch_one(&a.pool).await.unwrap();
     assert!(changed.1 > before.1);
+}
+
+#[tokio::test]
+async fn a_revocation_cannot_be_deleted_by_a_peer() {
+    let (a, b) = (device().await, device().await);
+    exec(&a.pool, "INSERT INTO vault_revocations (public_key, device_id, revoked_at) VALUES ('cc', 'lost', 'now')").await;
+    sync_pair(&a, &b).await;
+    // A modified client claims a newer deletion of it.
+    let mut batch = engine::export(&a.pool, 0, &b.id, 100, 1 << 20).await.unwrap();
+    let c = batch.changes.iter_mut().find(|c| c.tbl == "vault_revocations").unwrap();
+    c.deleted = true;
+    c.data = None;
+    c.hlc = "9999999999999.000000".into();
+    for v in c.vv.values_mut() {
+        *v += 1_000_000_000_000_000;
+    }
+    engine::apply(&b.pool, &a.id, &batch).await.unwrap();
+    let n: i64 = sqlx::query_scalar("SELECT count(*) FROM vault_revocations").fetch_one(&b.pool).await.unwrap();
+    assert_eq!(n, 1);
 }

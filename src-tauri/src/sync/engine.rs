@@ -516,8 +516,11 @@ async fn delete_locally(
 ) -> Result<()> {
     let me = device_id(conn).await?;
     let hlc = tick(conn).await?;
+    let (ms, counter) = parse_hlc(&hlc)?;
     let mut vv = seen.clone();
-    *vv.entry(me.clone()).or_insert(0) += 1;
+    // As the triggers do: this device's entry is the clock of its latest change.
+    let e = vv.entry(me.clone()).or_insert(0);
+    *e = (*e + 1).max(ms * 1_000_000 + counter);
     sqlx::query(&format!("DELETE FROM {} WHERE {} = ?", quote(&t.name), quote(&t.pk)))
         .bind(pk)
         .execute(&mut *conn)
@@ -676,6 +679,11 @@ async fn apply_one(
     let mut stats = ApplyStats::default();
     let t = tables.get(&c.tbl).ok_or_else(|| format!("not a synced table: {:?}", c.tbl))?;
     parse_hlc(&c.hlc)?;
+    // Revocations only ever grow: a deletion of one — which no device of
+    // this app makes — is ignored, however new it claims to be.
+    if t.name == "vault_revocations" && c.deleted {
+        return Ok(ApplyStats { skipped: 1, ..Default::default() });
+    }
     if let Some(data) = &c.data {
         // Only this table's own columns, all of them, and the key must match.
         let mut got: Vec<&str> = data.iter().map(|(k, _)| k.as_str()).collect();
@@ -1008,7 +1016,7 @@ async fn data_tables_in(conn: &mut SqliteConnection) -> Result<Vec<String>> {
 /// the id `new_id` and the vault's — ready to receive the vault's data.
 /// Refuses if any of the person's data is here, checked in the same
 /// transaction that empties it, so nothing written meanwhile can be lost.
-pub async fn reset_for_join(pool: &SqlitePool, vault_id: &str, new_id: &str) -> Result<()> {
+pub async fn reset_for_join(pool: &SqlitePool, vault_id: &str, new_id: &str, keys: Option<(&[u8], &[u8])>) -> Result<()> {
     let mut conn = pool.acquire().await.map_err(err)?.detach();
     sqlx::query("PRAGMA foreign_keys = OFF").execute(&mut conn).await.map_err(err)?;
     sqlx::query("BEGIN IMMEDIATE").execute(&mut conn).await.map_err(err)?;
@@ -1031,6 +1039,14 @@ pub async fn reset_for_join(pool: &SqlitePool, vault_id: &str, new_id: &str) -> 
             .execute(&mut conn)
             .await
             .map_err(err)?;
+        if let Some((secret, public)) = keys {
+            sqlx::query("UPDATE sync_state SET secret_key = ?, public_key = ? WHERE id = 1")
+                .bind(secret)
+                .bind(public)
+                .execute(&mut conn)
+                .await
+                .map_err(err)?;
+        }
         Ok::<_, String>(())
     }
     .await;

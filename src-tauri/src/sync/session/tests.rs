@@ -356,3 +356,37 @@ async fn a_stranger_is_turned_away_before_it_can_send_much() {
     }
     panic!("not turned away: {:?}", h.errors.lock().unwrap());
 }
+
+#[tokio::test]
+async fn a_failed_join_leaves_the_device_exactly_as_it_was() {
+    let joiner = device().await;
+    let before: (Option<Vec<u8>>, String) = {
+        identity(&joiner.pool).await.unwrap();
+        sqlx::query_as("SELECT public_key, device_id FROM sync_state").fetch_one(&joiner.pool).await.unwrap()
+    };
+    let o = PairingOffer {
+        vault_id: "v".into(),
+        host_id: "h".into(),
+        host_name: "Phone".into(),
+        host_key: vec![1; 32],
+        token: [9; 32],
+        // Nothing listens here.
+        addrs: vec!["127.0.0.1:9".into()],
+    };
+    assert!(join(&joiner.pool, &o).await.is_err());
+    let after: (Option<Vec<u8>>, String) =
+        sqlx::query_as("SELECT public_key, device_id FROM sync_state").fetch_one(&joiner.pool).await.unwrap();
+    assert_eq!(before, after, "key and id untouched");
+}
+
+#[tokio::test]
+async fn a_device_answering_at_a_spoofed_address_is_not_trusted() {
+    // Our vault, and a host of another vault that someone points us at.
+    let ours = host().await;
+    let joiner = device().await;
+    join(&joiner.pool, &offer_from(&ours).await).await.unwrap();
+    let impostor = host().await;
+    offer_from(&impostor).await;
+    let err = sync_now(&joiner.pool, impostor.addr).await.unwrap_err();
+    assert!(err.contains("outside the vault"), "{err}");
+}

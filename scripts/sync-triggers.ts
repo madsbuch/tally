@@ -2,13 +2,15 @@
 // record every insert, update and delete into `sync_rows` / `sync_vv`, and the
 // backfill that records the rows already there.
 //
-//   bun scripts/sync-triggers.ts            # every table, as in migration 0039
-//   bun scripts/sync-triggers.ts my_table   # one new table, for a later migration
+//   bun scripts/sync-triggers.ts                     # every table, as in migration 0039
+//   bun scripts/sync-triggers.ts my_table            # a new table: backfill + triggers
+//   bun scripts/sync-triggers.ts --retrigger my_table  # a table that gained a column
 //
-// A migration that adds a table must include its triggers (and one that
-// rebuilds a table must re-create them: dropping a table drops its
-// triggers). tests/sync-tracking.test.ts fails for any table that is neither
-// tracked nor listed in LOCAL_TABLES.
+// A migration that adds a table must include its triggers; one that rebuilds
+// a table must re-create them (dropping a table drops its triggers); and one
+// that adds a column must re-create the table's triggers (`--retrigger`, run
+// after the column exists): the update trigger lists the columns it watches.
+// tests/sync-tracking.test.ts fails for any of these left undone.
 //
 // The SQL sticks to what Android 14's built-in SQLite (3.39) understands: the
 // Android check-in worker writes to this database with that engine, and a
@@ -26,6 +28,7 @@ export const LOCAL_TABLES = [
   "sync_rows",
   "sync_vv",
   "sync_peers",
+  "sync_epochs",
 ];
 
 /**
@@ -51,6 +54,15 @@ const NOW_MS = "CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)";
 export const TICK_SQL = `hlc_counter = CASE WHEN ${NOW_MS} > hlc_ms THEN 0 WHEN hlc_counter >= 999999 THEN 0 ELSE hlc_counter + 1 END,
     hlc_ms = CASE WHEN ${NOW_MS} > hlc_ms THEN ${NOW_MS} WHEN hlc_counter >= 999999 THEN hlc_ms + 1 ELSE hlc_ms END`;
 
+/**
+ * A device's entry in a row's version vector is the clock value of its
+ * latest change to it (as one integer), not a count of changes: a copy of
+ * the database restored from earlier — with counts that would start again
+ * from where they were — still writes values above any the original used,
+ * so its edits can never look identical to ones they never saw.
+ */
+const VV_TICK = "hlc_ms * 1000000 + hlc_counter";
+
 export function triggerSql(table: string, pk: string, columns: string[]): string {
   const record = (ref: "NEW" | "OLD", deleted: 0 | 1) => `
   UPDATE sync_state SET
@@ -64,8 +76,8 @@ export function triggerSql(table: string, pk: string, columns: string[]): string
       hlc = excluded.hlc, origin = excluded.origin, deleted = excluded.deleted,
       seq = excluded.seq, from_peer = NULL;
   INSERT INTO sync_vv (tbl, pk, device, counter)
-    SELECT '${table}', ${ref}.\`${pk}\`, device_id, 1 FROM sync_state WHERE id = 1
-    ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = counter + 1;`;
+    SELECT '${table}', ${ref}.\`${pk}\`, device_id, ${VV_TICK} FROM sync_state WHERE id = 1
+    ON CONFLICT (tbl, pk, device) DO UPDATE SET counter = max(counter + 1, excluded.counter);`;
   const when = "WHEN (SELECT applying FROM sync_state WHERE id = 1) = 0";
   // An update that changes nothing (a re-import writing the same values) is
   // not a new version: it would otherwise win over a real edit made
@@ -107,7 +119,17 @@ if (import.meta.main) {
   const own = readFileSync(new URL("src-tauri/migrations/0039_sync.sql", root), "utf8");
   db.exec(own.split("-- @generated")[0]!);
 
-  const only = process.argv[2];
+  const retrigger = process.argv[2] === "--retrigger";
+  const only = retrigger ? process.argv[3] : process.argv[2];
+  if (retrigger) {
+    if (!only) throw new Error("--retrigger needs a table");
+    // The table as it is after this migration's own changes: append the
+    // migration's SQL above this point to the database first if need be.
+    const { pk, columns } = shapeOf(db, only);
+    const drops = ["ai", "au", "ad"].map((k) => `DROP TRIGGER IF EXISTS \`sync_${only}_${k}\`;`).join("--> statement-breakpoint\n");
+    process.stdout.write(`${drops}--> statement-breakpoint\n${triggerSql(only, pk, columns)}\n`);
+    process.exit(0);
+  }
   const tables = only
     ? [only]
     : (db.query("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as { name: string }[])

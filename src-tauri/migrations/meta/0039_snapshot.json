@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "b1573124-a3b7-45d0-b01f-6f36b3a88225",
+  "id": "1dfced24-1940-4cc4-8a5e-c96f3c05d541",
   "prevId": "4ffd11e6-1937-4443-9c19-9719e52baed3",
   "tables": {
     "achievements": {
@@ -2772,6 +2772,37 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "sync_epochs": {
+      "name": "sync_epochs",
+      "columns": {
+        "epoch": {
+          "name": "epoch",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "seq": {
+          "name": "seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "sync_peers": {
       "name": "sync_peers",
       "columns": {
@@ -2818,6 +2849,13 @@
           "notNull": true,
           "autoincrement": false,
           "default": 0
+        },
+        "last_epoch": {
+          "name": "last_epoch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {},

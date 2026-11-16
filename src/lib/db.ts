@@ -1170,13 +1170,42 @@ export async function updateChatMessages(
  * The version of a chat row (src-tauri/src/sync): its clock value, and
  * whether that version is a deletion. Null for a chat sync hasn't recorded.
  */
-export async function chatVersion(id: string): Promise<{ hlc: string; deleted: boolean } | null> {
+export async function chatVersion(
+  id: string,
+): Promise<{ hlc: string; deleted: boolean; mine: boolean } | null> {
   const rows = await db
-    .select({ hlc: syncRows.hlc, deleted: syncRows.deleted })
+    .select({
+      hlc: syncRows.hlc,
+      deleted: syncRows.deleted,
+      mine: sql<number>`${syncRows.origin} = (SELECT device_id FROM sync_state WHERE id = 1)`,
+    })
     .from(syncRows)
     .where(and(eq(syncRows.tbl, "chats"), eq(syncRows.pk, id)));
   const r = rows[0];
-  return r ? { hlc: r.hlc, deleted: r.deleted !== 0 } : null;
+  return r ? { hlc: r.hlc, deleted: r.deleted !== 0, mine: r.mine === 1 } : null;
+}
+
+/**
+ * Writes a chat's transcript only if the chat is still at version `basis` —
+ * in one statement, so a sync landing in between can't be overwritten.
+ * False when it wasn't (the chat moved on elsewhere, or is gone).
+ */
+export async function updateChatMessagesIf(
+  id: string,
+  messages: ChatMessage[],
+  basis: string,
+): Promise<boolean> {
+  const rows = await db
+    .update(chats)
+    .set({ messages, updatedAt: new Date().toISOString() })
+    .where(
+      and(
+        eq(chats.id, id),
+        sql`(SELECT hlc FROM sync_rows WHERE tbl = 'chats' AND pk = ${chats.id} AND deleted = 0) = ${basis}`,
+      ),
+    )
+    .returning({ id: chats.id });
+  return rows.length > 0;
 }
 
 export async function deleteChat(id: string): Promise<void> {

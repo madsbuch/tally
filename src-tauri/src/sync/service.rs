@@ -330,8 +330,14 @@ pub async fn status(pool: &SqlitePool, svc: &SyncService) -> Result<Status, Stri
         "SELECT d.id, d.name, d.platform, p.last_sync_at, p.last_complete_at, p.complete
          FROM vault_devices d LEFT JOIN sync_peers p ON p.device_id = d.id
          WHERE d.public_key NOT IN (SELECT public_key FROM vault_revocations)
+           -- One entry per key: a device that took a new id (instance.rs) is
+           -- listed once, under the newest. This device is always its own.
+           AND (d.id = ?1 OR NOT EXISTS (
+             SELECT 1 FROM vault_devices n WHERE n.public_key = d.public_key AND n.id <> d.id
+               AND (n.added_at > d.added_at OR n.id = ?1)))
          ORDER BY d.added_at",
     )
+    .bind(&me.device_id)
     .fetch_all(pool)
     .await
     .map_err(|e| e.to_string())?;

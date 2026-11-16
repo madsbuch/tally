@@ -1045,6 +1045,23 @@ export const syncPeers = sqliteTable("sync_peers", {
   lastCompleteAt: text("last_complete_at"),
   /** 1 when the last finished sync ended with both sides identical. */
   complete: integer("complete").notNull().default(0),
+  /** The epoch it introduced itself with at its last finished sync (see `syncEpochs`). */
+  lastEpoch: text("last_epoch"),
+});
+
+/**
+ * This device's epochs: a new one whenever it has written anything since it
+ * last introduced itself to a peer. Peers remember the last epoch they saw
+ * from it; a copy of this database restored from any earlier point lacks
+ * the later ones, so the first peer it meets can tell it's a stale copy
+ * (src-tauri/src/sync/session.rs). Never synced; never pruned (one row per
+ * sync that carried local changes).
+ */
+export const syncEpochs = sqliteTable("sync_epochs", {
+  epoch: text("epoch").primaryKey(),
+  /** This device's change counter when the epoch began. */
+  seq: integer("seq").notNull(),
+  createdAt: text("created_at").notNull(),
 });
 
 /**
