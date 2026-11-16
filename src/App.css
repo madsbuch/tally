@@ -104,6 +104,27 @@
 }
 
 /*
+ * Switching theme (src/lib/theme.ts). Following the system, the new theme
+ * fades in (the browser's own crossfade, a touch slower). Picked in Settings,
+ * it grows out of the button pressed: the script animates the new snapshot's
+ * clip, so here both snapshots just hold still, the new one on top.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 320ms;
+}
+
+:root.theme-reveal::view-transition-old(root),
+:root.theme-reveal::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+:root.theme-reveal::view-transition-new(root) {
+  z-index: 1;
+}
+
+/*
  * Keyboard up — MainActivity sets the class. The WebView now ends where the
  * keys begin, so there is no navigation bar under it to clear, and the tab bar
  * steps aside for the line you're typing; everything that sits above either

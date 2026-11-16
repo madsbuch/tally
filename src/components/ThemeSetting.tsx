@@ -23,7 +23,11 @@ export default function ThemeSetting() {
           <button
             key={o.value}
             className={`seg-item${pref === o.value ? " seg-item-active" : ""}`}
-            onClick={() => setThemePref(o.value)}
+            onClick={(e) => {
+              // From the middle of the button: a keyboard press has no pointer.
+              const r = e.currentTarget.getBoundingClientRect();
+              setThemePref(o.value, { x: r.left + r.width / 2, y: r.top + r.height / 2 });
+            }}
           >
             {o.label}
           </button>
