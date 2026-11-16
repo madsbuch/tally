@@ -125,7 +125,7 @@ pub(crate) mod tests {
     /// The app's own migration list, fed to sqlx the way tauri-plugin-sql
     /// feeds it (each one in a transaction, checksums recorded).
     #[derive(Debug)]
-    struct AppMigrations;
+    pub(crate) struct AppMigrations;
 
     impl MigrationSource<'static> for AppMigrations {
         fn resolve(self) -> BoxFuture<'static, Result<Vec<SqlxMigration>, BoxDynError>> {

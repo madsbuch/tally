@@ -3,6 +3,7 @@ use tauri::Manager;
 use tauri_plugin_sql::{DbInstances, DbPool, Migration, MigrationKind};
 
 mod backup;
+pub mod sync;
 mod document_files;
 mod garmin;
 mod photos;
