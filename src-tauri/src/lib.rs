@@ -10,6 +10,11 @@ mod photos;
 
 const DB_URL: &str = "sqlite:tally.db";
 
+/// The real app's identifier: its data folder is named after it. Development
+/// builds run under another (see src-tauri/tauri.dev.conf.json).
+#[allow(dead_code)]
+const PRODUCTION_IDENTIFIER: &str = "com.madsbuch.tally";
+
 /// Migration version of 0038 (UUID ids), which rebuilds every table; the
 /// database is copied aside before it runs (see backup.rs).
 const UUID_IDS_VERSION: i64 = 39;
@@ -482,6 +487,20 @@ pub fn run() {
         .manage(std::sync::Arc::new(sync::service::SyncService::default()))
         .manage(garmin::GarminState::new())
         .setup(|app| {
+            // A development build never runs as the real app: it would open
+            // the real database, and with sync, whatever unfinished code does
+            // to it would reach every device. `bun run tauri dev` runs it as
+            // "Tally Dev" (scripts/tauri.mjs); anything else is stopped here.
+            #[cfg(all(debug_assertions, desktop))]
+            if app.config().identifier == PRODUCTION_IDENTIFIER {
+                eprintln!(
+                    "\nThis is a development build running as the real Tally ({PRODUCTION_IDENTIFIER}),\n\
+                     which would open your real database. Start it with `bun run tauri dev`,\n\
+                     which runs it as \"Tally Dev\" with its own data.\n"
+                );
+                std::process::exit(1);
+            }
+
             // Before the SQL plugin migrates (that happens when the frontend
             // first loads the database), keep a copy of the database as it was.
             // tauri-plugin-sql resolves `sqlite:tally.db` in app_config_dir.

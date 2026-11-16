@@ -9,8 +9,7 @@
     "lint": "eslint .",
     "test": "TZ=Europe/Copenhagen bun test",
     "preview": "vite preview",
-    "tauri": "tauri",
-    "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json"
+    "tauri": "bun scripts/tauri.mjs"
   },
   "dependencies": {
     "@generouted/react-router": "^1.20.2",

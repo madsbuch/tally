@@ -44,6 +44,13 @@ android {
     }
     buildTypes {
         getByName("debug") {
+            // A debug build is its own app, "Tally Dev", with its own data:
+            // installed over the real Tally it would use the real database,
+            // and with sync its mistakes would reach every device. Matches
+            // bundle.android.debugApplicationIdSuffix in tauri.conf.json, which
+            // `tauri android dev` uses to launch it.
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
             manifestPlaceholders["usesCleartextTraffic"] = "true"
             isDebuggable = true
             isJniDebuggable = true

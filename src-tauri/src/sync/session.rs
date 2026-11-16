@@ -62,6 +62,27 @@ pub struct Hello {
     pub vault_id: Option<String>,
     /// This device's current epoch (see `sync_epochs` in schema.ts).
     pub epoch: String,
+    /// "dev" for a development build, "release" otherwise (absent, from a
+    /// version before this existed: a release). The two never sync.
+    #[serde(default)]
+    pub build: String,
+}
+
+/// What kind of build this is, for [`Hello::build`].
+pub fn build_kind() -> &'static str {
+    if cfg!(debug_assertions) {
+        "dev"
+    } else {
+        "release"
+    }
+}
+
+/// Whether two builds may sync: a development build never touches the real
+/// app's data, whatever database it was given — unfinished code's mistakes
+/// would otherwise reach every device.
+fn same_build(a: &str, b: &str) -> bool {
+    let norm = |k: &str| if k.is_empty() { "release" } else { k }.to_string();
+    norm(a) == norm(b)
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -141,6 +162,7 @@ async fn hello(pool: &SqlitePool, me: &Identity) -> Result<Hello> {
         schema: engine::schema_version(pool).await?,
         vault_id: me.vault_id.clone(),
         epoch: current_epoch(pool).await?,
+        build: build_kind().into(),
     })
 }
 
@@ -209,6 +231,14 @@ async fn check_peer(pool: &SqlitePool, me: &Hello, theirs: &Hello, proven_key: &
         return Err(format!(
             "{} is on a different version of Tally ({} vs {}); update both devices",
             theirs.name, theirs.schema, me.schema
+        ));
+    }
+    if !same_build(&me.build, &theirs.build) {
+        return Err(format!(
+            "{} is a {} build and this is a {} one: development builds never sync with the real app",
+            theirs.name,
+            if theirs.build.is_empty() { "release" } else { &theirs.build },
+            me.build
         ));
     }
     if me.vault_id.is_none() || theirs.vault_id != me.vault_id {

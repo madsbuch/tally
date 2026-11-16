@@ -73,10 +73,17 @@ The database is meant to sync between devices, so:
 ## Commands
 
 - `bun run dev` — Vite dev server
-- `bun run tauri:dev` — the app in development, as "Tally Dev"
-  (`com.madsbuch.tally.dev`): its own data folder, so test data never lands
-  in the installed app's database — and from there in the sync vault. Don't
-  use plain `tauri dev`, which shares the installed app's folder.
+- `bun run tauri dev` — the app in development. It always runs as
+  "Tally Dev" with data of its own, never as the real app:
+  - desktop: `scripts/tauri.mjs` adds `src-tauri/tauri.dev.conf.json`
+    (`com.madsbuch.tally.dev`, its own data folder); a debug build started
+    any other way under the real identifier refuses to start (`lib.rs`);
+  - Android: debug builds are the package `com.madsbuch.tally.dev`
+    (`debugApplicationIdSuffix`), installed beside the real app;
+  - sync: development and release builds never sync with each other
+    (`same_build` in `src-tauri/src/sync/session.rs`).
+  The real database must never be opened by unfinished code: with sync, its
+  mistakes would reach every device.
 - `bun run build` — typecheck (`tsc`), lint, and bundle
 - `bun run lint` — ESLint only
 - `bun run tauri android build --apk` — Android build (CI does this)

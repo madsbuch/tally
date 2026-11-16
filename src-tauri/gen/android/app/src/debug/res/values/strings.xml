@@ -1,0 +1,6 @@
+<resources>
+    <!-- Debug builds are "Tally Dev" (package com.madsbuch.tally.dev), installed
+         beside the real app with data of their own. -->
+    <string name="app_name">"Tally Dev"</string>
+    <string name="main_activity_title">"Tally Dev"</string>
+</resources>

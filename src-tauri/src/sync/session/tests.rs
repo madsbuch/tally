@@ -428,3 +428,29 @@ async fn a_device_with_data_can_join_by_replacing_it_after_a_copy_is_saved() {
     let marker: String = sqlx::query_scalar("SELECT instance FROM sync_state").fetch_one(&copy).await.unwrap();
     assert!(marker.starts_with("copy:"));
 }
+
+#[test]
+fn development_and_release_builds_never_sync() {
+    assert!(same_build("dev", "dev"));
+    assert!(same_build("release", "release"));
+    // A version from before the field existed is a release.
+    assert!(same_build("", "release"));
+    assert!(!same_build("dev", "release"));
+    assert!(!same_build("dev", ""));
+    // These tests are a debug build.
+    assert_eq!(build_kind(), "dev");
+}
+
+#[tokio::test]
+async fn a_release_build_is_refused_by_a_development_build() {
+    let h = host().await;
+    let joiner = device().await;
+    join(&joiner.pool, &offer_from(&h).await, false).await.unwrap();
+    let me = identity(&joiner.pool).await.unwrap();
+    let mut theirs = hello(&h.device.pool, &identity(&h.device.pool).await.unwrap()).await.unwrap();
+    theirs.build = "release".into();
+    let mine = hello(&joiner.pool, &me).await.unwrap();
+    let host_key = identity(&h.device.pool).await.unwrap().public;
+    let err = check_peer(&joiner.pool, &mine, &theirs, &host_key, None).await.unwrap_err();
+    assert!(err.contains("development builds never sync"), "{err}");
+}
