@@ -365,6 +365,71 @@ fn prepare_db_export(app: tauri::AppHandle, file_name: String) -> Result<String,
     Ok(dir.join(file_name).to_string_lossy().into_owned())
 }
 
+// ---------------------------------------------------------------------------
+// Sync (src/sync/): the Sync page's commands
+// ---------------------------------------------------------------------------
+
+type SyncState<'a> = tauri::State<'a, std::sync::Arc<sync::service::SyncService>>;
+
+/// Starts sync once the frontend has loaded (and so migrated) the database.
+#[tauri::command]
+async fn sync_start(app: tauri::AppHandle, svc: SyncState<'_>) -> Result<(), String> {
+    let pool = db_pool(&app).await?;
+    svc.start(app.clone(), pool).await?;
+    // Android also syncs with the app closed, every half hour on Wi-Fi.
+    use tauri_plugin_sync_background::SyncBackgroundExt;
+    if let Ok(dir) = app.path().app_config_dir() {
+        let db_path = dir.join("tally.db").to_string_lossy().into_owned();
+        if let Err(e) = app
+            .sync_background()
+            .schedule(tauri_plugin_sync_background::ScheduleArgs { db_path })
+        {
+            eprintln!("sync: couldn't schedule background sync: {e}");
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn sync_status(svc: SyncState<'_>) -> Result<sync::service::Status, String> {
+    sync::service::status(svc.pool()?, &svc).await
+}
+
+#[tauri::command]
+async fn sync_set_name(svc: SyncState<'_>, name: String) -> Result<(), String> {
+    sync::service::set_name(svc.pool()?, &name).await?;
+    svc.kick();
+    Ok(())
+}
+
+/// A pairing code for the QR, good for one device for ten minutes.
+#[tauri::command]
+async fn sync_offer(svc: SyncState<'_>) -> Result<String, String> {
+    svc.offer().await
+}
+
+#[tauri::command]
+fn sync_cancel_offer(svc: SyncState<'_>) {
+    svc.cancel_offer();
+}
+
+#[tauri::command]
+async fn sync_join(app: tauri::AppHandle, svc: SyncState<'_>, code: String) -> Result<sync::session::Outcome, String> {
+    svc.join(&app, &code).await
+}
+
+#[tauri::command]
+fn sync_now(svc: SyncState<'_>) {
+    svc.kick();
+}
+
+#[tauri::command]
+async fn sync_remove_device(svc: SyncState<'_>, id: String) -> Result<(), String> {
+    sync::service::remove_device(svc.pool()?, &id).await?;
+    svc.kick();
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -381,6 +446,8 @@ pub fn run() {
         .plugin(tauri_plugin_fasting::init())
         .plugin(tauri_plugin_health_connect::init())
         .plugin(tauri_plugin_share::init())
+        .plugin(tauri_plugin_sync_background::init())
+        .manage(std::sync::Arc::new(sync::service::SyncService::default()))
         .manage(garmin::GarminState::new())
         .setup(|app| {
             // Before the SQL plugin migrates (that happens when the frontend
@@ -405,6 +472,14 @@ pub fn run() {
             save_document_file,
             read_document_file,
             prepare_db_export,
+            sync_start,
+            sync_status,
+            sync_set_name,
+            sync_offer,
+            sync_cancel_offer,
+            sync_join,
+            sync_now,
+            sync_remove_device,
             garmin::garmin_status,
             garmin::garmin_set_key,
             garmin::garmin_clear_key,

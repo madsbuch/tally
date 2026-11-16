@@ -37,6 +37,7 @@ tauri-plugin-coach = { path = "plugins/coach" }
 tauri-plugin-fasting = { path = "plugins/fasting" }
 tauri-plugin-health-connect = { path = "plugins/health-connect" }
 tauri-plugin-share = { path = "plugins/share" }
+tauri-plugin-sync-background = { path = "plugins/sync-background" }
 garmin-connect = { path = "garmin" }
 snow = "0.9"
 rand = "0.8"
@@ -46,6 +47,10 @@ hex = "0.4"
 tokio = { version = "1", features = ["net", "time", "sync", "io-util", "rt-multi-thread", "macros"] }
 if-addrs = "0.13"
 
+
+[target.'cfg(target_os = "android")'.dependencies]
+# The background sync's entry point (src/sync/background.rs).
+jni = "0.21"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

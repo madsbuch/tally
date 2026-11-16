@@ -4709,6 +4709,7 @@ dependencies = [
  "garmin-connect",
  "hex",
  "if-addrs",
+ "jni",
  "rand 0.8.7",
  "rmp-serde",
  "serde",
@@ -4728,6 +4729,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-share",
  "tauri-plugin-sql",
+ "tauri-plugin-sync-background",
  "tokio",
 ]
 
@@ -5086,6 +5088,17 @@ dependencies = [
  "time",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "tauri-plugin-sync-background"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.19",
 ]
 
 [[package]]

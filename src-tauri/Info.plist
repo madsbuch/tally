@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Sync finds and talks to the phone on the local network; without this
+	     macOS silently blocks it (Local Network privacy). -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Tally syncs your diary with your phone over your home network.</string>
+	<!-- Pairing: scanning the QR code your phone shows. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Tally uses the camera to scan the pairing code shown by your phone.</string>
+</dict>
+</plist>
