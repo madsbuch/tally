@@ -128,7 +128,7 @@ const integrity = (db.query("PRAGMA integrity_check").all() as { integrity_check
 if (integrity.join() !== "ok") fail(`integrity_check: ${integrity.join("; ")}`);
 const fk = db.query("PRAGMA foreign_key_check").all();
 if (fk.length) fail(`${fk.length} broken reference(s) after upgrading: ${JSON.stringify(fk.slice(0, 5))}`);
-const leftovers = db.query("SELECT name FROM sqlite_master WHERE sql LIKE '%__new_%'").all();
+const leftovers = db.query("SELECT name FROM sqlite_master WHERE instr(sql, '__new_') > 0").all();
 if (leftovers.length) fail(`Schema still mentions __new_ tables: ${JSON.stringify(leftovers)}`);
 
 const mapId = (v: unknown) => (v == null ? null : legacyId(Number(v)));
@@ -175,6 +175,19 @@ for (const t of tables) {
       if (!same(got[c], want)) fail(`${t} ${keyOf(expected)}.${c}: was ${show(want)}, now ${show(got[c])}`);
     }
   }
+}
+
+// Sync (migration 0039): every row already there must be recorded, or it
+// would never reach the vault's other devices.
+const synced = (db.query("SELECT tbl_name FROM sqlite_master WHERE type = 'trigger' AND name = 'sync_' || tbl_name || '_ai'").all() as { tbl_name: string }[]).map((r) => r.tbl_name);
+if (tableExists("sync_rows")) {
+  if (synced.length < 30) fail(`only ${synced.length} tables are tracked for sync`);
+  for (const t of synced) {
+    const rows = (db.query(`SELECT count(*) AS n FROM "${t}"`).get() as { n: number }).n;
+    const tracked = (db.query("SELECT count(*) AS n FROM sync_rows WHERE tbl = ? AND deleted = 0").get(t) as { n: number }).n;
+    if (rows !== tracked) fail(`${t}: ${rows} rows but ${tracked} recorded for sync`);
+  }
+  notes.push(`${synced.length} tables tracked for sync; every existing row recorded.`);
 }
 
 const photosAfter = photoDigest();
