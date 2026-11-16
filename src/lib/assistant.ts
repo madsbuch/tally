@@ -169,7 +169,7 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
     function: {
       name: "query_health_metrics",
       description:
-        "Daily wellness metrics (from Garmin/Health Connect) per local day: steps, resting heart rate, HRV (RMSSD ms), blood oxygen %, weight kg, VO2 max, total calories burned (burned_total; query_calories sets it against what was eaten).",
+        "Daily wellness metrics per local day (Garmin Connect's own numbers where the direct sync has them, Health Connect's otherwise): steps, resting heart rate, HRV (RMSSD ms), blood oxygen %, weight kg, VO2 max, total calories burned (burned_total; query_calories sets it against what was eaten).",
       parameters: DAY_RANGE_SCHEMA,
     },
   },

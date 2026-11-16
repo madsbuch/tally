@@ -124,8 +124,8 @@ describe("Garmin ↔ Health Connect dedup", () => {
     expect(ids).toContain("hc-2");
   });
 
-  test("Garmin fills Health Connect's metric gaps without overriding it", async () => {
-    await db.upsertHealthMetric({
+  test("Garmin's daily numbers win; Health Connect fills the rest", async () => {
+    const hc = {
       day: "2026-10-01",
       steps: 9000,
       resting_hr: null,
@@ -134,22 +134,43 @@ describe("Garmin ↔ Health Connect dedup", () => {
       weight_kg: null,
       vo2_max: null,
       calories_total: 2500,
-    });
+    };
+    await db.upsertHealthMetric(hc);
     const base = { fetchedAt: new Date().toISOString() };
-    await g.upsertGarminDay({ day: "2026-10-01", steps: 9100, restingHr: 48, ...base });
+    await g.upsertGarminDay({ day: "2026-10-01", steps: 9100, restingHr: 48, caloriesTotal: 2731, ...base });
     await g.upsertGarminDay({ day: "2026-09-30", steps: 7000, hrvLastNight: 61, ...base });
-    await g.fillHealthMetricsFromGarmin();
+    await g.applyGarminMetrics();
     const m = await db.listHealthMetricsForRange("2026-09-30", "2026-10-01");
     const oct1 = m.find((r) => r.day === "2026-10-01")!;
-    expect(oct1.steps).toBe(9000);
+    expect(oct1.steps).toBe(9100);
     expect(oct1.resting_hr).toBe(48);
-    expect(oct1.calories_total).toBe(2500);
-    expect(m.find((r) => r.day === "2026-09-30")?.hrv_ms).toBe(61);
-    // Health Connect later has a value: it wins.
-    await db.upsertHealthMetric({ ...oct1, resting_hr: 50 });
-    await g.fillHealthMetricsFromGarmin();
-    const again = await db.listHealthMetricsForRange("2026-10-01", "2026-10-01");
-    expect(again[0]!.resting_hr).toBe(50);
+    expect(oct1.calories_total).toBe(2731);
+    expect(m.find((r) => r.day === "2026-09-30")).toMatchObject({ steps: 7000, hrv_ms: 61 });
+
+    // Health Connect syncs again: Garmin's numbers stay, even before the
+    // Garmin pass runs; what Garmin doesn't have is Health Connect's.
+    await db.upsertHealthMetric({ ...hc, resting_hr: 50, calories_total: 2400, spo2_pct: 97 });
+    const again = (await db.listHealthMetricsForRange("2026-10-01", "2026-10-01"))[0]!;
+    expect(again).toMatchObject({ steps: 9100, resting_hr: 48, calories_total: 2731, spo2_pct: 97 });
+
+    // A full resync wipes Health Connect's days and writes them anew.
+    sqlite.exec("DELETE FROM health_metrics WHERE day = '2026-10-01'");
+    await db.upsertHealthMetric(hc);
+    const rewritten = (await db.listHealthMetricsForRange("2026-10-01", "2026-10-01"))[0]!;
+    expect(rewritten).toMatchObject({ steps: 9100, resting_hr: 48, calories_total: 2731 });
+
+    // Nothing new from either: nothing is written (no version for sync).
+    const version = () =>
+      sqlite.query("SELECT hlc FROM sync_rows WHERE tbl = 'health_metrics' AND pk = '2026-10-01'").get();
+    const before = version();
+    await g.applyGarminMetrics();
+    expect(version()).toEqual(before);
+
+    // Garmin's number changes (the day went on): it replaces the old one.
+    await g.upsertGarminDay({ day: "2026-10-01", caloriesTotal: 2950, ...base });
+    await g.applyGarminMetrics();
+    const later = (await db.listHealthMetricsForRange("2026-10-01", "2026-10-01"))[0]!;
+    expect(later).toMatchObject({ steps: 9100, calories_total: 2950, spo2_pct: null });
   });
 
   test("a night only Garmin has is added once, then taken over by Health Connect", async () => {

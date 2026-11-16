@@ -202,9 +202,10 @@ export const sleepSessions = sqliteTable(
 );
 
 /**
- * One row per local day of wellness metrics synced from Health Connect
- * (steps, resting heart rate, HRV, SpO2, weight, VO2 max, total calories).
- * Sparse — a column is null when nothing was recorded that day.
+ * One row per local day of wellness metrics (steps, resting heart rate, HRV,
+ * SpO2, weight, VO2 max, total calories): Garmin Connect's numbers where it
+ * has them, Health Connect's otherwise (see applyGarminMetrics). Sparse — a
+ * column is null when nothing was recorded that day.
  */
 export const healthMetrics = sqliteTable("health_metrics", {
   /** Local day "YYYY-MM-DD". */
@@ -898,8 +899,8 @@ export const garminActivities = sqliteTable(
  * One row per day of Garmin Connect wellness data — what Health Connect has
  * no record type for (Body Battery, stress, training readiness and status,
  * sleep score, HRV status) plus Garmin's own numbers for what it does have.
- * Health Connect stays the source for `health_metrics`; these only fill its
- * gaps (see fillHealthMetricsFromGarmin).
+ * For the numbers both have, Garmin's go into `health_metrics` over Health
+ * Connect's (see applyGarminMetrics).
  */
 export const garminDays = sqliteTable("garmin_days", {
   /** Garmin's calendar date "YYYY-MM-DD" (the watch's local day). */

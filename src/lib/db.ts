@@ -23,6 +23,7 @@ import {
   fasts,
   foodEntries,
   garminActivities,
+  garminDays,
   healthMetrics,
   incompleteDays,
   performanceLogs,
@@ -759,37 +760,47 @@ function toHealthMetric(r: HealthMetricRow): HealthMetric {
   };
 }
 
-/** Insert-or-update one day of metrics; only non-null fields overwrite. */
+/**
+ * Insert-or-update one day of Health Connect's metrics; only non-null fields
+ * overwrite. Garmin's own number for the day, when the Garmin Connect sync
+ * brought one, stays (see applyGarminMetrics in garminDb.ts).
+ */
 export async function upsertHealthMetric(
   m: Omit<HealthMetric, "updated_at">,
 ): Promise<void> {
   const updatedAt = new Date().toISOString();
-  const values = {
-    day: m.day,
-    steps: m.steps,
-    restingHr: m.resting_hr,
-    hrvMs: m.hrv_ms,
-    spo2Pct: m.spo2_pct,
-    weightKg: m.weight_kg,
-    vo2Max: m.vo2_max,
-    caloriesTotal: m.calories_total,
-    updatedAt,
-  };
-  // COALESCE keeps an existing value when a re-sync window happens to carry
-  // no records of that type for the day.
+  const garmin = (col: SQLiteColumn) =>
+    sql`(SELECT ${col} FROM ${garminDays} WHERE ${garminDays.day} = ${m.day})`;
+  // Garmin first, then Health Connect's value, then (an update) what's
+  // there: a re-sync window that happens to carry no records of a type for
+  // the day keeps the value it had.
+  const pick = (col: SQLiteColumn, value: number | null) =>
+    sql`COALESCE(${garmin(col)}, ${value ?? null})`;
+  const keep = (col: SQLiteColumn, value: number | null, own: SQLiteColumn) =>
+    sql`COALESCE(${garmin(col)}, ${value ?? null}, ${own})`;
   await db
     .insert(healthMetrics)
-    .values(values)
+    .values({
+      day: m.day,
+      steps: pick(garminDays.steps, m.steps),
+      restingHr: pick(garminDays.restingHr, m.resting_hr),
+      hrvMs: pick(garminDays.hrvLastNight, m.hrv_ms),
+      spo2Pct: pick(garminDays.spo2Avg, m.spo2_pct),
+      weightKg: pick(garminDays.weightKg, m.weight_kg),
+      vo2Max: pick(garminDays.vo2Max, m.vo2_max),
+      caloriesTotal: pick(garminDays.caloriesTotal, m.calories_total),
+      updatedAt,
+    })
     .onConflictDoUpdate({
       target: healthMetrics.day,
       set: {
-        steps: sql`COALESCE(${m.steps ?? null}, ${healthMetrics.steps})`,
-        restingHr: sql`COALESCE(${m.resting_hr ?? null}, ${healthMetrics.restingHr})`,
-        hrvMs: sql`COALESCE(${m.hrv_ms ?? null}, ${healthMetrics.hrvMs})`,
-        spo2Pct: sql`COALESCE(${m.spo2_pct ?? null}, ${healthMetrics.spo2Pct})`,
-        weightKg: sql`COALESCE(${m.weight_kg ?? null}, ${healthMetrics.weightKg})`,
-        vo2Max: sql`COALESCE(${m.vo2_max ?? null}, ${healthMetrics.vo2Max})`,
-        caloriesTotal: sql`COALESCE(${m.calories_total ?? null}, ${healthMetrics.caloriesTotal})`,
+        steps: keep(garminDays.steps, m.steps, healthMetrics.steps),
+        restingHr: keep(garminDays.restingHr, m.resting_hr, healthMetrics.restingHr),
+        hrvMs: keep(garminDays.hrvLastNight, m.hrv_ms, healthMetrics.hrvMs),
+        spo2Pct: keep(garminDays.spo2Avg, m.spo2_pct, healthMetrics.spo2Pct),
+        weightKg: keep(garminDays.weightKg, m.weight_kg, healthMetrics.weightKg),
+        vo2Max: keep(garminDays.vo2Max, m.vo2_max, healthMetrics.vo2Max),
+        caloriesTotal: keep(garminDays.caloriesTotal, m.calories_total, healthMetrics.caloriesTotal),
         updatedAt,
       },
     });

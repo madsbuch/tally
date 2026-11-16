@@ -360,12 +360,17 @@ export function garminDayHasData(row: GarminDayRow): boolean {
 }
 
 /**
- * Health Connect wins; Garmin fills what it left empty. Insert days Health
- * Connect has no row for, and fill only the null columns of the ones it has.
+ * Garmin wins; Health Connect fills what Garmin doesn't have. Garmin's own
+ * daily numbers — the whole-day burn above all — replace Health Connect's for
+ * the same day; days and columns Garmin has nothing for keep Health
+ * Connect's. (A Health Connect sync defers to Garmin the same way as it
+ * writes, see upsertHealthMetric, so its number never shows in between.)
+ *
  * Local and idempotent — run after either sync (a Health Connect full resync
- * wipes and rewrites its days, so the gaps need filling again).
+ * wipes and rewrites its days). A day already as Garmin has it isn't written
+ * again, so a sync that brought nothing new changes nothing.
  */
-export async function fillHealthMetricsFromGarmin(): Promise<void> {
+export async function applyGarminMetrics(): Promise<void> {
   const now = new Date().toISOString();
   await db.run(sql`
     INSERT INTO health_metrics (day, steps, resting_hr, hrv_ms, spo2_pct, weight_kg, vo2_max, calories_total, updated_at)
@@ -374,13 +379,21 @@ export async function fillHealthMetricsFromGarmin(): Promise<void> {
     WHERE steps IS NOT NULL OR resting_hr IS NOT NULL OR hrv_last_night IS NOT NULL
       OR spo2_avg IS NOT NULL OR weight_kg IS NOT NULL OR vo2_max IS NOT NULL OR calories_total IS NOT NULL
     ON CONFLICT(day) DO UPDATE SET
-      steps = COALESCE(health_metrics.steps, excluded.steps),
-      resting_hr = COALESCE(health_metrics.resting_hr, excluded.resting_hr),
-      hrv_ms = COALESCE(health_metrics.hrv_ms, excluded.hrv_ms),
-      spo2_pct = COALESCE(health_metrics.spo2_pct, excluded.spo2_pct),
-      weight_kg = COALESCE(health_metrics.weight_kg, excluded.weight_kg),
-      vo2_max = COALESCE(health_metrics.vo2_max, excluded.vo2_max),
-      calories_total = COALESCE(health_metrics.calories_total, excluded.calories_total)
+      steps = COALESCE(excluded.steps, health_metrics.steps),
+      resting_hr = COALESCE(excluded.resting_hr, health_metrics.resting_hr),
+      hrv_ms = COALESCE(excluded.hrv_ms, health_metrics.hrv_ms),
+      spo2_pct = COALESCE(excluded.spo2_pct, health_metrics.spo2_pct),
+      weight_kg = COALESCE(excluded.weight_kg, health_metrics.weight_kg),
+      vo2_max = COALESCE(excluded.vo2_max, health_metrics.vo2_max),
+      calories_total = COALESCE(excluded.calories_total, health_metrics.calories_total),
+      updated_at = excluded.updated_at
+    WHERE excluded.steps IS NOT health_metrics.steps AND excluded.steps IS NOT NULL
+      OR excluded.resting_hr IS NOT health_metrics.resting_hr AND excluded.resting_hr IS NOT NULL
+      OR excluded.hrv_ms IS NOT health_metrics.hrv_ms AND excluded.hrv_ms IS NOT NULL
+      OR excluded.spo2_pct IS NOT health_metrics.spo2_pct AND excluded.spo2_pct IS NOT NULL
+      OR excluded.weight_kg IS NOT health_metrics.weight_kg AND excluded.weight_kg IS NOT NULL
+      OR excluded.vo2_max IS NOT health_metrics.vo2_max AND excluded.vo2_max IS NOT NULL
+      OR excluded.calories_total IS NOT health_metrics.calories_total AND excluded.calories_total IS NOT NULL
   `);
   // Keep the reference to the table so a rename breaks the build, not the SQL.
   void healthMetrics;

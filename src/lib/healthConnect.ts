@@ -10,7 +10,7 @@ import {
 } from "./db";
 import { SETTING_KEYS } from "./types";
 import { dayOf } from "./daystamp";
-import { adoptGarminSleep, adoptGarminWorkout, fillHealthMetricsFromGarmin } from "./garminDb";
+import { adoptGarminSleep, adoptGarminWorkout, applyGarminMetrics } from "./garminDb";
 
 // ---------------------------------------------------------------------------
 // Health Connect sync — pulls what the Garmin Connect app writes into Android
@@ -324,9 +324,10 @@ async function runSync(): Promise<HealthConnectSyncResult> {
     });
     dayCount++;
   }
-  // Days and fields Health Connect has nothing for come from the Garmin
-  // Connect sync, when it's on — a full resync above just wiped them.
-  await fillHealthMetricsFromGarmin();
+  // Garmin's own numbers win where the Garmin Connect sync is on, and fill
+  // the days Health Connect has nothing for — a full resync above just
+  // wiped them.
+  await applyGarminMetrics();
 
   await setSetting(SETTING_KEYS.healthConnectLastSyncAt, new Date(now).toISOString());
   if (status.historyGranted) {

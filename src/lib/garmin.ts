@@ -5,7 +5,7 @@ import { shiftDay } from "./daystamp";
 import {
   activitiesMissingLaps,
   earliestGarminActivityAt,
-  fillHealthMetricsFromGarmin,
+  applyGarminMetrics,
   fillSleepFromGarmin,
   garminDayHasData,
   linkGarminActivity,
@@ -350,8 +350,8 @@ async function syncAll(status: GarminStatus): Promise<GarminSyncResult> {
   result.wellnessBackTo = reached;
   result.backfillDone = reached <= floor;
 
-  // --- Fill Health Connect's gaps from what Garmin has.
-  await fillHealthMetricsFromGarmin();
+  // --- Garmin's daily numbers over Health Connect's; its nights in the gaps.
+  await applyGarminMetrics();
   result.nights = await fillSleepFromGarmin();
   return result;
 }
