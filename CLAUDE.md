@@ -73,6 +73,10 @@ The database is meant to sync between devices, so:
 ## Commands
 
 - `bun run dev` — Vite dev server
+- `bun run tauri:dev` — the app in development, as "Tally Dev"
+  (`com.madsbuch.tally.dev`): its own data folder, so test data never lands
+  in the installed app's database — and from there in the sync vault. Don't
+  use plain `tauri dev`, which shares the installed app's folder.
 - `bun run build` — typecheck (`tsc`), lint, and bundle
 - `bun run lint` — ESLint only
 - `bun run tauri android build --apk` — Android build (CI does this)

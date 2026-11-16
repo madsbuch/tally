@@ -13,15 +13,19 @@ const rust = readFileSync(new URL("../src-tauri/src/lib.rs", import.meta.url), "
 const files = [...rust.matchAll(/include_str!\("\.\.\/migrations\/([^"]+)"\)/g)].map((m) => m[1]!);
 const read = (f: string) => readFileSync(new URL(`../src-tauri/migrations/${f}`, import.meta.url), "utf8");
 
-type Version = { hlc: string; origin: string; deleted: number; seq: number; vv: number };
+// Version-vector entries are clock values as 64-bit integers (~1.8e18):
+// beyond what a JS number holds exactly, so they're read as text and
+// compared as BigInt.
+type Version = { hlc: string; origin: string; deleted: number; seq: number; vv: bigint };
 function versionOf(db: Database, tbl: string, pk: string): Version | null {
-  return db
+  const r = db
     .query(
       `SELECT hlc, origin, deleted, seq,
-         (SELECT coalesce(sum(counter), 0) FROM sync_vv v WHERE v.tbl = r.tbl AND v.pk = r.pk) AS vv
+         (SELECT CAST(coalesce(sum(counter), 0) AS TEXT) FROM sync_vv v WHERE v.tbl = r.tbl AND v.pk = r.pk) AS vv
        FROM sync_rows r WHERE tbl = ? AND pk = ?`,
     )
-    .get(tbl, pk) as Version | null;
+    .get(tbl, pk) as (Omit<Version, "vv"> & { vv: string }) | null;
+  return r ? { ...r, vv: BigInt(r.vv) } : null;
 }
 
 const meal = {
@@ -70,20 +74,20 @@ describe("sync tracking", () => {
     const id = await addFoodEntry(meal);
     const v1 = versionOf(sqlite, "food_entries", id)!;
     expect(v1.deleted).toBe(0);
-    expect(v1.vv).toBeGreaterThan(0);
+    expect(v1.vv > 0n).toBe(true);
     const device = (sqlite.query("SELECT device_id FROM sync_state").get() as { device_id: string }).device_id;
     expect(v1.origin).toBe(device);
 
     await updateFoodEntry({ ...(await getFoodEntry(id))!, title: "Porridge" });
     const v2 = versionOf(sqlite, "food_entries", id)!;
-    expect(v2.vv).toBeGreaterThan(v1.vv);
+    expect(v2.vv > v1.vv).toBe(true);
     expect(v2.seq).toBeGreaterThan(v1.seq);
     expect(v2.hlc > v1.hlc).toBe(true);
 
     await deleteFoodEntry(id);
     const v3 = versionOf(sqlite, "food_entries", id)!;
     expect(v3.deleted).toBe(1);
-    expect(v3.vv).toBeGreaterThan(v2.vv);
+    expect(v3.vv > v2.vv).toBe(true);
     expect(v3.hlc > v2.hlc).toBe(true);
   });
 
