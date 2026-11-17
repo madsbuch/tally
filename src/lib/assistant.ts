@@ -56,7 +56,14 @@ import {
 } from "./experiments";
 import { chatWithTools } from "./openrouter";
 import type { ChatMessage, ToolDef } from "./openrouter";
-import { AUTO_METRICS, ExperimentDesignSchema, RatingArgsSchema, parseToolArgs } from "./schemas";
+import {
+  AUTO_METRICS,
+  ExperimentDesignSchema,
+  parseLooseRecord,
+  parseSqlRows,
+  parseToolArgs,
+  RatingArgsSchema,
+} from "./schemas";
 import type { AutoMetric } from "./schemas";
 import { garminDetailsForWorkouts, listGarminDaysForRange } from "./garminDb";
 import type { GarminWorkoutDetail } from "./garminDb";
@@ -821,7 +828,7 @@ export function sanitizeChart(args: Record<string, unknown>): ChartSpec {
     throw new Error(`At most ${MAX_CHART_SERIES} series per chart, split into several charts`);
   }
   const series: ChartSeries[] = sRaw.map((s, i) => {
-    const o = (s ?? {}) as Record<string, unknown>;
+    const o = parseLooseRecord(s);
     const rawName = o["name"];
     const name =
       typeof rawName === "string" && rawName.trim() ? rawName.trim() : `Series ${i + 1}`;
@@ -942,7 +949,7 @@ async function runSql(raw: string): Promise<string> {
     throw new Error("Read-only: the query contains a forbidden keyword.");
   }
   const conn = await getDb();
-  const rows = (await conn.select(sql)) as Record<string, unknown>[];
+  const rows = parseSqlRows(await conn.select(sql));
   const shown = rows.slice(0, MAX_SQL_ROWS);
   return JSON.stringify({
     rows: shown,

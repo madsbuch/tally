@@ -3,7 +3,7 @@
 // so raw `JSON.parse` is banned everywhere else. Runs as part of `bun run build`
 // (and therefore in the Android CI workflow) and standalone via `bun run lint`.
 //
-// The config is deliberately minimal — a parser, the boundary rule, and a ban
+// The config is deliberately minimal — a parser, the boundary rules, and a ban
 // on native dialogs (they don't show in the desktop app) — so a lint failure
 // always means one of those was broken, not style noise. Grow it
 // intentionally if more rules are wanted.
@@ -36,6 +36,24 @@ export default tseslint.config(
           property,
           message: "Native dialogs don't show in the desktop app — use confirmAction from src/lib/confirm.ts.",
         })),
+      ],
+      // The other half of the boundary rule: a type argument or an `as` on
+      // what a command, a query or a fetch hands back claims a shape nobody
+      // checked. Parse it through src/lib/schemas.ts instead.
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.name='invoke'][typeArguments]",
+          message:
+            "invoke<T>() is an unchecked claim about what the command returns — " +
+            "parse its result with a schema from src/lib/schemas.ts (see CLAUDE.md).",
+        },
+        {
+          selector: "TSAsExpression[expression.type='AwaitExpression']",
+          message:
+            "Casting an awaited result skips validation — parse it with a schema " +
+            "from src/lib/schemas.ts (see CLAUDE.md).",
+        },
       ],
       "no-restricted-globals": [
         "error",

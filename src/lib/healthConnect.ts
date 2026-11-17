@@ -12,6 +12,15 @@ import {
 import { SETTING_KEYS } from "./types";
 import { dayOf } from "./daystamp";
 import {
+  parseHCDailyMetrics,
+  parseHCExerciseSessions,
+  parseHCSleepSessions,
+  parseHealthConnectGrant,
+  parseHealthConnectStatus,
+  type HCExerciseSession,
+  type HealthConnectStatus,
+} from "./schemas";
+import {
   adoptSyncedSleep,
   adoptSyncedWorkout,
   applyGarminMetrics,
@@ -42,59 +51,7 @@ import {
 const GARMIN_CONNECT = "com.garmin.android.apps.connectmobile";
 const ORIGINS = [GARMIN_CONNECT];
 
-export type HealthConnectAvailability = "available" | "updateRequired" | "unavailable";
-
-export interface HealthConnectStatus {
-  availability: HealthConnectAvailability;
-  permissionsGranted: boolean;
-  /**
-   * READ_HEALTH_DATA_HISTORY granted — without it Health Connect only serves
-   * data written in the 30 days before the first permission grant.
-   */
-  historyGranted: boolean;
-}
-
-interface HCExerciseSession {
-  id: string;
-  title?: string | null;
-  exerciseType: string;
-  startMs: number;
-  endMs: number;
-  calories?: number | null;
-  distanceMeters?: number | null;
-  avgHeartRate?: number | null;
-  sourcePackage?: string | null;
-  /** Minutes east of UTC where it was done, when the record carries it. */
-  startOffsetMin?: number | null;
-  /** The writing app's own id for the record (Garmin's, when it sets one). */
-  clientRecordId?: string | null;
-}
-
-interface HCSleepSession {
-  id: string;
-  title?: string | null;
-  startMs: number;
-  endMs: number;
-  deepMin?: number | null;
-  remMin?: number | null;
-  lightMin?: number | null;
-  awakeMin?: number | null;
-  sourcePackage?: string | null;
-  /** Minutes east of UTC where the night was slept, when recorded. */
-  endOffsetMin?: number | null;
-  clientRecordId?: string | null;
-}
-
-interface HCDailyMetric {
-  day: string;
-  steps?: number | null;
-  caloriesTotal?: number | null;
-  restingHr?: number | null;
-  hrvMs?: number | null;
-  spo2Pct?: number | null;
-  weightKg?: number | null;
-  vo2Max?: number | null;
-}
+export type { HealthConnectAvailability, HealthConnectStatus } from "./schemas";
 
 /** Without history permission, Health Connect serves ~30 days of history. */
 const DEFAULT_WINDOW_MS = 30 * 24 * 3_600_000;
@@ -115,8 +72,7 @@ const RESYNC_VERSION = "4";
 
 export async function getHealthConnectStatus(): Promise<HealthConnectStatus> {
   try {
-    const s = await invoke<HealthConnectStatus>("plugin:health-connect|get_status");
-    return { ...s, historyGranted: s.historyGranted ?? false };
+    return parseHealthConnectStatus(await invoke("plugin:health-connect|get_status"));
   } catch (e) {
     console.warn("Health Connect status check failed", e);
     return { availability: "unavailable", permissionsGranted: false, historyGranted: false };
@@ -125,10 +81,7 @@ export async function getHealthConnectStatus(): Promise<HealthConnectStatus> {
 
 /** Opens the Health Connect per-type permission sheet. */
 export async function requestHealthConnectPermissions(): Promise<boolean> {
-  const res = await invoke<{ granted: boolean }>(
-    "plugin:health-connect|request_permissions",
-  );
-  return res.granted;
+  return parseHealthConnectGrant(await invoke("plugin:health-connect|request_permissions"));
 }
 
 /**
@@ -250,23 +203,28 @@ async function runSync(): Promise<HealthConnectSyncResult> {
     ? now - windowMs
     : Math.max(now - windowMs, isFinite(lastMs) ? lastMs - SYNC_OVERLAP_MS : 0);
 
-  const { sessions } = await invoke<{ sessions: HCExerciseSession[] }>(
-    "plugin:health-connect|read_exercise_sessions",
-    { startMs, endMs: now, origins: ORIGINS },
+  const sessions = parseHCExerciseSessions(
+    await invoke("plugin:health-connect|read_exercise_sessions", { startMs, endMs: now, origins: ORIGINS }),
   );
   // Sleep often spans midnight — pad the window start by a day so the night
   // in progress at `startMs` is still picked up whole.
-  const { sessions: sleepSessions } = await invoke<{ sessions: HCSleepSession[] }>(
-    "plugin:health-connect|read_sleep_sessions",
-    { startMs: startMs - 24 * 3_600_000, endMs: now, origins: ORIGINS },
+  const sleepSessions = parseHCSleepSessions(
+    await invoke("plugin:health-connect|read_sleep_sessions", {
+      startMs: startMs - 24 * 3_600_000,
+      endMs: now,
+      origins: ORIGINS,
+    }),
   );
   // Daily aggregates are computed from the records inside the window — extend
   // it back to local midnight so the first day is never a partial recount.
   const windowStart = new Date(startMs);
   windowStart.setHours(0, 0, 0, 0);
-  const { days } = await invoke<{ days: HCDailyMetric[] }>(
-    "plugin:health-connect|read_daily_metrics",
-    { startMs: windowStart.getTime(), endMs: now, origins: ORIGINS },
+  const days = parseHCDailyMetrics(
+    await invoke("plugin:health-connect|read_daily_metrics", {
+      startMs: windowStart.getTime(),
+      endMs: now,
+      origins: ORIGINS,
+    }),
   );
 
   // A full resync rewrites the window from scratch, so whatever other apps
@@ -351,7 +309,7 @@ async function runSync(): Promise<HealthConnectSyncResult> {
   for (const d of days) {
     await upsertHealthMetric({
       day: d.day,
-      steps: num(d.steps) != null ? Math.round(d.steps as number) : null,
+      steps: d.steps != null ? Math.round(d.steps) : null,
       resting_hr: num(d.restingHr),
       hrv_ms: num(d.hrvMs),
       spo2_pct: num(d.spo2Pct),

@@ -41,10 +41,8 @@ const FEATURE_INFO: Record<AiFeature, { label: string; detail: string }> = {
 
 /** Display name and one-line description; unknown sources show as logged. */
 export function featureInfo(source: string): { label: string; detail: string } {
-  return (FEATURE_INFO as Record<string, { label: string; detail: string }>)[source] ?? {
-    label: source,
-    detail: "",
-  };
+  const known = Object.entries(FEATURE_INFO).find(([key]) => key === source);
+  return known?.[1] ?? { label: source, detail: "" };
 }
 
 /** One row of the ledger, summed per day, feature and model. */

@@ -106,9 +106,9 @@ export class GarminError extends Error {
   }
 }
 
-async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+async function call(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
   try {
-    return await invoke<T>(cmd, args);
+    return await invoke(cmd, args);
   } catch (e) {
     throw new GarminError(parseGarminCmdError(e));
   }
@@ -174,7 +174,7 @@ async function garminGet(
   source?: "personal" | "legacy",
 ): Promise<unknown> {
   await paced();
-  return call<unknown>("garmin_get", { path, query: Object.entries(query), source });
+  return call("garmin_get", { path, query: Object.entries(query), source });
 }
 
 export interface GarminSyncResult {

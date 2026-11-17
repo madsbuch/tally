@@ -93,6 +93,7 @@ import { derivedId } from "./ids";
 import { notifyTablesChanged, writtenTable } from "./live";
 import {
   parseChatTranscript,
+  parseCommandCount,
   parseDocumentPages,
   parseDocumentValues,
   parseEntryChanges,
@@ -100,6 +101,7 @@ import {
   parseExperimentArms,
   parseExperimentMeasures,
   parseJson,
+  parseSqlRows,
   parseTrialRatings,
 } from "./schemas";
 
@@ -122,7 +124,7 @@ function sqlite(): Promise<Database> {
       // there into the `photos` table before anything reads one. A no-op
       // once the folder is gone; on failure the rest retry next start.
       try {
-        const moved = await invoke<number>("import_photo_files");
+        const moved = parseCommandCount(await invoke("import_photo_files"));
         if (moved > 0) console.info(`Moved ${moved} photo(s) into the database`);
       } catch (e) {
         console.warn("Moving photo files into the database failed", e);
@@ -152,7 +154,7 @@ export const db = drizzle(async (query, params, method) => {
     await noteWrite(conn, query);
     return { rows: [] };
   }
-  const rows = (await conn.select(query, params)) as Record<string, unknown>[];
+  const rows = parseSqlRows(await conn.select(query, params));
   // An INSERT … RETURNING comes through here too.
   await noteWrite(conn, query);
   const values = rows.map((r) => Object.values(r));
@@ -173,8 +175,9 @@ async function noteWrite(conn: Database, query: string): Promise<void> {
   const table = writtenTable(query);
   if (!table) return;
   try {
-    const rows = (await conn.select("SELECT seq FROM sync_state WHERE id = 1")) as { seq?: unknown }[];
-    const seq = typeof rows[0]?.seq === "number" ? rows[0].seq : null;
+    const rows = parseSqlRows(await conn.select("SELECT seq FROM sync_state WHERE id = 1"));
+    const raw = rows[0]?.["seq"];
+    const seq = typeof raw === "number" ? raw : null;
     if (seq === null) {
       notifyTablesChanged([table]);
     } else if (lastSeq === null || seq > lastSeq) {

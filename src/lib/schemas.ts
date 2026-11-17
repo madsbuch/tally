@@ -1559,3 +1559,146 @@ export type JoinResult = z.infer<typeof JoinResultSchema>;
 export function parseJoinResult(raw: unknown): JoinResult {
   return JoinResultSchema.parse(raw);
 }
+
+// ---------------------------------------------------------------------------
+// Health Connect (the Android `health-connect` plugin)
+//
+// The records are other apps' data, relayed by our Kotlin plugin: optional
+// fields degrade to null, and a record without an id or a time span is
+// dropped. The envelope is strict, though — a full resync purges what isn't
+// in the answer, so an answer of the wrong shape must fail the sync rather
+// than read as "nothing there".
+// ---------------------------------------------------------------------------
+
+const hcNum = z
+  .number()
+  .nullish()
+  .catch(null)
+  .transform((v) => (v != null && isFinite(v) ? v : null));
+const hcStr = z.string().nullish().catch(null).transform((v) => v ?? null);
+
+const HealthConnectStatusSchema = z.object({
+  availability: z.enum(["available", "updateRequired", "unavailable"]).catch("unavailable"),
+  permissionsGranted: z.boolean().catch(false),
+  /**
+   * READ_HEALTH_DATA_HISTORY granted — without it Health Connect only serves
+   * data written in the 30 days before the first permission grant.
+   */
+  historyGranted: z.boolean().nullish().catch(null).transform((v) => v ?? false),
+});
+export type HealthConnectStatus = z.infer<typeof HealthConnectStatusSchema>;
+export type HealthConnectAvailability = HealthConnectStatus["availability"];
+
+export function parseHealthConnectStatus(raw: unknown): HealthConnectStatus {
+  return HealthConnectStatusSchema.parse(raw);
+}
+
+export function parseHealthConnectGrant(raw: unknown): boolean {
+  return z.object({ granted: z.boolean() }).parse(raw).granted;
+}
+
+const hcSpan = { id: z.string().min(1), startMs: z.number(), endMs: z.number() };
+
+const HCExerciseSessionSchema = z.object({
+  ...hcSpan,
+  title: hcStr,
+  exerciseType: z.string().catch("Workout"),
+  calories: hcNum,
+  distanceMeters: hcNum,
+  avgHeartRate: hcNum,
+  sourcePackage: hcStr,
+  /** Minutes east of UTC where it was done, when the record carries it. */
+  startOffsetMin: hcNum,
+  /** The writing app's own id for the record (Garmin's, when it sets one). */
+  clientRecordId: hcStr,
+});
+export type HCExerciseSession = z.infer<typeof HCExerciseSessionSchema>;
+
+const HCSleepSessionSchema = z.object({
+  ...hcSpan,
+  title: hcStr,
+  deepMin: hcNum,
+  remMin: hcNum,
+  lightMin: hcNum,
+  awakeMin: hcNum,
+  sourcePackage: hcStr,
+  /** Minutes east of UTC where the night was slept, when recorded. */
+  endOffsetMin: hcNum,
+  clientRecordId: hcStr,
+});
+export type HCSleepSession = z.infer<typeof HCSleepSessionSchema>;
+
+const HCDailyMetricSchema = z.object({
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  steps: hcNum,
+  caloriesTotal: hcNum,
+  restingHr: hcNum,
+  hrvMs: hcNum,
+  spo2Pct: hcNum,
+  weightKg: hcNum,
+  vo2Max: hcNum,
+});
+export type HCDailyMetric = z.infer<typeof HCDailyMetricSchema>;
+
+/** `{ [key]: [...] }` with the list itself required and bad items dropped. */
+function hcList<T>(key: string, item: z.ZodType<T>, raw: unknown): T[] {
+  const rows = z.object({ [key]: z.array(z.unknown()) }).parse(raw)[key] ?? [];
+  const out: T[] = [];
+  for (const row of rows) {
+    const r = item.safeParse(row);
+    if (r.success) out.push(r.data);
+  }
+  return out;
+}
+
+export function parseHCExerciseSessions(raw: unknown): HCExerciseSession[] {
+  return hcList("sessions", HCExerciseSessionSchema, raw);
+}
+
+export function parseHCSleepSessions(raw: unknown): HCSleepSession[] {
+  return hcList("sessions", HCSleepSessionSchema, raw);
+}
+
+export function parseHCDailyMetrics(raw: unknown): HCDailyMetric[] {
+  return hcList("days", HCDailyMetricSchema, raw);
+}
+
+// ---------------------------------------------------------------------------
+// Plain values handed back by our own Tauri commands and plugins
+// ---------------------------------------------------------------------------
+
+/** A command that answers with a string (a path, a filename, a code). */
+export function parseCommandString(raw: unknown): string {
+  return z.string().parse(raw);
+}
+
+/** A command that answers with a count. */
+export function parseCommandCount(raw: unknown): number {
+  return z.number().int().nonnegative().parse(raw);
+}
+
+/** A command that answers yes or no. */
+export function parseCommandFlag(raw: unknown): boolean {
+  return z.boolean().parse(raw);
+}
+
+/** A command that may hand back an id; anything but a non-empty string is none. */
+export function parseCommandOptionalId(raw: unknown): string | null {
+  return z.string().min(1).nullable().catch(null).parse(raw);
+}
+
+// ---------------------------------------------------------------------------
+// Loose shapes
+// ---------------------------------------------------------------------------
+
+const LooseRecordSchema = z.record(z.string(), z.unknown());
+
+/** An object's fields, each still to be checked; anything else reads as `{}`. */
+export function parseLooseRecord(raw: unknown): Record<string, unknown> {
+  return LooseRecordSchema.catch({}).parse(raw);
+}
+
+/** Rows as tauri-plugin-sql's `select` hands them back: one object per row. */
+export function parseSqlRows(raw: unknown): Record<string, unknown>[] {
+  return z.array(LooseRecordSchema).parse(raw);
+}

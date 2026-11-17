@@ -198,6 +198,10 @@ const round = (n: number, dp = 0): number => {
 const avg = (xs: number[]): number | null =>
   xs.length === 0 ? null : xs.reduce((a, b) => a + b, 0) / xs.length;
 
+/** `round(v * scale, dp)`, with no value staying none. */
+const roundOrNull = (v: number | null, dp?: number, scale = 1): number | null =>
+  v == null ? null : round(v * scale, dp);
+
 /**
  * A compact, deterministic read of the diary. Kept narrow on purpose: these
  * same numbers have to be reproducible in Rust for the scheduled check-in, so
@@ -309,13 +313,10 @@ export async function buildCoachDigest(day = todayStr()): Promise<CoachDigest> {
     const d = dayOfRow(s, s.ended_at);
     sleepByDay.set(d, (sleepByDay.get(d) ?? 0) + s.duration_min);
   }
-  const stepDays = metrics
-    .filter((m) => m.day >= weekStart && m.steps != null)
-    .map((m) => m.steps as number);
+  const stepDays = metrics.flatMap((m) => (m.day >= weekStart && m.steps != null ? [m.steps] : []));
 
   const weights = metrics
-    .filter((m) => m.weight_kg != null)
-    .map((m) => ({ day: m.day, kg: m.weight_kg as number }))
+    .flatMap((m) => (m.weight_kg != null ? [{ day: m.day, kg: m.weight_kg }] : []))
     .sort((a, b) => (a.day < b.day ? -1 : 1));
   const latest = weights[weights.length - 1];
   const at = (from: string): number | null => {
@@ -341,17 +342,14 @@ export async function buildCoachDigest(day = todayStr()): Promise<CoachDigest> {
     week: {
       daysLogged: loggedDays.length,
       incompleteDays: [...incomplete].sort(),
-      avgNet: avg(nets) == null ? null : round(avg(nets) as number),
-      avgProteinG: avg(proteins) == null ? null : round(avg(proteins) as number),
+      avgNet: roundOrNull(avg(nets)),
+      avgProteinG: roundOrNull(avg(proteins)),
       workouts: workouts.length,
       cardioMin: round(cardioMinutes(workouts)),
       cardioTarget: round(cardioTarget),
-      avgSleepH:
-        sleepByDay.size === 0
-          ? null
-          : round((avg([...sleepByDay.values()]) as number) / 60, 1),
+      avgSleepH: roundOrNull(avg([...sleepByDay.values()]), 1, 1 / 60),
       sleepNights: sleepByDay.size,
-      avgSteps: stepDays.length === 0 ? null : round(avg(stepDays) as number),
+      avgSteps: roundOrNull(avg(stepDays)),
     },
     weight: latest
       ? {

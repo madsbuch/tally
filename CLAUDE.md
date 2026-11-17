@@ -14,6 +14,10 @@ parsed through a zod schema defined in `src/lib/schemas.ts`. Concretely:
   as part of `bun run build`).
 - Never cast parsed JSON with `as` — add or extend a schema in
   `src/lib/schemas.ts` and export a typed parse helper instead.
+- The same goes for what Tauri commands and plugins hand back: no
+  `invoke<T>()` and no `as` on an awaited result (ESLint enforces both) —
+  pass the result to a parse helper (`parseCommandString`,
+  `parseHCExerciseSessions`, `parseSqlRows`, …).
 - Prefer inferring types from schemas (`z.infer`) over maintaining parallel
   interfaces. `ChatMessage`, `ToolCall`, `ContentPart`, and `ORModel` are
   already schema-derived.

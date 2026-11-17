@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { parseCommandString } from "./schemas";
 import { getDb } from "./db";
 import { notifyTablesChanged } from "./live";
 
@@ -68,7 +69,7 @@ export async function compressImage(
 /** Persist a base64 JPEG; returns the filename it's stored under. */
 export async function savePhoto(base64: string): Promise<string> {
   await getDb();
-  const name = await invoke<string>("save_photo", { dataBase64: base64 });
+  const name = parseCommandString(await invoke("save_photo", { dataBase64: base64 }));
   // Written by Rust, past db.ts: say so here (lib/live.ts).
   notifyTablesChanged(["photos"]);
   return name;
@@ -122,7 +123,7 @@ export function readPhotoDataUrl(filename: string): Promise<string> {
     return hit;
   }
   const read = getDb()
-    .then(() => invoke<string>("read_photo", { filename }))
+    .then(async () => parseCommandString(await invoke("read_photo", { filename })))
     .then((base64) => `data:image/jpeg;base64,${base64}`);
   cache.set(filename, read);
   read.catch(() => cache.delete(filename));

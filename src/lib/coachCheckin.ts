@@ -11,6 +11,7 @@
  * itself onto that thread would be baffling.
  */
 import { invoke } from "@tauri-apps/api/core";
+import { parseCommandFlag } from "./schemas";
 import {
   aiSpendSince,
   clearFollowUps,
@@ -81,11 +82,9 @@ async function notify(chatId: string, title: string, body: string): Promise<void
     // On Android the coach plugin posts it — the same notification the
     // scheduled check-in posts with the app closed, carrying the chat's id so
     // a tap opens this conversation.
-    const posted = await invoke<boolean>("plugin:coach|notify_checkin", {
-      chatId,
-      title,
-      body,
-    }).catch(() => false);
+    const posted = await invoke("plugin:coach|notify_checkin", { chatId, title, body })
+      .then(parseCommandFlag)
+      .catch(() => false);
     if (posted) return;
     // Elsewhere a plain one: there's no tap to route.
     await invoke("plugin:notification|notify", {

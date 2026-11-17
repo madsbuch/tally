@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { parseCommandString } from "./schemas";
 import { getDb, todayStr } from "./db";
 
 // ---------------------------------------------------------------------------
@@ -20,7 +21,7 @@ function isAndroid(): boolean {
 
 export async function exportDatabase(): Promise<ExportResult> {
   const fileName = `tally-${todayStr()}.db`;
-  const path = await invoke<string>("prepare_db_export", { fileName });
+  const path = parseCommandString(await invoke("prepare_db_export", { fileName }));
 
   const conn = await getDb();
   // Path comes from our own Rust command; escape quotes for the SQL literal

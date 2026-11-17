@@ -6,7 +6,11 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { parseJoinResult, parseSyncStatus } from "./schemas";
+import {
+  parseCommandString,
+  parseJoinResult,
+  parseSyncStatus,
+} from "./schemas";
 import type { JoinResult, SyncDevice, SyncOutcome, SyncStatus } from "./schemas";
 
 export type { JoinResult, SyncDevice, SyncOutcome, SyncStatus };
@@ -28,7 +32,7 @@ export async function setDeviceName(name: string): Promise<void> {
 
 /** A pairing code for the QR, good for one device for ten minutes. */
 export async function createPairingCode(): Promise<string> {
-  return invoke<string>("sync_offer");
+  return parseCommandString(await invoke("sync_offer"));
 }
 
 export async function cancelPairing(): Promise<void> {

@@ -15,6 +15,7 @@
  */
 import { useEffect, useState } from "react";
 import { addPluginListener, invoke } from "@tauri-apps/api/core";
+import { parseCommandOptionalId } from "./schemas";
 import type { PluginListener } from "@tauri-apps/api/core";
 import { getChatSummary, getSetting, setSetting } from "./db";
 import { onAppResume, wasSuspendedSince } from "./appLifecycle";
@@ -82,8 +83,8 @@ let lastTakenAt = 0;
  */
 export async function takeOpenedCheckin(): Promise<string | null> {
   try {
-    const id = await invoke<string | null>("plugin:coach|take_opened_checkin");
-    if (typeof id !== "string" || !id) return null;
+    const id = parseCommandOptionalId(await invoke("plugin:coach|take_opened_checkin"));
+    if (!id) return null;
     lastTakenAt = Date.now();
     return id;
   } catch {
