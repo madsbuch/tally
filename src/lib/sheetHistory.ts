@@ -20,6 +20,7 @@
  * let the navigation continue.
  */
 import { useEffect, useRef } from "react";
+import { fieldsOf } from "./guards";
 
 /** Open sheet layers, topmost last. */
 const sheetLayers: Layer[] = [];
@@ -87,7 +88,8 @@ if (typeof window !== "undefined") ensurePopListener();
  * count.
  */
 export function pageIndex(): number {
-  const idx: unknown = window.history.state?.idx;
+  const state: unknown = window.history.state;
+  const idx = fieldsOf(state)?.["idx"];
   return typeof idx === "number" && idx > 0 ? idx : 0;
 }
 

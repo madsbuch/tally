@@ -38,7 +38,8 @@ function flush(): void {
   pending = null;
   if (!changed) return;
   for (const l of [...listeners]) {
-    if (changed === "all" || l.tables === null || [...changed].some((t) => l.tables!.has(t))) {
+    const tables = l.tables;
+    if (changed === "all" || tables === null || [...changed].some((t) => tables.has(t))) {
       try {
         l.fn();
       } catch (e) {
@@ -83,7 +84,7 @@ export function useTablesVersion(tables: Tables): number {
 /** The table a write statement writes to, or null for anything else. */
 export function writtenTable(sql: string): string | null {
   const m = /^\s*(?:insert(?:\s+or\s+\w+)?\s+into|update(?:\s+or\s+\w+)?|delete\s+from|replace\s+into)\s+[`"[]?([A-Za-z_][A-Za-z0-9_]*)/i.exec(sql);
-  return m ? m[1]! : null;
+  return m?.[1] ?? null;
 }
 
 // Groups of tables the screens think in. A screen may of course list its own.

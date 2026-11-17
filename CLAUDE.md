@@ -28,6 +28,22 @@ parsed through a zod schema defined in `src/lib/schemas.ts`. Concretely:
   are legitimate and used *inside* schemas — don't replace them with naive
   `z.number()` fields, their clamping semantics are intentional.
 
+## No casts, no `!`, no `any`, no unsafe
+
+ESLint (`eslint.config.js`) holds all TypeScript — `src/`, `tests/`,
+`scripts/` — to these, and they can't be switched off with a comment (only
+`react-hooks/exhaustive-deps` may be disabled inline):
+
+- No type assertions (`x as T`; `as const` is fine) and no non-null `!`.
+  Narrow instead: `if`/`??`, `isOneOf`/`isKeyOf`/`fieldsOf`
+  (`src/lib/guards.ts`), a typed annotation (`.catch((): T[] => [])`), or a
+  schema. For a true invariant, `must(value, "what")` (`src/lib/must.ts`)
+  throws rather than letting `undefined` through.
+- No `any`, and in `src/` no `any` flowing anywhere (`no-unsafe-*`, type-aware):
+  give it `unknown` and parse it.
+- No `@ts-ignore` / `@ts-expect-error` / `@ts-nocheck`.
+- Rust: every crate sets `unsafe_code = "forbid"` in its `Cargo.toml`.
+
 Note that drizzle's `.$type<T>()` on JSON columns is a compile-time claim only —
 runtime validation still happens through the schema helpers
 (e.g. `parseChatTranscript` for `chats.messages`).

@@ -168,7 +168,7 @@ export default function ExperimentPage() {
       if (!e) return null;
       const [trials, fasts, manual] = await Promise.all([
         listTrials(id),
-        listAllFasts().catch(() => [] as Fast[]),
+        listAllFasts().catch((): Fast[] => []),
         e.manual_id != null ? getManual(e.manual_id).catch(() => null) : Promise.resolve(null),
       ]);
       const metrics = await loadTrialMetrics(trials, new Map(fasts.map((f) => [f.id, f])));
@@ -221,6 +221,7 @@ export default function ExperimentPage() {
 
   const e = data?.e;
   const trials = data?.trials ?? [];
+  const manual = data?.manual ?? null;
   const running = e?.status === "running";
 
   return (
@@ -273,10 +274,10 @@ export default function ExperimentPage() {
               {e.conclusion && (
                 <p style={{ margin: 0, lineHeight: 1.5 }}>{e.conclusion}</p>
               )}
-              {data.manual && (
-                <button className="manual-link" onClick={() => go(manualPath(data.manual!.id))}>
+              {manual && (
+                <button className="manual-link" onClick={() => go(manualPath(manual.id))}>
                   <span>📖</span>
-                  <span style={{ flex: 1 }}>Written into “{data.manual.title}”</span>
+                  <span style={{ flex: 1 }}>Written into “{manual.title}”</span>
                   <span className="faint">›</span>
                 </button>
               )}

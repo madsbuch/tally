@@ -18,6 +18,7 @@
 
 import { Database } from "bun:sqlite";
 import { readFileSync } from "node:fs";
+import { z } from "zod";
 
 /** Tables that never sync: device-local state and the sync machinery itself. */
 export const LOCAL_TABLES = [
@@ -101,10 +102,11 @@ INSERT INTO sync_vv (tbl, pk, device, counter)
 }
 
 function shapeOf(db: Database, table: string): { pk: string; columns: string[] } {
-  const cols = db.query(`PRAGMA table_info("${table}")`).all() as { name: string; pk: number }[];
+  const cols = z.array(z.object({ name: z.string(), pk: z.number() })).parse(db.query(`PRAGMA table_info("${table}")`).all());
   const pk = cols.filter((c) => c.pk > 0);
-  if (pk.length !== 1) throw new Error(`${table}: sync needs a single-column primary key`);
-  return { pk: pk[0]!.name, columns: cols.map((c) => c.name) };
+  const [only] = pk;
+  if (pk.length !== 1 || !only) throw new Error(`${table}: sync needs a single-column primary key`);
+  return { pk: only.name, columns: cols.map((c) => c.name) };
 }
 
 if (import.meta.main) {
@@ -118,7 +120,7 @@ if (import.meta.main) {
   // `-- @generated` line.
   for (const m of rust.matchAll(/include_str!\("\.\.\/migrations\/([^"]+)"\)/g)) {
     const sql = readFileSync(new URL(`src-tauri/migrations/${m[1]}`, root), "utf8");
-    db.exec(sql.split("-- @generated")[0]!);
+    db.exec(sql.split("-- @generated")[0] ?? sql);
   }
 
   const retrigger = process.argv[2] === "--retrigger";
@@ -133,7 +135,7 @@ if (import.meta.main) {
   }
   const tables = only
     ? [only]
-    : (db.query("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as { name: string }[])
+    : z.array(z.object({ name: z.string() })).parse(db.query("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all())
         .map((t) => t.name)
         .filter((t) => !LOCAL_TABLES.includes(t));
   const ordered = only

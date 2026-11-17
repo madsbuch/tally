@@ -14,7 +14,7 @@ describe("row ids", () => {
     for (const id of ids) {
       expect(id).toMatch(UUID);
       expect(id[14]).toBe("7");
-      expect("89ab").toContain(id[19]!);
+      expect("89ab").toContain(id[19] ?? "");
     }
     expect([...ids].sort()).toEqual(ids);
     expect(new Set(ids).size).toBe(ids.length);

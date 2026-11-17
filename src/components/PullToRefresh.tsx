@@ -63,7 +63,8 @@ export default function PullToRefresh({
       if (busy.current || e.touches.length !== 1 || el.scrollTop > 0) return;
       if (document.querySelector(".sheet-backdrop")) return;
       if (e.target instanceof Element && e.target.closest("input, textarea, select, [contenteditable]")) return;
-      const t = e.touches[0]!;
+      const t = e.touches[0];
+      if (!t) return;
       startX = t.clientX;
       startY = t.clientY;
       pull = 0;

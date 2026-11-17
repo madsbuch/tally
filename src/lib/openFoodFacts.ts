@@ -28,6 +28,7 @@ import {
 import type { LabelArgs, OffProduct } from "./schemas";
 import { SETTING_KEYS } from "./types";
 import type { NutrientKey, Nutrients } from "./types";
+import { fieldsOf } from "./guards";
 
 const BASE = "https://world.openfoodfacts.org";
 const SEARCH_BASE = "https://search.openfoodfacts.org";
@@ -251,8 +252,8 @@ function unitFactor(unit: string): number {
 /** Map an OFF `nutriments` object to Tally keys, per 100 g. */
 export function mapOffNutriments(raw: unknown): Nutrients {
   const out: Nutrients = {};
-  if (!raw || typeof raw !== "object") return out;
-  const n = raw as Record<string, unknown>;
+  const n = fieldsOf(raw);
+  if (!n) return out;
   for (const def of NUTRIENT_DEFS) {
     const offId = OFF_IDS[def.key];
     let v = offId != null ? num(n[`${offId}_100g`]) : null;

@@ -485,8 +485,8 @@ async function loadDiaryContext(day: string): Promise<DiaryContext> {
     listWorkoutsForDay(day).catch(() => []),
     listSupplementLogsForDay(day).catch(() => []),
     listFoodEntriesForRange(before, shiftDay(day, -1)).catch(() => []),
-    listStateCategories().catch(() => [] as StateCategory[]),
-    listSavedMeals().catch(() => [] as SavedMeal[]),
+    listStateCategories().catch((): StateCategory[] => []),
+    listSavedMeals().catch((): SavedMeal[] => []),
     getActiveFast().catch(() => null),
   ]);
   // Strictly after the start: the meal a fast is anchored to isn't in it.
@@ -496,7 +496,7 @@ async function loadDiaryContext(day: string): Promise<DiaryContext> {
         await listFoodEntriesForRange(
           shiftDay(fast.start_day ?? dayOf(fast.started_at), -1),
           todayStr(),
-        ).catch(() => [] as FoodEntry[])
+        ).catch((): FoodEntry[] => [])
       )
         .filter((e) => e.eaten_at > fast.started_at)
         .sort((a, b) => a.eaten_at.localeCompare(b.eaten_at))

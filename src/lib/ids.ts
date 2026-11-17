@@ -50,7 +50,7 @@ export function newId(now: number = Date.now()): string {
   }
   b[6] = 0x70 | (seq >> 8);
   b[7] = seq & 0xff;
-  b[8] = 0x80 | (b[8]! & 0x3f);
+  b[8] = 0x80 | ((b[8] ?? 0) & 0x3f);
   return hex(b);
 }
 
@@ -71,8 +71,8 @@ export function legacyId(n: number): string {
 export async function derivedId(namespace: string, key: string): Promise<string> {
   const data = new TextEncoder().encode(`${namespace}:${key}`);
   const b = new Uint8Array(await crypto.subtle.digest("SHA-256", data)).slice(0, 16);
-  b[6] = 0x80 | (b[6]! & 0x0f);
-  b[8] = 0x80 | (b[8]! & 0x3f);
+  b[6] = 0x80 | ((b[6] ?? 0) & 0x0f);
+  b[8] = 0x80 | ((b[8] ?? 0) & 0x3f);
   return hex(b);
 }
 

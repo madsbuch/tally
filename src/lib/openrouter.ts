@@ -19,6 +19,7 @@ import type { ChatMessage, ChatResponse, ContentPart, ToolCall } from "./schemas
 import type { z } from "zod";
 import { recordAiUsage } from "./db";
 import type { AiFeature } from "./aiCost";
+import { fieldsOf } from "./guards";
 
 /** What the vision model reads off a photographed document. */
 export type DocumentAnalysis = z.infer<typeof DocumentAnalysisSchema>;
@@ -125,11 +126,10 @@ function contentToText(content: unknown): string | null {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
     const text = content
-      .map((p) =>
-        p && typeof p === "object" && typeof (p as { text?: unknown }).text === "string"
-          ? (p as { text: string }).text
-          : "",
-      )
+      .map((p: unknown) => {
+        const text = fieldsOf(p)?.["text"];
+        return typeof text === "string" ? text : "";
+      })
       .join("");
     return text.length > 0 ? text : null;
   }

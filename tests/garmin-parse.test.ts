@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { must } from "./helpers";
 import {
   parseGarminCmdError,
   parseGarminDailySummary,
@@ -109,7 +110,7 @@ describe("Garmin answers", () => {
         { nope: true },
       ],
     });
-    const d = m.get("2026-11-01")!;
+    const d = must(m.get("2026-11-01"), "Nov 1");
     expect(m.size).toBe(1);
     expect(d).toMatchObject({ steps: 9876, floors: 7, caloriesActive: 610, restingHr: 47, stressAvg: 31, stressMax: null, bodyBatteryHigh: 92, spo2Low: 88, intensityVigorous: 35 });
     expect(parseGarminDailySummariesV2("junk").size).toBe(0);
@@ -139,9 +140,9 @@ describe("Garmin answers", () => {
         sleepEndTimestampLocal: "2026-11-02T07:10:00.0",
       },
     ]);
-    expect(ms!.night).toMatchObject({ id: "1", startMs: 1761946200000, offsetMin: 60, remMin: 90 });
-    expect(ms!.score).toBe(77);
-    expect(iso!.night?.startMs).toBe(Date.parse("2026-11-01T22:10:00Z"));
-    expect(iso!.night?.offsetMin).toBe(60);
+    expect(ms?.night).toMatchObject({ id: "1", startMs: 1761946200000, offsetMin: 60, remMin: 90 });
+    expect(ms?.score).toBe(77);
+    expect(iso?.night?.startMs).toBe(Date.parse("2026-11-01T22:10:00Z"));
+    expect(iso?.night?.offsetMin).toBe(60);
   });
 });

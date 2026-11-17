@@ -30,6 +30,8 @@ import type { CoachTriggers, TriggerKey } from "../lib/coachTriggers";
 import { runCoachCheckin } from "../lib/coachCheckin";
 import { useGo } from "../lib/navigation";
 
+const TONES: readonly CoachTone[] = ["gentle", "straight", "tough"];
+const LENGTHS: readonly CoachLength[] = ["brief", "normal", "thorough"];
 const MAX_IMPERATIVES = 5;
 const MAX_AVOID = 10;
 
@@ -230,7 +232,7 @@ export default function CoachSettings() {
         <div className="field">
           <label className="label">Tone</label>
           <div className="seg">
-            {(["gentle", "straight", "tough"] as CoachTone[]).map((t) => (
+            {TONES.map((t) => (
               <button
                 key={t}
                 className={`seg-item${stance.tone === t ? " seg-item-active" : ""}`}
@@ -244,7 +246,7 @@ export default function CoachSettings() {
         <div className="field">
           <label className="label">Length</label>
           <div className="seg">
-            {(["brief", "normal", "thorough"] as CoachLength[]).map((l) => (
+            {LENGTHS.map((l) => (
               <button
                 key={l}
                 className={`seg-item${stance.length === l ? " seg-item-active" : ""}`}

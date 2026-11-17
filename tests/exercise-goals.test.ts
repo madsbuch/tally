@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import { at, must } from "./helpers";
 import { sqlite } from "./testDb";
 import { exerciseProgress, zone2Minutes, exerciseTarget, diaryZone2Minutes } from "../src/lib/exerciseGoals";
 import { shiftDay } from "../src/lib/daystamp";
@@ -41,10 +42,10 @@ describe("rolling exercise goals", () => {
   });
   test("manual minutes persist, clear and follow edits to the workout date", async () => {
     const id = await addWorkout({ ...workout, zone2_min: 45 });
-    const w = (await getWorkout(id))!;
+    const w = must(await getWorkout(id), "workout");
     expect(w.zone2_min).toBe(45);
     await updateWorkout({ ...w, zone2_min: null, performed_at: "2026-10-20T12:00:00Z" });
-    expect((await getWorkout(id))!.zone2_min).toBeNull();
+    expect(must(await getWorkout(id), "workout").zone2_min).toBeNull();
     expect(await listWorkoutsForRange("2026-10-22", "2026-10-28")).toHaveLength(0);
     await deleteWorkout(id);
     expect(await getWorkout(id)).toBeNull();
@@ -52,44 +53,44 @@ describe("rolling exercise goals", () => {
   test("Garmin re-sync preserves user annotation and deduplicates", async () => {
     const external = { ...workout, source: "Garmin", external_id: "ride-1" };
     await upsertExternalWorkout(external);
-    const [w] = await listWorkoutsForRange("2026-10-22", "2026-10-28");
-    expect(w!.zone2_min).toBeNull();
-    await updateWorkout({ ...w!, zone2_min: 40 });
+    const w = at(await listWorkoutsForRange("2026-10-22", "2026-10-28"), 0);
+    expect(w.zone2_min).toBeNull();
+    await updateWorkout({ ...w, zone2_min: 40 });
     await upsertExternalWorkout({ ...external, calories_burned: 300 });
     const rows = await listWorkoutsForRange("2026-10-22", "2026-10-28");
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.zone2_min).toBe(40);
-    expect(rows[0]!.calories_burned).toBe(300);
+    expect(at(rows, 0).zone2_min).toBe(40);
+    expect(at(rows, 0).calories_burned).toBe(300);
   });
   test("a workout toggle counts the duration and explicit off overrides its title", async () => {
     const id = await addWorkout({ ...workout, title: "Zone 2 ride" });
     await setWorkoutZone2(id, true);
-    expect(diaryZone2Minutes((await getWorkout(id))!)).toBe(60);
+    expect(diaryZone2Minutes(must(await getWorkout(id), "workout"))).toBe(60);
     await setWorkoutZone2(id, false);
-    expect(diaryZone2Minutes((await getWorkout(id))!)).toBe(0);
+    expect(diaryZone2Minutes(must(await getWorkout(id), "workout"))).toBe(0);
     await setWorkoutZone2(id, true);
-    expect(diaryZone2Minutes((await getWorkout(id))!)).toBe(60);
+    expect(diaryZone2Minutes(must(await getWorkout(id), "workout"))).toBe(60);
   });
   test("Garmin preserves both toggle choices and follows duration corrections", async () => {
     const external = { ...workout, title: "CrossFit", description: "avg HR 135", source: "Garmin", external_id: "toggle-test" };
     await upsertExternalWorkout(external);
-    const [w] = await listWorkoutsForRange("2026-10-22", "2026-10-28");
-    expect(diaryZone2Minutes(w!)).toBeNull();
-    await setWorkoutZone2(w!.id, true);
+    const w = at(await listWorkoutsForRange("2026-10-22", "2026-10-28"), 0);
+    expect(diaryZone2Minutes(w)).toBeNull();
+    await setWorkoutZone2(w.id, true);
     await upsertExternalWorkout({ ...external, duration_min: 65 });
-    expect(diaryZone2Minutes((await getWorkout(w!.id))!)).toBe(65);
-    await setWorkoutZone2(w!.id, false);
+    expect(diaryZone2Minutes(must(await getWorkout(w.id), "workout"))).toBe(65);
+    await setWorkoutZone2(w.id, false);
     await upsertExternalWorkout({ ...external, title: "Zone 2 ride", duration_min: 70 });
-    expect(diaryZone2Minutes((await getWorkout(w!.id))!)).toBe(0);
+    expect(diaryZone2Minutes(must(await getWorkout(w.id), "workout"))).toBe(0);
   });
   test("enabling requires duration and only changes the Zone 2 field", async () => {
     const id = await addWorkout({ ...workout, duration_min: null });
     await expect(setWorkoutZone2(id, true)).rejects.toThrow("duration");
     await setWorkoutZone2(id, false);
-    expect((await getWorkout(id))!.zone2_min).toBe(0);
-    expect((await getWorkout(id))!.title).toBe(workout.title);
-    expect((await getWorkout(id))!.calories_burned).toBe(workout.calories_burned);
-    await expect(setWorkoutZone2(-1, true)).rejects.toThrow();
+    expect(must(await getWorkout(id), "workout").zone2_min).toBe(0);
+    expect(must(await getWorkout(id), "workout").title).toBe(workout.title);
+    expect(must(await getWorkout(id), "workout").calories_burned).toBe(workout.calories_burned);
+    await expect(setWorkoutZone2("no-such-workout", true)).rejects.toThrow();
   });
   test("the selected view scales targets, including four weekly targets for 24 days", () => {
     expect(exerciseTarget(300, 7)).toBe(300);
@@ -131,7 +132,7 @@ describe("rolling exercise goals", () => {
     expect(exerciseProgress(recent, 300).minutes).toBe(90);
     expect(exerciseProgress(longer, 1200).minutes).toBe(180);
     expect(exerciseProgress(historical, 300).minutes).toBe(45);
-    await updateWorkout({ ...historical[0]!, title: "Strength training" });
+    await updateWorkout({ ...at(historical, 0), title: "Strength training" });
     expect(exerciseProgress(await listWorkoutsForRange("2026-10-15", "2026-10-21"), 300).minutes).toBe(0);
   });
   test("target persists and old undo snapshots still load", async () => {

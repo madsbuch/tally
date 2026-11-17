@@ -24,3 +24,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }
+
+[lints.rust]
+# No unsafe Rust anywhere in Tally; see CLAUDE.md.
+unsafe_code = "forbid"

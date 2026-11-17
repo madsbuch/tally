@@ -1,3 +1,4 @@
+import { must } from "./must";
 /**
  * What's in you right now, from what you've logged.
  *
@@ -122,7 +123,7 @@ export function simulate(
   let i = 0;
   const out: Point[] = [];
   for (; t <= toMs; t += stepMs) {
-    while (i < sorted.length && sorted[i]!.at <= t) gut += sorted[i++]!.amount;
+    for (let d = sorted[i]; d && d.at <= t; d = sorted[++i]) gut += d.amount;
     if (t >= fromMs) out.push({ t, amount: blood });
     const moved = gut * absorbed;
     gut -= moved;
@@ -219,7 +220,7 @@ export const VITAMIN_D_ENOUGH = 50;
 export const VITAMIN_D_TARGET = 75;
 
 export function vitaminDBand(nmol: number): VitaminDBand {
-  return VITAMIN_D_BANDS.find((b) => nmol < b.upTo) ?? VITAMIN_D_BANDS[VITAMIN_D_BANDS.length - 1]!;
+  return VITAMIN_D_BANDS.find((b) => nmol < b.upTo) ?? must(VITAMIN_D_BANDS[VITAMIN_D_BANDS.length - 1], "band");
 }
 
 function dayOfYear(ms: number): number {

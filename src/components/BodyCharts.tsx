@@ -119,7 +119,7 @@ export function LevelCurve({
   const nowY = nowPoint ? (y(nowPoint.amount) / VB_H) * 100 : 100;
 
   return (
-    <div className="level-chart" style={{ ["--level" as string]: color }}>
+    <div className="level-chart" style={{ "--level": color }}>
       <div className="level-plot">
         <svg viewBox={`0 0 ${VB_W} ${VB_H}`} preserveAspectRatio="none" aria-hidden>
           {threshold != null && (
@@ -270,7 +270,7 @@ export function StoreBar({
     .map((v, i) => `${((i / Math.max(1, series.length - 1)) * 100).toFixed(1)},${yOf(v).toFixed(1)}`)
     .join(" ");
   return (
-    <div style={{ ["--level" as string]: color }}>
+    <div style={{ "--level": color }}>
       <div className="tank-wrap">
         <div className="tank">
           <div className="tank-fill" style={{ width: `${Math.min(1, Math.max(0, shown)) * 100}%` }} />
@@ -360,7 +360,7 @@ export function BandGauge({
     })
     .filter((b) => b.to > b.from);
   return (
-    <div style={{ ["--level" as string]: TONE_COLOR[band.tone] }}>
+    <div style={{ "--level": TONE_COLOR[band.tone] }}>
       <div className="tank-wrap">
         <div className="tank band-tank">
           {segs.map((b) => (

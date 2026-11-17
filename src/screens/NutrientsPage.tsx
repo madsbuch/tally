@@ -15,6 +15,7 @@ import {
   REFERENCE_INTAKES,
   formatAmount,
   netCarbs,
+  nutrientDef,
   omegaRatio,
   scaleNutrients,
   sumNutrients,
@@ -74,6 +75,7 @@ const SPAN_OPTIONS: { value: Span; label: string }[] = [
   { value: "twentyFourDays", label: "Last 24 days" },
 ];
 
+const CARB_ROW_KEYS: readonly NutrientKey[] = ["carbs_g", "fiber_g", "sugar_g"];
 const MACRO_ROW_KEYS: NutrientKey[] = [
   "protein_g",
   "carbs_g",
@@ -558,8 +560,8 @@ export default function NutrientsPage() {
             </div>
 
             <div className="nutrient-grid" style={{ marginTop: 12 }}>
-              {(["carbs_g", "fiber_g", "sugar_g"] as NutrientKey[]).map((key) => {
-                const def = NUTRIENT_DEFS.find((d) => d.key === key)!;
+              {CARB_ROW_KEYS.map((key) => {
+                const def = nutrientDef(key);
                 const value = foodPerDay[key];
                 return (
                   <div key={key} className="nutrient-row">
@@ -602,7 +604,7 @@ export default function NutrientsPage() {
             </div>
             <div className="nutrient-grid">
               {MACRO_ROW_KEYS.map((key) => {
-                const def = NUTRIENT_DEFS.find((d) => d.key === key)!;
+                const def = nutrientDef(key);
                 const value = shown[key];
                 return (
                   <div key={key} className="nutrient-row">

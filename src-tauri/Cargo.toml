@@ -59,3 +59,7 @@ tauri-plugin-barcode-scanner = "~2.4.6"
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 futures-core = "0.3"
+
+[lints.rust]
+# No unsafe Rust anywhere in Tally; see CLAUDE.md.
+unsafe_code = "forbid"

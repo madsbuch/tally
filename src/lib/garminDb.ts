@@ -55,7 +55,7 @@ const TITLE_CASE = (key: string) =>
   key
     .split("_")
     .filter(Boolean)
-    .map((w, i) => (i === 0 ? w[0]!.toUpperCase() + w.slice(1) : w))
+    .map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w))
     .join(" ");
 
 /** "Running · 5.3 km · avg HR 142" — like the Health Connect sync's. */

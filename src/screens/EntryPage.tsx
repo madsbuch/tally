@@ -606,18 +606,17 @@ export default function EntryPage() {
             {NUTRIENT_DEFS.filter(
               (d) =>
                 showAll || BASE_KEYS.includes(d.key) || meal.nutrients[d.key] != null,
-            ).map((d) => (
-              <InfoRow
-                key={d.key}
-                label={d.label}
-                value={
-                  meal.nutrients[d.key] != null
-                    ? `${numToInput(meal.nutrients[d.key] as number)} ${d.unit}`
-                    : "–"
-                }
-                onClick={() => setEditing({ field: "nutrient", key: d.key })}
-              />
-            ))}
+            ).map((d) => {
+              const amount = meal.nutrients[d.key];
+              return (
+                <InfoRow
+                  key={d.key}
+                  label={d.label}
+                  value={amount != null ? `${numToInput(amount)} ${d.unit}` : "–"}
+                  onClick={() => setEditing({ field: "nutrient", key: d.key })}
+                />
+              );
+            })}
           </div>
           <button
             className="btn btn-ghost btn-sm btn-block"
@@ -994,7 +993,7 @@ function FieldEditor({
             reading?.note ??
             perf?.note ??
             "")
-          : "") as string,
+          : ""),
   );
   const [date, setDate] = useState(
     () =>

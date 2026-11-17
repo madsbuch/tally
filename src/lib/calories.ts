@@ -31,6 +31,7 @@ import {
 } from "./db";
 import { dayOf, shiftDay } from "./daystamp";
 import { dayTarget, loadGoalSettings, periodTarget } from "./goals";
+import { isOneOf } from "./guards";
 
 export type CalorieFamily = "in" | "out" | "budget" | "balance";
 
@@ -84,6 +85,8 @@ export const CALORIE_FIGURE_KEYS: readonly CalorieFigure[] = CALORIE_FIGURES.map
   (f) => f.key,
 );
 
+const CALORIE_FAMILIES: readonly CalorieFamily[] = ["in", "out", "budget", "balance"];
+
 const FAMILY_LABELS: Record<CalorieFamily, string> = {
   in: "Energy in",
   out: "Energy out",
@@ -93,8 +96,7 @@ const FAMILY_LABELS: Record<CalorieFamily, string> = {
 
 /** The taxonomy, grouped by family, as the model reads it. */
 export function describeCalorieFigures(): string {
-  return (Object.keys(FAMILY_LABELS) as CalorieFamily[])
-    .map(
+  return CALORIE_FAMILIES.map(
       (family) =>
         `${FAMILY_LABELS[family]}: ` +
         CALORIE_FIGURES.filter((f) => f.family === family)
@@ -115,7 +117,7 @@ export const CALORIES_TOOL_DESCRIPTION = [
 ].join("\n");
 
 export function isCalorieFigure(x: unknown): x is CalorieFigure {
-  return typeof x === "string" && (CALORIE_FIGURE_KEYS as readonly string[]).includes(x);
+  return isOneOf(CALORIE_FIGURE_KEYS, x);
 }
 
 /** The `figures` tool argument: absent or empty means all of them. */

@@ -137,6 +137,12 @@ function shortDate(day: string): string {
 
 type TotalsPeriod = "day" | "week" | "month";
 
+const PERIOD_OPTIONS: readonly { value: TotalsPeriod; label: string }[] = [
+  { value: "day", label: "Day" },
+  { value: "week", label: "Week" },
+  { value: "month", label: "Month" },
+];
+
 /** Monday-to-Sunday week containing `day`, both bounds inclusive. */
 function weekRangeOf(day: string): { start: string; end: string } {
   const [y = 0, m = 1, d = 1] = day.split("-").map(Number);
@@ -1027,11 +1033,11 @@ export default function DiaryPage() {
       listCapturesForDay(day),
       // A night is filed under the morning it ended on, so it belongs to this
       // day's timeline even though most of it happened yesterday.
-      listSleepForRange(day, day).catch(() => [] as SleepSession[]),
-      listStateLogsForDay(day).catch(() => [] as StateLog[]),
-      listBloodReadingsForRange(day, day).catch(() => [] as BloodReading[]),
+      listSleepForRange(day, day).catch((): SleepSession[] => []),
+      listStateLogsForDay(day).catch((): StateLog[] => []),
+      listBloodReadingsForRange(day, day).catch((): BloodReading[] => []),
       getGlucoseUnit().catch((): GlucoseUnit => "mmol"),
-      listPerformanceLogsForRange(day, day).catch(() => [] as PerformanceLog[]),
+      listPerformanceLogsForRange(day, day).catch((): PerformanceLog[] => []),
       isDayIncomplete(day).catch(() => false),
     ])
       .then(([e, w, s, c, sl, st, br, gu, pl, inc]) => {
@@ -1272,9 +1278,9 @@ export default function DiaryPage() {
     period === "day"
       ? "Daily totals"
       : period === "week"
-        ? containsToday
+        ? containsToday || !range
           ? "This week"
-          : `Week of ${shortDate(range!.start)}`
+          : `Week of ${shortDate(range.start)}`
         : containsToday
           ? "This month"
           : monthTitle(day);
@@ -1383,13 +1389,7 @@ export default function DiaryPage() {
               {totalsTitle}
             </div>
             <div className="seg" style={{ padding: 2, gap: 2 }}>
-              {(
-                [
-                  { value: "day", label: "Day" },
-                  { value: "week", label: "Week" },
-                  { value: "month", label: "Month" },
-                ] as { value: TotalsPeriod; label: string }[]
-              ).map((o) => (
+              {PERIOD_OPTIONS.map((o) => (
                 <button
                   key={o.value}
                   className={`seg-item${period === o.value ? " seg-item-active" : ""}`}

@@ -200,7 +200,7 @@ export default function ProgressPhotosPage() {
     }
   }
 
-  const first = photos && photos.length > 0 ? photos[photos.length - 1]! : null;
+  const first = photos ? (photos[photos.length - 1] ?? null) : null;
 
   return (
     <div className="page page-with-fab">

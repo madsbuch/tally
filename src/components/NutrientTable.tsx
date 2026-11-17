@@ -15,9 +15,12 @@ export default function NutrientTable({ nutrients }: { nutrients: Nutrients }) {
   )
     .map((s) => ({
       ...s,
-      defs: NUTRIENT_DEFS.filter((d) => d.group === s.group && nutrients[d.key] != null),
+      rows: NUTRIENT_DEFS.filter((d) => d.group === s.group).flatMap((d) => {
+        const value = nutrients[d.key];
+        return value == null ? [] : [{ def: d, value }];
+      }),
     }))
-    .filter((s) => s.defs.length > 0);
+    .filter((s) => s.rows.length > 0);
 
   if (sections.length === 0) {
     return <div className="muted small">No nutrient data.</div>;
@@ -31,10 +34,10 @@ export default function NutrientTable({ nutrients }: { nutrients: Nutrients }) {
             {s.title}
           </div>
           <div className="nutrient-grid">
-            {s.defs.map((d) => (
+            {s.rows.map(({ def: d, value }) => (
               <div key={d.key} className="nutrient-row">
                 <span className="n-label">{d.label}</span>
-                <span className="n-value">{formatAmount(d.key, nutrients[d.key]!)}</span>
+                <span className="n-value">{formatAmount(d.key, value)}</span>
               </div>
             ))}
           </div>

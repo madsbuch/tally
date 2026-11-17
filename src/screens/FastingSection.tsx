@@ -195,8 +195,8 @@ function StageStrip({ elapsedMs }: { elapsedMs: number | null }) {
   const firstScroll = useRef(true);
   useEffect(() => {
     const strip = stripRef.current;
-    const el = strip?.children[activeIdx] as HTMLElement | undefined;
-    if (!strip || !el) return;
+    const el = strip?.children[activeIdx];
+    if (!strip || !(el instanceof HTMLElement)) return;
     strip.scrollTo({
       left: el.offsetLeft - (strip.clientWidth - el.clientWidth) / 2,
       behavior: firstScroll.current ? "auto" : "smooth",

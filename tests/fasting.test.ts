@@ -1,4 +1,6 @@
 import { beforeAll, describe, expect, test } from "bun:test";
+import { rowsOf } from "./helpers";
+import { z } from "zod";
 import { Database } from "bun:sqlite";
 import { readFileSync } from "node:fs";
 import { sqlite } from "./testDb";
@@ -85,9 +87,10 @@ describe("migration 0030", () => {
 
     mem.exec(read(last));
 
-    const notes = mem
-      .query("SELECT title, fast_ok_note AS note FROM food_entries ORDER BY eaten_at")
-      .all() as { title: string; note: string | null }[];
+    const notes = rowsOf(
+      z.object({ title: z.string(), note: z.string().nullable() }),
+      mem.query("SELECT title, fast_ok_note AS note FROM food_entries ORDER BY eaten_at").all(),
+    );
     expect(notes.map((n) => n.note)).toEqual([
       "Supplement",
       "Supplement",

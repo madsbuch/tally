@@ -1,4 +1,6 @@
 import type { NutrientKey, Nutrients } from "./types";
+import { must } from "./must";
+import { fieldsOf } from "./guards";
 
 export interface NutrientDef {
   key: NutrientKey;
@@ -95,14 +97,15 @@ export const REFERENCE_INTAKES: Partial<Record<NutrientKey, number>> = {
 const DEF_BY_KEY = new Map(NUTRIENT_DEFS.map((d) => [d.key, d]));
 
 export function nutrientDef(key: NutrientKey): NutrientDef {
-  return DEF_BY_KEY.get(key)!;
+  return must(DEF_BY_KEY.get(key), `nutrient ${key}`);
 }
 
 /** Sum a list of sparse nutrient maps into one. */
 export function sumNutrients(list: Nutrients[]): Nutrients {
   const out: Nutrients = {};
   for (const n of list) {
-    for (const [k, v] of Object.entries(n) as [NutrientKey, number][]) {
+    for (const k of NUTRIENT_KEYS) {
+      const v = n[k];
       if (typeof v === "number" && isFinite(v)) {
         out[k] = (out[k] ?? 0) + v;
       }
@@ -114,7 +117,8 @@ export function sumNutrients(list: Nutrients[]): Nutrients {
 /** Multiply every amount by a factor (e.g. supplement dose multiplier). */
 export function scaleNutrients(n: Nutrients, factor: number): Nutrients {
   const out: Nutrients = {};
-  for (const [k, v] of Object.entries(n) as [NutrientKey, number][]) {
+  for (const k of NUTRIENT_KEYS) {
+    const v = n[k];
     if (typeof v === "number" && isFinite(v)) out[k] = v * factor;
   }
   return out;
@@ -126,9 +130,10 @@ export function scaleNutrients(n: Nutrients, factor: number): Nutrients {
  */
 export function sanitizeNutrients(raw: unknown): Nutrients {
   const out: Nutrients = {};
-  if (raw && typeof raw === "object") {
+  const fields = fieldsOf(raw);
+  if (fields) {
     for (const def of NUTRIENT_DEFS) {
-      const v = (raw as Record<string, unknown>)[def.key];
+      const v = fields[def.key];
       const num = typeof v === "string" ? parseFloat(v) : v;
       if (typeof num === "number" && isFinite(num) && num >= 0) {
         out[def.key] = num;

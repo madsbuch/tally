@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import { at, must } from "./helpers";
 import { Database } from "bun:sqlite";
 import { readFileSync } from "node:fs";
 import { sqlite } from "./testDb";
@@ -15,7 +16,7 @@ const workout = {
 };
 const startMs = Date.parse(workout.performed_at);
 
-async function expectCardio(id: number, avgHr: number | null, cardio: boolean, byHand: boolean) {
+async function expectCardio(id: string, avgHr: number | null, cardio: boolean, byHand: boolean) {
   expect(await getWorkout(id)).toMatchObject({ avg_hr: avgHr, cardio, cardio_by_hand: byHand });
   expect(sqlite.query("SELECT avg_hr, cardio, cardio_by_hand FROM workouts WHERE id = ?").get(id)).toEqual({
     avg_hr: avgHr, cardio: cardio ? 1 : 0, cardio_by_hand: byHand ? 1 : 0,
@@ -32,8 +33,11 @@ function garminActivity(id: number, avgHr: number | null) {
     hrTimeInZone_2: 3600,
   };
   const { activities, raws } = parseGarminActivities([raw]);
-  const activity = activities[0]!;
-  return { activity: { ...activity, id: activity.id!, startMs: activity.startMs! }, raw: raws[0]! };
+  const activity = at(activities, 0);
+  return {
+    activity: { ...activity, id: must(activity.id, "activity id"), startMs: must(activity.startMs, "activity start") },
+    raw: at(raws, 0),
+  };
 }
 
 beforeEach(() => {
@@ -97,9 +101,9 @@ describe("cardio from average heart rate", () => {
   test("automatic workouts follow HR edits while explicit initial choices remain manual", async () => {
     const id = await addWorkout({ ...workout, avg_hr: 125 });
     await expectCardio(id, 125, false, false);
-    await updateWorkout({ ...(await getWorkout(id))!, avg_hr: 125.1 });
+    await updateWorkout({ ...must(await getWorkout(id), "workout"), avg_hr: 125.1 });
     await expectCardio(id, 125.1, true, false);
-    await updateWorkout({ ...(await getWorkout(id))!, avg_hr: null });
+    await updateWorkout({ ...must(await getWorkout(id), "workout"), avg_hr: null });
     await expectCardio(id, null, false, false);
     const manualOn = await addWorkout({ ...workout, cardio: true });
     await expectCardio(manualOn, null, true, true);
@@ -111,22 +115,22 @@ describe("cardio from average heart rate", () => {
 
   test("manual on and off survive stale edits until explicitly reset to automatic", async () => {
     const id = await addWorkout({ ...workout, avg_hr: 150 });
-    const beforeToggle = (await getWorkout(id))!;
+    const beforeToggle = must(await getWorkout(id), "workout");
     await setWorkoutCardio(id, false);
     await updateWorkout({ ...beforeToggle, title: "Corrected ride", avg_hr: 151 });
     await expectCardio(id, 151, false, true);
-    expect(cardioMinutes([(await getWorkout(id))!])).toBe(0);
+    expect(cardioMinutes([must(await getWorkout(id), "workout")])).toBe(0);
     await setWorkoutCardio(id, null);
     await expectCardio(id, 151, true, false);
 
-    const beforeOn = (await getWorkout(id))!;
+    const beforeOn = must(await getWorkout(id), "workout");
     await setWorkoutCardio(id, true);
     await updateWorkout({ ...beforeOn, avg_hr: null, duration_min: 65 });
     await expectCardio(id, null, true, true);
-    expect(cardioMinutes([(await getWorkout(id))!])).toBe(65);
+    expect(cardioMinutes([must(await getWorkout(id), "workout")])).toBe(65);
     await setWorkoutCardio(id, null);
     await expectCardio(id, null, false, false);
-    await updateWorkout({ ...(await getWorkout(id))!, avg_hr: 125.1 });
+    await updateWorkout({ ...must(await getWorkout(id), "workout"), avg_hr: 125.1 });
     await expectCardio(id, 125.1, true, false);
   });
 
@@ -143,19 +147,19 @@ describe("cardio from average heart rate", () => {
     expect(rows[0]).toMatchObject({ avg_hr: 125, cardio: false, cardio_by_hand: false, duration_min: 65 });
     expect(cardioMinutes(rows)).toBe(0);
     await upsertExternalWorkout({ ...external, avg_hr: null });
-    expect(await getWorkout(rows[0]!.id)).toMatchObject({ avg_hr: null, cardio: false });
+    expect(await getWorkout(at(rows, 0).id)).toMatchObject({ avg_hr: null, cardio: false });
   });
 
   test("both manual choices survive Health Connect resync while HR and duration update", async () => {
     for (const choice of [true, false]) {
       const external = { ...workout, source: "Garmin", external_id: `hc-manual-${choice}` };
       await upsertExternalWorkout({ ...external, avg_hr: choice ? 150 : 120 });
-      const row = (await listWorkoutsForRange("2026-10-28", "2026-10-28")).find((w) => w.external_id === external.external_id)!;
+      const row = must((await listWorkoutsForRange("2026-10-28", "2026-10-28")).find((w) => w.external_id === external.external_id), "the workout");
       await setWorkoutCardio(row.id, choice);
       const correctedHr = choice ? 120 : 150;
       await upsertExternalWorkout({ ...external, avg_hr: correctedHr, duration_min: 70 });
       await expectCardio(row.id, correctedHr, choice, true);
-      expect(cardioMinutes([(await getWorkout(row.id))!])).toBe(choice ? 70 : 0);
+      expect(cardioMinutes([must(await getWorkout(row.id), "workout")])).toBe(choice ? 70 : 0);
       await setWorkoutCardio(row.id, null);
       await expectCardio(row.id, correctedHr, !choice, false);
     }
@@ -168,20 +172,20 @@ describe("cardio from average heart rate", () => {
     expect(row).toMatchObject({ avg_hr: 125.1, cardio: true });
     const corrected = garminActivity(8001, 125);
     expect(await linkGarminActivity(corrected.activity, corrected.raw)).toBe("updated");
-    expect(await getWorkout(row!.id)).toMatchObject({ avg_hr: 125, cardio: false, cardio_by_hand: false });
+    expect(await getWorkout(must(row, "the workout").id)).toMatchObject({ avg_hr: 125, cardio: false, cardio_by_hand: false });
   });
 
   test("both manual choices survive Garmin-owned updates with changed HR and duration", async () => {
     for (const [index, choice] of [true, false].entries()) {
       const first = garminActivity(8100 + index, choice ? 150 : 120);
       await linkGarminActivity(first.activity, first.raw);
-      const row = (await listWorkoutsForRange("2026-10-28", "2026-10-28")).find((w) => w.external_id === `garmin:${8100 + index}`)!;
+      const row = must((await listWorkoutsForRange("2026-10-28", "2026-10-28")).find((w) => w.external_id === `garmin:${8100 + index}`), "the workout");
       await setWorkoutCardio(row.id, choice);
       const corrected = garminActivity(8100 + index, choice ? 120 : 150);
       corrected.activity.durationSec = 4200;
       await linkGarminActivity(corrected.activity, corrected.raw);
       await expectCardio(row.id, corrected.activity.avgHr, choice, true);
-      expect(cardioMinutes([(await getWorkout(row.id))!])).toBe(choice ? 70 : 0);
+      expect(cardioMinutes([must(await getWorkout(row.id), "workout")])).toBe(choice ? 70 : 0);
     }
   });
 
@@ -195,7 +199,7 @@ describe("cardio from average heart rate", () => {
     expect(rows[0]).toMatchObject({ avg_hr: 125.1, cardio: true });
     // Health Connect re-reads it with its own average: Garmin's stays.
     await upsertExternalWorkout({ ...external, avg_hr: 125 });
-    expect(await getWorkout(rows[0]!.id)).toMatchObject({ avg_hr: 125.1, cardio: true });
+    expect(await getWorkout(at(rows, 0).id)).toMatchObject({ avg_hr: 125.1, cardio: true });
     expect(await linkGarminActivity(garmin.activity, garmin.raw)).toBe("updated");
     rows = await listWorkoutsForRange("2026-10-28", "2026-10-28");
     expect(rows).toHaveLength(1);
@@ -203,11 +207,11 @@ describe("cardio from average heart rate", () => {
     // Garmin without an average keeps the one there.
     const missing = garminActivity(8002, null);
     await linkGarminActivity(missing.activity, missing.raw);
-    expect(await getWorkout(rows[0]!.id)).toMatchObject({ avg_hr: 125.1, cardio: true });
+    expect(await getWorkout(at(rows, 0).id)).toMatchObject({ avg_hr: 125.1, cardio: true });
     // Garmin's own correction does come through.
     const corrected = garminActivity(8002, 125);
     await linkGarminActivity(corrected.activity, corrected.raw);
-    expect(await getWorkout(rows[0]!.id)).toMatchObject({ avg_hr: 125, cardio: false });
+    expect(await getWorkout(at(rows, 0).id)).toMatchObject({ avg_hr: 125, cardio: false });
   });
 
   test("Garmin linking and later refreshes preserve either manual choice on Health Connect rows", async () => {
@@ -215,7 +219,7 @@ describe("cardio from average heart rate", () => {
       const activityId = 8200 + index;
       const external = { ...workout, source: "Garmin", external_id: `hc-manual-link-${choice}`, source_record_id: String(activityId) };
       await upsertExternalWorkout(external);
-      const row = (await listWorkoutsForRange("2026-10-28", "2026-10-28")).find((w) => w.external_id === external.external_id)!;
+      const row = must((await listWorkoutsForRange("2026-10-28", "2026-10-28")).find((w) => w.external_id === external.external_id), "the workout");
       await setWorkoutCardio(row.id, choice);
       const garmin = garminActivity(activityId, choice ? 120 : 150);
       expect(await linkGarminActivity(garmin.activity, garmin.raw)).toBe("exact");
@@ -240,7 +244,7 @@ describe("cardio from average heart rate", () => {
       const activityId = 8300 + index;
       const garmin = garminActivity(activityId, choice ? 120 : 150);
       await linkGarminActivity(garmin.activity, garmin.raw);
-      const row = (await listWorkoutsForRange("2026-10-28", "2026-10-28")).find((w) => w.external_id === `garmin:${activityId}`)!;
+      const row = must((await listWorkoutsForRange("2026-10-28", "2026-10-28")).find((w) => w.external_id === `garmin:${activityId}`), "the workout");
       await setWorkoutCardio(row.id, choice);
       const hcId = `hc-adopt-manual-${choice}`;
       expect(await adoptSyncedWorkout(hcId, String(activityId), { startMs, endMs: startMs + 3_600_000 })).toBe("adopted");

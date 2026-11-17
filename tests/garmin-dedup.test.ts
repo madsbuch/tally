@@ -1,4 +1,6 @@
 import { beforeAll, describe, expect, test } from "bun:test";
+import { z } from "zod";
+import { at, must, rowsOf } from "./helpers";
 import { sqlite } from "./testDb";
 
 // The app's SQL runs in Rust (tauri-plugin-sql); here the same statements run
@@ -35,7 +37,7 @@ function activity(id: string, startMs: number, durationMin: number, extra: Recor
     ...extra,
   };
   const { activities, raws } = parseGarminActivities([raw]);
-  return { a: activities[0]!, raw: raws[0]! };
+  return { a: at(activities, 0), raw: at(raws, 0) };
 }
 
 async function hcWorkout(id: string, startMs: number, durationMin: number, sourceRecordId: string | null = null, source = "Garmin") {
@@ -55,7 +57,9 @@ async function hcWorkout(id: string, startMs: number, durationMin: number, sourc
   });
 }
 
-const allWorkouts = () => sqlite.query("SELECT * FROM workouts ORDER BY id").all() as Record<string, unknown>[];
+/** Workout rows as stored: the id and external id typed, the rest left to the assertions. */
+const WorkoutRow = z.looseObject({ id: z.string(), external_id: z.string().nullable() });
+const allWorkouts = () => rowsOf(WorkoutRow, sqlite.query("SELECT * FROM workouts ORDER BY id").all());
 
 describe("Garmin ↔ Health Connect dedup", () => {
   test("an activity attaches to the Health Connect workout, keeping user edits", async () => {
@@ -65,12 +69,13 @@ describe("Garmin ↔ Health Connect dedup", () => {
     expect(await g.linkGarminActivity(a, raw)).toBe("time");
     const ws = allWorkouts();
     expect(ws.length).toBe(1);
-    expect(ws[0]!["cardio"]).toBe(1); // A deliberate choice survives missing HR and resync.
-    expect(ws[0]!["cardio_by_hand"]).toBe(1);
-    expect(ws[0]!["icon"]).toBe("run");
-    const details = await g.garminDetailsForWorkouts([ws[0]!["id"] as number]);
-    expect(details.get(ws[0]!["id"] as number)?.aerobicTe).toBe(3.2);
-    expect(details.get(ws[0]!["id"] as number)?.zoneSecs).toEqual([0, 1200, 0, 0, 0]);
+    const w = at(ws, 0);
+    expect(w["cardio"]).toBe(1); // A deliberate choice survives missing HR and resync.
+    expect(w["cardio_by_hand"]).toBe(1);
+    expect(w["icon"]).toBe("run");
+    const details = await g.garminDetailsForWorkouts([w.id]);
+    expect(details.get(w.id)?.aerobicTe).toBe(3.2);
+    expect(details.get(w.id)?.zoneSecs).toEqual([0, 1200, 0, 0, 0]);
     // Again: just refreshed.
     expect(await g.linkGarminActivity(a, raw)).toBe("updated");
     expect(allWorkouts().length).toBe(1);
@@ -80,7 +85,7 @@ describe("Garmin ↔ Health Connect dedup", () => {
     const start = T + 26 * 60 * MIN;
     const { a, raw } = activity("222", start, 30);
     expect(await g.linkGarminActivity(a, raw)).toBe("created");
-    let row = allWorkouts().find((w) => w["external_id"] === "garmin:222")!;
+    let row = must(allWorkouts().find((w) => w.external_id === "garmin:222"), "the Garmin-created workout");
     expect(row["calories_burned"]).toBe(440); // active: 500 − 60 BMR
     expect(row["day"]).toBe("2026-10-02");
     expect(row["tz_offset_min"]).toBe(120);
@@ -88,7 +93,8 @@ describe("Garmin ↔ Health Connect dedup", () => {
     await g.adoptSyncedWorkout("hc-2", null, { startMs: start + 5_000, endMs: start + 30 * MIN });
     await hcWorkout("hc-2", start + 5_000, 30);
     expect(allWorkouts().length).toBe(2);
-    row = allWorkouts().find((w) => w["id"] === row["id"])!;
+    const createdId = row.id;
+    row = must(allWorkouts().find((w) => w.id === createdId), "the same workout");
     expect(row["external_id"]).toBe("hc-2");
     expect(await g.linkGarminActivity(a, raw)).toBe("updated");
     expect(allWorkouts().length).toBe(2);
@@ -103,7 +109,7 @@ describe("Garmin ↔ Health Connect dedup", () => {
   });
 
   test("a deleted workout isn't brought back", async () => {
-    const id = allWorkouts().find((w) => w["external_id"] === "hc-1")!["id"] as number;
+    const id = must(allWorkouts().find((w) => w.external_id === "hc-1"), "workout hc-1").id;
     await db.deleteWorkout(id);
     const { a, raw } = activity("111", T + 20_000, 44.5);
     expect(await g.linkGarminActivity(a, raw)).toBe("skipped");
@@ -141,7 +147,7 @@ describe("Garmin ↔ Health Connect dedup", () => {
     await g.upsertGarminDay({ day: "2026-09-30", steps: 7000, hrvLastNight: 61, ...base });
     await g.applyGarminMetrics();
     const m = await db.listHealthMetricsForRange("2026-09-30", "2026-10-01");
-    const oct1 = m.find((r) => r.day === "2026-10-01")!;
+    const oct1 = must(m.find((r) => r.day === "2026-10-01"), "Oct 1");
     expect(oct1.steps).toBe(9100);
     expect(oct1.resting_hr).toBe(48);
     expect(oct1.calories_total).toBe(2731);
@@ -150,13 +156,13 @@ describe("Garmin ↔ Health Connect dedup", () => {
     // Health Connect syncs again: Garmin's numbers stay, even before the
     // Garmin pass runs; what Garmin doesn't have is Health Connect's.
     await db.upsertHealthMetric({ ...hc, resting_hr: 50, calories_total: 2400, spo2_pct: 97 });
-    const again = (await db.listHealthMetricsForRange("2026-10-01", "2026-10-01"))[0]!;
+    const again = at(await db.listHealthMetricsForRange("2026-10-01", "2026-10-01"), 0);
     expect(again).toMatchObject({ steps: 9100, resting_hr: 48, calories_total: 2731, spo2_pct: 97 });
 
     // A full resync wipes Health Connect's days and writes them anew.
     sqlite.exec("DELETE FROM health_metrics WHERE day = '2026-10-01'");
     await db.upsertHealthMetric(hc);
-    const rewritten = (await db.listHealthMetricsForRange("2026-10-01", "2026-10-01"))[0]!;
+    const rewritten = at(await db.listHealthMetricsForRange("2026-10-01", "2026-10-01"), 0);
     expect(rewritten).toMatchObject({ steps: 9100, resting_hr: 48, calories_total: 2731 });
 
     // Nothing new from either: nothing is written (no version for sync).
@@ -169,7 +175,7 @@ describe("Garmin ↔ Health Connect dedup", () => {
     // Garmin's number changes (the day went on): it replaces the old one.
     await g.upsertGarminDay({ day: "2026-10-01", caloriesTotal: 2950, ...base });
     await g.applyGarminMetrics();
-    const later = (await db.listHealthMetricsForRange("2026-10-01", "2026-10-01"))[0]!;
+    const later = at(await db.listHealthMetricsForRange("2026-10-01", "2026-10-01"), 0);
     expect(later).toMatchObject({ steps: 9100, calories_total: 2950, spo2_pct: null });
   });
 
@@ -188,7 +194,7 @@ describe("Garmin ↔ Health Connect dedup", () => {
     expect(await g.applyGarminSleep()).toBe(1);
     expect(await g.applyGarminSleep()).toBe(0);
     await g.adoptSyncedSleep("hc-night", { startMs: start + 15 * MIN, endMs: end });
-    const rows = sqlite.query("SELECT external_id, day FROM sleep_sessions").all() as Record<string, unknown>[];
+    const rows = sqlite.query("SELECT external_id, day FROM sleep_sessions").all();
     expect(rows).toEqual([{ external_id: "hc-night", day: "2026-10-10" }]);
     expect(await g.applyGarminSleep()).toBe(0);
   });
@@ -197,7 +203,7 @@ describe("Garmin ↔ Health Connect dedup", () => {
     const at = new Date().toISOString();
     await g.upsertGarminDay({ day: "2026-10-20", readinessScore: 70, trainingStatus: "PRODUCTIVE", raw: { readiness: [1] }, fetchedAt: at });
     await g.upsertGarminDay({ day: "2026-10-20", steps: 5000, bodyBatteryHigh: 80, raw: { dailySummary: { a: 1 } }, fetchedAt: at });
-    const [row] = sqlite.query("SELECT steps, readiness_score, training_status, body_battery_high FROM garmin_days WHERE day = '2026-10-20'").all() as Record<string, unknown>[];
+    const [row] = sqlite.query("SELECT steps, readiness_score, training_status, body_battery_high FROM garmin_days WHERE day = '2026-10-20'").all();
     expect(row).toMatchObject({ steps: 5000, readiness_score: 70, training_status: "PRODUCTIVE", body_battery_high: 80 });
     const keys = sqlite.query("SELECT key FROM garmin_days, json_each(garmin_days.raw) WHERE day = '2026-10-20' ORDER BY key").all();
     expect(keys).toEqual([{ key: "dailySummary" }, { key: "readiness" }]);

@@ -18,17 +18,33 @@ import { Database } from "bun:sqlite";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { z } from "zod";
 import { legacyId } from "../src/lib/ids";
+import { must } from "../src/lib/must";
+import { parseSqlRows } from "../src/lib/schemas";
 
 type Row = Record<string, unknown>;
+/** What the synthetic seeding binds into an INSERT. */
+type Binding = string | number | null | Uint8Array;
+
+/** Rows from a query, checked against the shape the query promises. */
+function rowsOf<T extends z.ZodType>(schema: T, raw: unknown): z.infer<T>[] {
+  return z.array(schema).parse(raw);
+}
+/** One row from a query, checked the same way. */
+function rowOf<T extends z.ZodType>(schema: T, raw: unknown): z.infer<T> {
+  return schema.parse(raw);
+}
+const NameRow = z.object({ name: z.string() });
+const CountRow = z.object({ n: z.number() });
 
 const root = new URL("..", import.meta.url);
 const rust = readFileSync(new URL("src-tauri/src/lib.rs", root), "utf8");
 const migrations = [...rust.matchAll(/version: (\d+),\s*description: "([^"]+)",\s*sql: include_str!\("\.\.\/migrations\/([^"]+)"\)/g)].map(
-  (m) => ({ version: Number(m[1]), description: m[2]!, file: m[3]! }),
+  (m) => ({ version: Number(m[1]), description: must(m[2], "migration description"), file: must(m[3], "migration file") }),
 );
 const sqlOf = (file: string) => readFileSync(new URL(`src-tauri/migrations/${file}`, root), "utf8");
-const UUID_VERSION = migrations.find((m) => m.file === "0038_uuid_ids.sql")!.version;
+const UUID_VERSION = must(migrations.find((m) => m.file === "0038_uuid_ids.sql"), "0038 migration").version;
 
 /** Columns 0038 re-spells from integers to ids (besides `id`). */
 const REF_COLUMNS = new Set([
@@ -70,7 +86,7 @@ db.exec("PRAGMA foreign_keys = ON");
 
 const applied = new Set<number>(
   tableExists("_sqlx_migrations")
-    ? (db.query("SELECT version FROM _sqlx_migrations WHERE success").all() as { version: number }[]).map((r) => r.version)
+    ? rowsOf(z.object({ version: z.number() }), db.query("SELECT version FROM _sqlx_migrations WHERE success").all()).map((r) => r.version)
     : [],
 );
 const pending = migrations.filter((m) => !applied.has(m.version));
@@ -95,12 +111,12 @@ if (preCheck.length) {
   fail(`The database already has ${preCheck.length} broken reference(s) before upgrading: ${JSON.stringify(preCheck.slice(0, 5))}`);
 }
 
-const tables = (db.query(
+const tables = rowsOf(NameRow, db.query(
   "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> '_sqlx_migrations' ORDER BY name",
-).all() as { name: string }[]).map((t) => t.name);
+).all()).map((t) => t.name);
 
 const before = new Map<string, Row[]>();
-for (const t of tables) before.set(t, db.query(`SELECT * FROM "${t}"`).all() as Row[]);
+for (const t of tables) before.set(t, parseSqlRows(db.query(`SELECT * FROM "${t}"`).all()));
 const photoHashes = photoDigest();
 
 const dietValues = before.get("food_entries")?.filter((r) => r["diet"] != null).length ?? 0;
@@ -124,7 +140,7 @@ const tookMs = performance.now() - started;
 // After
 // ---------------------------------------------------------------------------
 
-const integrity = (db.query("PRAGMA integrity_check").all() as { integrity_check: string }[]).map((r) => r.integrity_check);
+const integrity = rowsOf(z.object({ integrity_check: z.string() }), db.query("PRAGMA integrity_check").all()).map((r) => r.integrity_check);
 if (integrity.join() !== "ok") fail(`integrity_check: ${integrity.join("; ")}`);
 const fk = db.query("PRAGMA foreign_key_check").all();
 if (fk.length) fail(`${fk.length} broken reference(s) after upgrading: ${JSON.stringify(fk.slice(0, 5))}`);
@@ -136,14 +152,14 @@ let rowsChecked = 0;
 let valuesChecked = 0;
 
 for (const t of tables) {
-  const old = before.get(t)!;
+  const old = must(before.get(t), `rows of ${t} before`);
   if (t === "settings") {
     checkSettings(old);
     continue;
   }
-  const now = db.query(`SELECT * FROM "${t}"`).all() as Row[];
+  const now = parseSqlRows(db.query(`SELECT * FROM "${t}"`).all());
   if (now.length !== old.length) fail(`${t}: ${old.length} rows before, ${now.length} after`);
-  const cols = (db.query(`PRAGMA table_info("${t}")`).all() as { name: string; pk: number }[]);
+  const cols = rowsOf(z.object({ name: z.string(), pk: z.number() }), db.query(`PRAGMA table_info("${t}")`).all());
   const pk = cols.filter((c) => c.pk > 0).map((c) => c.name);
   const keyOf = (r: Row) => pk.map((c) => String(r[c])).join("\u0000");
   const byKey = new Map(now.map((r) => [keyOf(r), r]));
@@ -168,9 +184,8 @@ for (const t of tables) {
       let want = v;
       if (t === "entry_messages" && c === "before_entry" && typeof v === "string") {
         // The undo snapshot's id is re-spelled inside the JSON; the rest is untouched.
-        want = (db.query("SELECT json_set(?, '$.id', ?) AS j").get(v, mapId(
-          (db.query("SELECT json_extract(?, '$.id') AS i").get(v) as { i: number }).i,
-        )) as { j: string }).j;
+        const oldId = rowOf(z.object({ i: z.number() }), db.query("SELECT json_extract(?, '$.id') AS i").get(v)).i;
+        want = rowOf(z.object({ j: z.string() }), db.query("SELECT json_set(?, '$.id', ?) AS j").get(v, mapId(oldId))).j;
       }
       if (!same(got[c], want)) fail(`${t} ${keyOf(expected)}.${c}: was ${show(want)}, now ${show(got[c])}`);
     }
@@ -179,12 +194,12 @@ for (const t of tables) {
 
 // Sync (migration 0039): every row already there must be recorded, or it
 // would never reach the vault's other devices.
-const synced = (db.query("SELECT tbl_name FROM sqlite_master WHERE type = 'trigger' AND name = 'sync_' || tbl_name || '_ai'").all() as { tbl_name: string }[]).map((r) => r.tbl_name);
+const synced = rowsOf(z.object({ tbl_name: z.string() }), db.query("SELECT tbl_name FROM sqlite_master WHERE type = 'trigger' AND name = 'sync_' || tbl_name || '_ai'").all()).map((r) => r.tbl_name);
 if (tableExists("sync_rows")) {
   if (synced.length < 30) fail(`only ${synced.length} tables are tracked for sync`);
   for (const t of synced) {
-    const rows = (db.query(`SELECT count(*) AS n FROM "${t}"`).get() as { n: number }).n;
-    const tracked = (db.query("SELECT count(*) AS n FROM sync_rows WHERE tbl = ? AND deleted = 0").get(t) as { n: number }).n;
+    const rows = rowOf(CountRow, db.query(`SELECT count(*) AS n FROM "${t}"`).get()).n;
+    const tracked = rowOf(CountRow, db.query("SELECT count(*) AS n FROM sync_rows WHERE tbl = ? AND deleted = 0").get(t)).n;
     if (rows !== tracked) fail(`${t}: ${rows} rows but ${tracked} recorded for sync`);
   }
   notes.push(`${synced.length} tables tracked for sync; every existing row recorded.`);
@@ -218,8 +233,8 @@ function report(): never {
 }
 
 function checkSettings(old: Row[]) {
-  const synced = new Map((db.query("SELECT key, value FROM settings").all() as Row[]).map((r) => [r["key"], r["value"]]));
-  const device = new Map((db.query("SELECT key, value FROM device_settings").all() as Row[]).map((r) => [r["key"], r["value"]]));
+  const synced = new Map(parseSqlRows(db.query("SELECT key, value FROM settings").all()).map((r) => [r["key"], r["value"]]));
+  const device = new Map(parseSqlRows(db.query("SELECT key, value FROM device_settings").all()).map((r) => [r["key"], r["value"]]));
   for (const o of old) {
     const key = String(o["key"]);
     const isDevice = DEVICE_KEYS.includes(key);
@@ -255,7 +270,7 @@ function tableExists(name: string): boolean {
 function photoDigest(): Map<string, string> {
   const out = new Map<string, string>();
   if (!tableExists("photos")) return out;
-  for (const r of db.query("SELECT filename, data FROM photos").all() as { filename: string; data: Uint8Array }[]) {
+  for (const r of rowsOf(z.object({ filename: z.string(), data: z.instanceof(Uint8Array) }), db.query("SELECT filename, data FROM photos").all())) {
     out.set(r.filename, new Bun.CryptoHasher("sha256").update(r.data).digest("hex"));
   }
   return out;
@@ -296,7 +311,7 @@ function buildSynthetic(path: string) {
     "settings", "supplements", "documents", "manuals", "experiments", "chats", "fasts",
     "food_entries", "workouts", "state_logs", "performance_logs", "state_categories",
   ];
-  const all = (s.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> '_sqlx_migrations'").all() as { name: string }[]).map((t) => t.name);
+  const all = rowsOf(NameRow, s.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> '_sqlx_migrations'").all()).map((t) => t.name);
   const tablesInOrder = [...order.filter((t) => all.includes(t)), ...all.filter((t) => !order.includes(t)).sort()];
   const ids = new Map<string, number[]>();
   const target: Record<string, string> = {
@@ -306,16 +321,16 @@ function buildSynthetic(path: string) {
   };
   const pick = (table: string, i: number) => {
     const list = ids.get(table) ?? [];
-    return list.length ? list[i % list.length]! : null;
+    return list[i % list.length] ?? null;
   };
 
   for (const t of tablesInOrder) {
-    const cols = s.query(`PRAGMA table_info("${t}")`).all() as { name: string; type: string; notnull: number; pk: number }[];
+    const cols = rowsOf(z.object({ name: z.string(), type: z.string(), notnull: z.number(), pk: z.number() }), s.query(`PRAGMA table_info("${t}")`).all());
     const n = t === "settings" ? 0 : 300; // ~5 rows a day for 60 days
     const made: number[] = [];
     for (let i = 1; i <= n; i++) {
       const id = i * 3 + (i % 7); // gaps, as deletes leave them
-      const row: Row = {};
+      const row: Record<string, Binding> = {};
       for (const c of cols) {
         const optional = c.notnull === 0 && c.pk === 0;
         if (optional && i % 4 === 0) {
@@ -327,7 +342,7 @@ function buildSynthetic(path: string) {
       const names = Object.keys(row);
       try {
         s.query(`INSERT INTO "${t}" (${names.map((x) => `"${x}"`).join(", ")}) VALUES (${names.map(() => "?").join(", ")})`)
-          .run(...(Object.values(row) as never[]));
+          .run(...Object.values(row));
         if (typeof row["id"] === "number") made.push(row["id"]);
       } catch (e) {
         throw new Error(`seeding ${t}: ${String(e)}`);
@@ -344,14 +359,15 @@ function buildSynthetic(path: string) {
   }
   s.close();
 
-  function valueFor(t: string, c: { name: string; type: string; pk: number }, id: number, i: number): unknown {
+  function valueFor(t: string, c: { name: string; type: string; pk: number }, id: number, i: number): Binding {
     const name = c.name;
     if (name === "id" && c.pk) return id;
     if (t === "document_files" && name === "document_id") return pick("documents", i * 7);
     if (name === "log_id") return pick(t === "state_log_tags" ? "state_logs" : "performance_logs", i);
     if (name === "entry_id") return pick(i % 2 ? "food_entries" : "workouts", i);
     if (name === "entry_kind") return i % 2 ? "meal" : "workout";
-    if (target[name]) return pick(target[name]!, i);
+    const parent = target[name];
+    if (parent) return pick(parent, i);
     if (name === "before_entry") return `{"id":${pick("food_entries", i)},"title":"snapshot ${i}"}`;
     const type = c.type.toLowerCase();
     if (type.includes("blob")) return new Uint8Array([0xff, 0xd8, 0, i % 256, 0xff, 0xd9, ...Array.from({ length: 64 }, (_, k) => (k * i) % 256)]);

@@ -138,9 +138,9 @@ export function parseStatInput(metric: string, raw: string): number {
 
 /** The headline stats, in the order a diary row lists them. */
 export function orderStats(stats: PerformanceStat[]): PerformanceStat[] {
-  const order = statKeys() as string[];
+  const order = statKeys();
   const rank = (m: string) => {
-    const i = order.indexOf(m);
+    const i = order.findIndex((k) => k === m);
     return i < 0 ? order.length : i;
   };
   return [...stats].sort((a, b) => rank(a.metric) - rank(b.metric));

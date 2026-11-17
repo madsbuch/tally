@@ -64,7 +64,6 @@ import {
   parseToolArgs,
   RatingArgsSchema,
 } from "./schemas";
-import type { AutoMetric } from "./schemas";
 import { garminDetailsForWorkouts, listGarminDaysForRange } from "./garminDb";
 import type { GarminWorkoutDetail } from "./garminDb";
 import { FOOD_FACTS_TOOL, executeFoodFactsSearch } from "./openFoodFacts";
@@ -94,6 +93,7 @@ import { idArg } from "./ids";
 import { coachModelFor, coachReasoning } from "./coachModel";
 import type { CoachPurpose } from "./coachModel";
 import type { Nutrients } from "./types";
+import { isKeyOf } from "./guards";
 
 // ---------------------------------------------------------------------------
 // Tools
@@ -832,7 +832,7 @@ export function sanitizeChart(args: Record<string, unknown>): ChartSpec {
     const rawName = o["name"];
     const name =
       typeof rawName === "string" && rawName.trim() ? rawName.trim() : `Series ${i + 1}`;
-    const vRaw = Array.isArray(o["values"]) ? o["values"] : [];
+    const vRaw: readonly unknown[] = Array.isArray(o["values"]) ? o["values"] : [];
     const values = x_labels.map((_, j) => {
       const v = vRaw[j];
       const n = typeof v === "string" ? parseFloat(v) : v;
@@ -1653,7 +1653,7 @@ export async function executeAssistantTool(
     const autos = autoMetricsOf(e);
     const ratings = ratingMeasures(e);
     const fmt = (key: string, v: number) =>
-      key in AUTO_METRIC_INFO ? round(v, AUTO_METRIC_INFO[key as AutoMetric].dp + 1) : round(v, 2);
+      isKeyOf(AUTO_METRIC_INFO, key) ? round(v, AUTO_METRIC_INFO[key].dp + 1) : round(v, 2);
     return JSON.stringify({
       id: e.id,
       title: e.title,

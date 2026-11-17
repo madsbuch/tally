@@ -282,7 +282,7 @@ export function ReservesCard({ snap }: { snap: Snap }) {
       />
       <div className="reserve-rows">
         {snap.reserves.map((r) => (
-          <div key={r.def.key} className="reserve-row" style={{ ["--level" as string]: TONE_COLOR[r.band.tone] }}>
+          <div key={r.def.key} className="reserve-row" style={{ "--level": TONE_COLOR[r.band.tone] }}>
             <span className="reserve-label">
               {r.def.glyph} {r.def.label}
             </span>
@@ -362,16 +362,16 @@ export function GlycogenCard({ snap }: { snap: Snap }) {
       />
       <div className="level-legend">
         <span>
-          <i style={{ ["--key" as string]: "var(--vitd)" }} />
+          <i style={{ "--key": "var(--vitd)" }} />
           liver
         </span>
         <span>
-          <i style={{ ["--key" as string]: "var(--series-2)" }} />
+          <i style={{ "--key": "var(--series-2)" }} />
           ketones, expected
         </span>
         {hasReadings && (
           <span>
-            <i className="dot" style={{ ["--key" as string]: "var(--series-2)" }} />
+            <i className="dot" style={{ "--key": "var(--series-2)" }} />
             measured
           </span>
         )}
@@ -403,7 +403,7 @@ function GlycogenInfo({ snap }: { snap: Snap }) {
     const before = Math.round(check.liverBefore * 100);
     const after = Math.round(check.liverAfter * 100);
     reading =
-      `Your ketone reading of ${r.ketone!.toFixed(1)} mmol/L at ${clockDay(r.at, now)}` +
+      `Your ketone reading of ${check.reading.ketone.toFixed(1)} mmol/L at ${clockDay(r.at, now)}` +
       (r.glucose != null ? ` (glucose ${r.glucose.toFixed(1)})` : "") +
       `: the model expected ${check.predictedKetone.toFixed(1)}, ` +
       (Math.abs(after - before) < 2
@@ -509,7 +509,7 @@ function MuscleSection({ snap }: { snap: Snap }) {
   const days = Math.round((snap.at - g.muscleSinceMs) / DAY_MS);
   const values = g.muscleSeries;
   return (
-    <div className="muscle-section" style={{ ["--level" as string]: TONE_COLOR[g.muscleBand.tone] }}>
+    <div className="muscle-section" style={{ "--level": TONE_COLOR[g.muscleBand.tone] }}>
       <div className="muscle-head">
         <span className="muscle-title">Muscle</span>
         <span className="muscle-band">{g.muscleBand.label}</span>

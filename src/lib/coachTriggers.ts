@@ -26,6 +26,7 @@ import { addCoachRun, listCoachRunsSince, getSetting, setSetting, todayStr } fro
 import { CoachTriggersSchema, parseJson } from "./schemas";
 import { SETTING_KEYS } from "./types";
 import type { CoachDigest } from "./coach";
+import { must } from "./must";
 
 export type TriggerKey =
   | "monday_review"
@@ -267,9 +268,16 @@ export const TRIGGERS: TriggerDef[] = [
 export const TRIGGERS_BY_KEY = new Map(TRIGGERS.map((t) => [t.key, t]));
 
 export function defaultTriggers(): CoachTriggers {
-  const out = {} as CoachTriggers;
-  for (const t of TRIGGERS) out[t.key] = { ...t.defaults };
-  return out;
+  const defaults = (key: TriggerKey): TriggerConfig => ({ ...must(TRIGGERS_BY_KEY.get(key), `trigger ${key}`).defaults });
+  return {
+    monday_review: defaults("monday_review"),
+    follow_up_due: defaults("follow_up_due"),
+    daily_recap: defaults("daily_recap"),
+    protein_short: defaults("protein_short"),
+    target_drift: defaults("target_drift"),
+    sleep_debt: defaults("sleep_debt"),
+    streak_risk: defaults("streak_risk"),
+  };
 }
 
 export async function loadCoachTriggers(): Promise<CoachTriggers> {
@@ -426,7 +434,8 @@ export function evaluateTriggers(args: {
     return { winner: null, alsoTrue: candidates, reason: "cooldown" };
   }
 
-  const winner = eligible[0] as TriggerCandidate;
+  const winner = eligible[0];
+  if (!winner) return { winner: null, alsoTrue: candidates, reason: "cooldown" };
   return {
     winner,
     alsoTrue: candidates.filter((c) => c.key !== winner.key),

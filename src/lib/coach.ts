@@ -667,9 +667,9 @@ export interface CoachPromptOptions {
 export async function buildCoachPromptPrefix(): Promise<string> {
   const [stance, memory, documents, manuals, experiments] = await Promise.all([
     loadCoachStance(),
-    listCoachMemory().catch(() => [] as CoachMemory[]),
+    listCoachMemory().catch((): CoachMemory[] => []),
     listDocuments().catch(() => []),
-    listManuals().catch(() => [] as Manual[]),
+    listManuals().catch((): Manual[] => []),
     loadExperimentsWithTrials(),
   ]);
   const today = todayStr();

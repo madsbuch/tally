@@ -1,13 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { readFileSync } from "node:fs";
+import { z } from "zod";
+import { must, rowOf, rowsOf } from "./helpers";
 import { legacyId } from "../src/lib/ids";
 
 // Migration 0038 re-keys every table from integers to UUID strings. It runs
 // the way tauri-plugin-sql runs it: inside a transaction, foreign keys ON.
 
 const rust = readFileSync(new URL("../src-tauri/src/lib.rs", import.meta.url), "utf8");
-const files = [...rust.matchAll(/include_str!\("\.\.\/migrations\/([^"]+)"\)/g)].map((m) => m[1]!);
+const files = [...rust.matchAll(/include_str!\("\.\.\/migrations\/([^"]+)"\)/g)].map((m) => must(m[1], "migration file"));
 const read = (f: string) => readFileSync(new URL(`../src-tauri/migrations/${f}`, import.meta.url), "utf8");
 
 function beforeUuids(): Database {
@@ -56,7 +58,7 @@ describe("migration 0038 (uuid ids)", () => {
     migrate(db);
 
     expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
-    const one = (sql: string) => db.query(sql).get() as Record<string, unknown>;
+    const one = (sql: string) => rowOf(z.record(z.string(), z.unknown()), db.query(sql).get());
 
     expect(one("SELECT id, title FROM food_entries")).toEqual({ id: legacyId(7), title: "Oats" });
     expect(one("SELECT supplement_id FROM supplement_logs").supplement_id).toBe(legacyId(2));
@@ -79,7 +81,7 @@ describe("migration 0038 (uuid ids)", () => {
     expect(one("SELECT workout_id FROM garmin_activities").workout_id).toBe(legacyId(3));
 
     // The diet column is gone.
-    const cols = db.query("PRAGMA table_info(food_entries)").all() as { name: string }[];
+    const cols = rowsOf(z.object({ name: z.string() }), db.query("PRAGMA table_info(food_entries)").all());
     expect(cols.map((c) => c.name)).not.toContain("diet");
 
     // Device-local settings moved out; the unread chat points at its new id.
@@ -106,7 +108,7 @@ describe("migration 0038 (uuid ids)", () => {
     db.exec(`DELETE FROM documents WHERE id = '${legacyId(1)}'`);
     expect(db.query("SELECT COUNT(*) AS n FROM document_files").get()).toEqual({ n: 0 });
     // Nothing still points at the scaffolding names.
-    const sql = db.query("SELECT group_concat(sql) AS s FROM sqlite_master").get() as { s: string };
+    const sql = rowOf(z.object({ s: z.string() }), db.query("SELECT group_concat(sql) AS s FROM sqlite_master").get());
     expect(sql.s).not.toContain("__new_");
   });
 });

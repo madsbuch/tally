@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, test } from "bun:test";
+import { IdRow, rowOf } from "./helpers";
 import { sqlite } from "./testDb";
 import { TRAINING, focusOf, loadOf } from "../src/lib/storeModels";
 import { parseGarminLoadBalance, parseStoredTrainingStatusRaw } from "../src/lib/schemas";
@@ -23,11 +24,11 @@ describe("training load", () => {
     // A run every other day for four weeks: two with Garmin's load, the rest not.
     for (let d = -17; d <= 10; d += 2) {
       const at = `${day(d)}T07:00:00.000Z`;
-      const r = sqlite
+      const r = rowOf(IdRow, sqlite
         .query(
           "INSERT INTO workouts (id, performed_at, title, calories_burned, duration_min, day, tz_offset_min) VALUES (?, ?, 'Run', 500, 50, ?, 60) RETURNING id",
         )
-        .get(newId(), at, day(d)) as { id: string };
+        .get(newId(), at, day(d)));
       if (d >= 6) {
         sqlite
           .query(

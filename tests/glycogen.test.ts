@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { must } from "./helpers";
 import {
   DRAIN_FIT_MIN_READINGS,
   fitDrain,
@@ -21,12 +22,12 @@ function meals(days: number, from = T0): Dose[] {
   return out;
 }
 
-const at = (points: GlycogenPoint[], t: number) => points.filter((p) => p.t <= t).pop()!;
+const at = (points: GlycogenPoint[], t: number) => must(points.filter((p) => p.t <= t).pop(), `a point at or before ${t}`);
 
 /** Two fed days, then nothing: the fast starts at the last meal. */
 function fast(hours: number, opts: { drain?: number; readings?: FuelReading[]; pin?: boolean } = {}) {
   const carbs = meals(2);
-  const lastMeal = carbs[carbs.length - 1]!.at;
+  const lastMeal = must(carbs.at(-1), "last of carbs").at;
   const run = simulateGlycogen({
     carbs,
     workouts: [],
@@ -35,8 +36,8 @@ function fast(hours: number, opts: { drain?: number; readings?: FuelReading[]; p
     toMs: lastMeal + hours * H,
     warmupFromMs: T0,
     weightKg: 75,
-    drain: opts.drain,
-    pin: opts.pin,
+    ...(opts.drain !== undefined && { drain: opts.drain }),
+    ...(opts.pin !== undefined && { pin: opts.pin }),
   });
   return { ...run, lastMeal };
 }
@@ -68,7 +69,7 @@ describe("predicted ketones", () => {
 
   test("fall within hours of carbs", () => {
     const carbs = [...meals(2), { at: T0 + 2 * 24 * H + 60 * H, amount: 80 }];
-    const refeed = carbs[carbs.length - 1]!.at;
+    const refeed = must(carbs.at(-1), "last of carbs").at;
     const { points } = simulateGlycogen({
       carbs,
       workouts: [],
@@ -85,32 +86,32 @@ describe("predicted ketones", () => {
 describe("readings", () => {
   test("a high ketone reading pulls the liver down and resets the ketone level", () => {
     const carbs = meals(2);
-    const t = carbs[carbs.length - 1]!.at + 6 * H;
+    const t = must(carbs.at(-1), "last of carbs").at + 6 * H;
     const { points, checks } = fast(8, { readings: [{ at: t, ketone: 1.5, glucose: 4.0 }] });
     expect(checks).toHaveLength(1);
-    expect(checks[0]!.predictedKetone).toBeLessThan(0.3);
-    expect(checks[0]!.liverBefore).toBeGreaterThan(0.5);
-    expect(checks[0]!.liverAfter).toBeLessThan(0.1);
+    expect(must(checks[0], "check 0").predictedKetone).toBeLessThan(0.3);
+    expect(must(checks[0], "check 0").liverBefore).toBeGreaterThan(0.5);
+    expect(must(checks[0], "check 0").liverAfter).toBeLessThan(0.1);
     expect(at(points, t + H).ketone).toBeGreaterThan(1.3);
   });
 
   test("a low ketone reading lifts a liver the model had empty", () => {
     const carbs = meals(2);
-    const t = carbs[carbs.length - 1]!.at + 40 * H;
+    const t = must(carbs.at(-1), "last of carbs").at + 40 * H;
     const { checks } = fast(41, { readings: [{ at: t, ketone: 0.1, glucose: 5.0 }] });
-    expect(checks[0]!.liverBefore).toBeLessThan(0.1);
-    expect(checks[0]!.liverAfter).toBeGreaterThan(0.3);
+    expect(must(checks[0], "check 0").liverBefore).toBeLessThan(0.1);
+    expect(must(checks[0], "check 0").liverAfter).toBeGreaterThan(0.3);
   });
 
   test("glucose says how far to trust the ketone strip", () => {
-    const low = liverEvidence({ at: 0, ketone: 1, glucose: 4.0 })!;
-    const none = liverEvidence({ at: 0, ketone: 1, glucose: null })!;
-    const high = liverEvidence({ at: 0, ketone: 1, glucose: 7.5 })!;
+    const low = must(liverEvidence({ at: 0, ketone: 1, glucose: 4.0 }), "evidence");
+    const none = must(liverEvidence({ at: 0, ketone: 1, glucose: null }), "evidence");
+    const high = must(liverEvidence({ at: 0, ketone: 1, glucose: 7.5 }), "evidence");
     expect(low.ceiling).toBe(none.ceiling);
     expect(low.weight).toBeGreaterThan(none.weight);
     expect(none.weight).toBeGreaterThan(high.weight);
     // Right after a workout, raised ketones count for less.
-    expect(liverEvidence({ at: 0, ketone: 1, glucose: 4.0 }, 1)!.weight).toBeLessThan(low.weight);
+    expect(must(liverEvidence({ at: 0, ketone: 1, glucose: 4.0 }, 1), "evidence").weight).toBeLessThan(low.weight);
   });
 
   test("glucose alone only speaks when it's low", () => {
@@ -119,7 +120,7 @@ describe("readings", () => {
   });
 
   test("the ceiling tightens smoothly as ketones rise", () => {
-    const c = (k: number) => liverEvidence({ at: 0, ketone: k, glucose: null })!.ceiling!;
+    const c = (k: number) => must(must(liverEvidence({ at: 0, ketone: k, glucose: null }), "evidence").ceiling, "ceiling");
     expect(c(0.4)).toBeGreaterThan(c(0.6));
     expect(c(0.6)).toBeGreaterThan(c(1.2));
     expect(c(1.2)).toBeGreaterThan(c(2.5));
@@ -150,9 +151,9 @@ describe("fitDrain", () => {
 
   test("finds a liver that empties faster, and one that empties slower", () => {
     const fastLiver = history(1.4);
-    expect(fitDrain(fastLiver.input, fastLiver.readings)!.drain).toBeGreaterThanOrEqual(1.2);
+    expect(must(fitDrain(fastLiver.input, fastLiver.readings), "a fitted drain").drain).toBeGreaterThanOrEqual(1.2);
     const slowLiver = history(0.7);
-    expect(fitDrain(slowLiver.input, slowLiver.readings)!.drain).toBeLessThanOrEqual(0.9);
+    expect(must(fitDrain(slowLiver.input, slowLiver.readings), "a fitted drain").drain).toBeLessThanOrEqual(0.9);
   });
 
   test("stays at the textbook when the readings agree with it", () => {
@@ -167,14 +168,14 @@ describe("muscle", () => {
 
   test("only a workout takes from it: a fast leaves it alone", () => {
     const { points, lastMeal } = fast(48);
-    expect(points[points.length - 1]!.muscle).toBeCloseTo(at(points, lastMeal + 8 * H).muscle, 5);
+    expect(must(points.at(-1), "last of points").muscle).toBeCloseTo(at(points, lastMeal + 8 * H).muscle, 5);
   });
 
   test("the ledger adds up what a workout took and carbs put back", () => {
     const run = simulateGlycogen({ ...base, carbs: meals(2), workouts: [workout], toMs: T0 + 2 * 24 * H });
     expect(run.muscleBurnedG).toBeCloseTo(muscleCostG(workout), 0);
     expect(run.muscleRefilledG).toBeGreaterThan(50);
-    const end = run.points[run.points.length - 1]!;
+    const end = must(run.points.at(-1), "last point");
     expect(end.muscle * run.muscleCapG).toBeCloseTo(0.8 * run.muscleCapG - run.muscleBurnedG + run.muscleRefilledG, 0);
   });
 

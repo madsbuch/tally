@@ -31,6 +31,7 @@ import {
   parseGarminWeights,
 } from "./schemas";
 import type { GarminCmdError, GarminSleep, GarminStatus } from "./schemas";
+import { must } from "./must";
 
 // ---------------------------------------------------------------------------
 // Garmin Connect sync — straight from Garmin, for everything Health Connect
@@ -359,7 +360,7 @@ async function syncAll(status: GarminStatus, light = false): Promise<GarminSyncR
     // Oldest first, so a session made by the first of two near-identical
     // activities can't steal the second's match.
     for (let i = activities.length - 1; i >= 0; i--) {
-      tally(await linkGarminActivity(activities[i]!, raws[i]!));
+      tally(await linkGarminActivity(must(activities[i], "activity"), must(raws[i], "raw activity")));
     }
     if (activities.length < PAGE) break;
   }
@@ -379,10 +380,10 @@ async function syncAll(status: GarminStatus, light = false): Promise<GarminSyncR
   const recentFrom = through ? shiftDay(through, -RECENT_DAYS) : shiftDay(today, -(FIRST_SYNC_DAYS - 1));
   const backTo = (await getSetting(SETTING_KEYS.garminWellnessBackTo)) ?? recentFrom;
   const firstActivity = await earliestGarminActivityAt();
-  const floor = [
-    shiftDay(today, -BACKFILL_MAX_DAYS),
-    firstActivity ? shiftDay(firstActivity.slice(0, 10), -7) : shiftDay(today, -365),
-  ].sort()[1]!;
+  const maxBack = shiftDay(today, -BACKFILL_MAX_DAYS);
+  const activityBack = firstActivity ? shiftDay(firstActivity.slice(0, 10), -7) : shiftDay(today, -365);
+  // The later of the two (days compare as strings).
+  const floor = maxBack > activityBack ? maxBack : activityBack;
   const chunk = status.personal ? BACKFILL_CHUNK_DAYS_PERSONAL : BACKFILL_CHUNK_DAYS_LEGACY;
   let backfillFrom = shiftDay(backTo, -chunk);
   if (backfillFrom < floor) backfillFrom = floor;

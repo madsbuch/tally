@@ -47,6 +47,8 @@ export { AUTO_METRIC_INFO, REFEED_WINDOW_H };
 import type { Experiment, ExperimentTrial, Fast } from "./types";
 import { parseRowId } from "./ids";
 import { EXPERIMENT_TABLES, onTablesChanged } from "./live";
+import { isKeyOf } from "./guards";
+import { must } from "./must";
 
 export const EXPERIMENT_GLYPH = "🧪";
 
@@ -87,9 +89,7 @@ export const RATE_AFTER_H = 1.5;
 export const MIN_FAST_SHARE = 0.5;
 
 export function measureLabel(m: ExperimentMeasure): string {
-  return m.kind === "auto" && m.key in AUTO_METRIC_INFO
-    ? AUTO_METRIC_INFO[m.key as AutoMetric].label
-    : m.label;
+  return m.kind === "auto" && isKeyOf(AUTO_METRIC_INFO, m.key) ? AUTO_METRIC_INFO[m.key].label : m.label;
 }
 
 export function ratingMeasures(e: Experiment): ExperimentMeasure[] {
@@ -128,10 +128,12 @@ export async function loadTrialMetrics(
   fasts: Map<string, Fast>,
 ): Promise<Map<string, TrialMetrics>> {
   const out = new Map<string, TrialMetrics>();
-  if (trials.length === 0) return out;
   const days = trials.map((t) => t.day).sort();
-  const first = days[0] as string;
-  const last = shiftDay(days[days.length - 1] as string, 1);
+  const firstDay = days[0];
+  const lastDay = days[days.length - 1];
+  if (firstDay === undefined || lastDay === undefined) return out;
+  const first = firstDay;
+  const last = shiftDay(lastDay, 1);
   const [food, sleep, health] = await Promise.all([
     listFoodEntriesForRange(first, last).catch(() => []),
     listSleepForRange(first, last).catch(() => []),
@@ -207,7 +209,7 @@ export function nextArm(e: Experiment, trials: ExperimentTrial[]): ExperimentArm
     if (dc !== 0) return dc;
     return (lastUsed.get(a.key) ?? -1) - (lastUsed.get(b.key) ?? -1);
   });
-  return ranked[0] ?? (e.arms[0] as ExperimentArm);
+  return must(ranked[0], "experiment arm");
 }
 
 export function armOf(e: Experiment, key: string): ExperimentArm | undefined {

@@ -148,14 +148,15 @@ export function onSyncStatus(fn: () => void): () => void {
 }
 
 /** How the backup stands, from this device's point of view. */
-export interface BackupState {
-  /** "none": not in a vault, or alone in it; "ok"; "stale": too long ago; "incomplete": last sync didn't match. */
-  kind: "none" | "ok" | "stale" | "incomplete";
-  /** The other device it's backed up to, by name. */
-  peer: string | null;
-  /** When both last held exactly the same data. */
-  completeAt: string | null;
-}
+/**
+ * kind — "none": not in a vault, or alone in it; "ok"; "stale": too long ago;
+ * "incomplete": last sync didn't match. peer — the other device it's backed
+ * up to, by name. completeAt — when both last held exactly the same data.
+ */
+export type BackupState =
+  | { kind: "none"; peer: null; completeAt: null }
+  | { kind: "ok" | "stale"; peer: string; completeAt: string }
+  | { kind: "incomplete"; peer: string; completeAt: string | null };
 
 export function backupState(status: SyncStatus, now: number = Date.now()): BackupState {
   const others = status.devices.filter((d) => !d.isSelf);
@@ -165,7 +166,8 @@ export function backupState(status: SyncStatus, now: number = Date.now()): Backu
   for (const d of others) {
     if (d.lastCompleteAt && (!best?.lastCompleteAt || d.lastCompleteAt > best.lastCompleteAt)) best = d;
   }
-  const peer = best ?? others[0]!;
+  const peer = best ?? others[0];
+  if (!peer) return { kind: "none", peer: null, completeAt: null };
   const at = peer.lastCompleteAt;
   if (!at) return { kind: "incomplete", peer: peer.name, completeAt: null };
   if (now - Date.parse(at) > STALE_BACKUP_MS) return { kind: "stale", peer: peer.name, completeAt: at };
@@ -189,9 +191,9 @@ export function backupLine(state: BackupState, now: number = Date.now()): string
     case "none":
       return "Not backed up to another device";
     case "ok":
-      return `Backed up to ${state.peer} · ${ago(state.completeAt!, now)} · complete`;
+      return `Backed up to ${state.peer} · ${ago(state.completeAt, now)} · complete`;
     case "stale":
-      return `Last backed up to ${state.peer} ${ago(state.completeAt!, now)}`;
+      return `Last backed up to ${state.peer} ${ago(state.completeAt, now)}`;
     case "incomplete":
       return state.completeAt
         ? `Backing up to ${state.peer} · last complete ${ago(state.completeAt, now)}`

@@ -13,11 +13,15 @@
 import { z } from "zod";
 import { sanitizeNutrients } from "./nutrients";
 import type { FoodEntry, Workout } from "./types";
+import { isOneOf } from "./guards";
 
-/** The one sanctioned `JSON.parse` — always feed the result to a schema. */
+/**
+ * The one sanctioned `JSON.parse` — always feed the result to a schema.
+ * (eslint.config.js exempts this file from the ban.)
+ */
 export function parseJson(text: string): unknown {
-  // eslint-disable-next-line no-restricted-properties -- the single allowed call
-  return JSON.parse(text);
+  const value: unknown = JSON.parse(text);
+  return value;
 }
 
 // ---------------------------------------------------------------------------
@@ -781,7 +785,7 @@ export const ExperimentDesignSchema = z.object({
     .catch([])
     .transform((ms) => [
       ...new Set(
-        ms.filter((m): m is AutoMetric => (AUTO_METRICS as readonly unknown[]).includes(m)),
+        ms.filter((m) => isOneOf(AUTO_METRICS, m)),
       ),
     ]),
   assignment: z.enum(["balanced", "choose"]).catch("balanced"),
@@ -1701,4 +1705,10 @@ export function parseLooseRecord(raw: unknown): Record<string, unknown> {
 /** Rows as tauri-plugin-sql's `select` hands them back: one object per row. */
 export function parseSqlRows(raw: unknown): Record<string, unknown>[] {
   return z.array(LooseRecordSchema).parse(raw);
+}
+
+/** The `detail` of the in-app "achievements unlocked" event; null if not one. */
+export function parseUnlockedKeys(raw: unknown): string[] | null {
+  const r = z.object({ keys: z.array(z.string()) }).safeParse(raw);
+  return r.success ? r.data.keys : null;
 }

@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, test } from "bun:test";
+import { at, must } from "./helpers";
 import { sqlite } from "./testDb";
 import type { Experiment, ExperimentTrial } from "../src/lib/types";
 
@@ -13,7 +14,7 @@ const ex = await import("../src/lib/experiments");
 const { ExperimentDesignSchema } = await import("../src/lib/schemas");
 
 const experiment = (over: Partial<Experiment> = {}): Experiment => ({
-  id: 1,
+  id: "e1",
   title: "Refeed",
   hypothesis: "Carbs first makes re-entry easier",
   applies_when: "fasting",
@@ -35,8 +36,8 @@ const experiment = (over: Partial<Experiment> = {}): Experiment => ({
 
 let trialId = 0;
 const trial = (arm: string, over: Partial<ExperimentTrial> = {}): ExperimentTrial => ({
-  id: ++trialId,
-  experiment_id: 1,
+  id: `t${++trialId}`,
+  experiment_id: "e1",
   arm,
   fast_id: null,
   started_at: "2026-11-01T12:00:00.000Z",
@@ -164,14 +165,14 @@ describe("fasts open trials", () => {
     });
     const fasts = new Map((await db.listAllFasts()).map((f) => [f.id, f]));
     const metrics = await ex.loadTrialMetrics(trials, fasts);
-    const m1 = metrics.get(trials[0]!.id)!;
+    const m1 = must(metrics.get(at(trials, 0).id), "first trial's metrics");
     expect(m1.refeed_carbs_g).toBe(65);
     expect(m1.fast_h).toBe(24);
-    expect(metrics.get(trials[1]!.id)!.refeed_carbs_g).toBeNull();
+    expect(must(metrics.get(at(trials, 1).id), "second trial's metrics").refeed_carbs_g).toBeNull();
 
     // Ratings round-trip through their schema.
-    await ex.saveTrial(trials[0]!.id, { ratings: { energy: 4 } });
-    expect((await db.getTrial(trials[0]!.id))?.ratings).toEqual({ energy: 4 });
+    await ex.saveTrial(at(trials, 0).id, { ratings: { energy: 4 } });
+    expect((await db.getTrial(at(trials, 0).id))?.ratings).toEqual({ energy: 4 });
 
     // A deleted fast takes its trial with it.
     await db.deleteFast(f2.id);

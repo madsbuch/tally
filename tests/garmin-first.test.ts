@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import { z } from "zod";
+import { at, must, rowsOf } from "./helpers";
 import { sqlite, tauriCommands } from "./testDb";
 
 // Health Connect is the event bus, Garmin the authority, the user above both
@@ -78,15 +80,16 @@ function activity(id: string, startMs: number, durationMin: number, extra: Recor
     ...extra,
   };
   const { activities, raws } = parseGarminActivities([raw]);
-  return { a: activities[0]!, raw: raws[0]! };
+  return { a: at(activities, 0), raw: at(raws, 0) };
 }
 
-type Row = Record<string, unknown>;
+/** A stored row: its id and external id typed, the rest left to the assertions. */
+const StoredRow = z.looseObject({ id: z.string(), external_id: z.string().nullable() });
 const workoutRows = () =>
-  sqlite.query("SELECT * FROM workouts WHERE external_id IS NOT NULL ORDER BY performed_at").all() as Row[];
-const nightRows = () => sqlite.query("SELECT * FROM sleep_sessions ORDER BY started_at").all() as Row[];
-const versionOf = (tbl: string, pk: unknown) =>
-  (sqlite.query("SELECT hlc FROM sync_rows WHERE tbl = ? AND pk = ?").get(tbl, pk as string) as { hlc: string } | null)?.hlc;
+  rowsOf(StoredRow, sqlite.query("SELECT * FROM workouts WHERE external_id IS NOT NULL ORDER BY performed_at").all());
+const nightRows = () => rowsOf(StoredRow, sqlite.query("SELECT * FROM sleep_sessions ORDER BY started_at").all());
+const versionOf = (tbl: string, pk: string) =>
+  z.object({ hlc: z.string() }).nullable().parse(sqlite.query("SELECT hlc FROM sync_rows WHERE tbl = ? AND pk = ?").get(tbl, pk))?.hlc;
 
 beforeEach(() => {
   sqlite.exec(
@@ -106,23 +109,23 @@ describe("workouts: Health Connect first, Garmin's numbers once it has them", ()
 
     const { a, raw } = activity("501", T + 5_000, 40);
     expect(await g.linkGarminActivity(a, raw)).toBe("time");
-    const linked = workoutRows()[0]!;
+    const linked = at(workoutRows(), 0);
     // Garmin's: active calories (520 − 60), its average, its name.
     expect(linked).toMatchObject({ title: "Morning Run", calories_burned: 460, avg_hr: 141.6 });
 
     // Health Connect reads it again, with its own numbers: nothing changes,
     // not even a new version for sync to carry.
-    const before = versionOf("workouts", linked["id"]);
+    const before = versionOf("workouts", linked.id);
     await syncHealthConnect();
     expect(workoutRows()).toHaveLength(1);
     expect(workoutRows()[0]).toMatchObject({ calories_burned: 460, avg_hr: 141.6, title: "Morning Run" });
-    expect(versionOf("workouts", linked["id"])).toBe(before);
+    expect(versionOf("workouts", linked.id)).toBe(before);
   });
 
   test("a field changed by hand stays, through both syncs; the rest still follow Garmin", async () => {
     hc.sessions = [{ id: "hc-2", startMs: T, endMs: T + 30 * MIN, calories: 300, avgHeartRate: 150 }];
     await syncHealthConnect();
-    const row = (await db.listSyncedWorkouts())[0]!;
+    const row = at(await db.listSyncedWorkouts(), 0);
     await db.updateWorkout({ ...row, title: "Intervals", calories_burned: 333 });
 
     await syncHealthConnect();
@@ -140,11 +143,11 @@ describe("workouts: Health Connect first, Garmin's numbers once it has them", ()
   test("an edit that changes nothing marks nothing", async () => {
     hc.sessions = [{ id: "hc-3", startMs: T, endMs: T + 30 * MIN, calories: 300 }];
     await syncHealthConnect();
-    const row = (await db.listSyncedWorkouts())[0]!;
+    const row = at(await db.listSyncedWorkouts(), 0);
     await db.updateWorkout({ ...row });
-    expect(workoutRows()[0]!["edited_by_hand"]).toBe(0);
+    expect(at(workoutRows(), 0)["edited_by_hand"]).toBe(0);
     await db.updateWorkout({ ...row, duration_min: 31 });
-    expect(workoutRows()[0]!["edited_by_hand"]).toBe(16);
+    expect(at(workoutRows(), 0)["edited_by_hand"]).toBe(16);
   });
 
   test("a hand-logged workout is never marked (it isn't synced)", async () => {
@@ -152,9 +155,9 @@ describe("workouts: Health Connect first, Garmin's numbers once it has them", ()
       performed_at: iso(T), title: "Yoga", description: null, photo_path: null,
       calories_burned: 100, duration_min: 30, model_id: null, icon: null,
     });
-    const w = (await db.getWorkout(id))!;
+    const w = must(await db.getWorkout(id), "the workout");
     await db.updateWorkout({ ...w, title: "Yin yoga" });
-    expect((sqlite.query("SELECT edited_by_hand FROM workouts WHERE id = ?").get(id) as Row)["edited_by_hand"]).toBe(0);
+    expect(sqlite.query("SELECT edited_by_hand FROM workouts WHERE id = ?").get(id)).toEqual({ edited_by_hand: 0 });
   });
 });
 
@@ -162,7 +165,7 @@ describe("a synced workout deleted by hand stays deleted", () => {
   test("Health Connect reading it again doesn't bring it back", async () => {
     hc.sessions = [{ id: "hc-del", startMs: T, endMs: T + 40 * MIN, calories: 400 }];
     await syncHealthConnect();
-    await db.deleteWorkout(workoutRows()[0]!["id"] as string);
+    await db.deleteWorkout(at(workoutRows(), 0).id);
     const r = await syncHealthConnect();
     expect(workoutRows()).toHaveLength(0);
     expect(r.newWorkouts).toBe(0);
@@ -172,11 +175,11 @@ describe("a synced workout deleted by hand stays deleted", () => {
     // Deleted before Garmin linked it: Garmin mustn't make a row of its own.
     hc.sessions = [{ id: "hc-del2", startMs: T, endMs: T + 40 * MIN, calories: 400 }];
     await syncHealthConnect();
-    await db.deleteWorkout(workoutRows()[0]!["id"] as string);
+    await db.deleteWorkout(at(workoutRows(), 0).id);
     const { a, raw } = activity("601", T + 5_000, 40);
     expect(await g.linkGarminActivity(a, raw)).toBe("skipped");
     expect(workoutRows()).toHaveLength(0);
-    expect((sqlite.query("SELECT dismissed FROM garmin_activities WHERE activity_id = '601'").get() as Row)["dismissed"]).toBe(1);
+    expect(sqlite.query("SELECT dismissed FROM garmin_activities WHERE activity_id = '601'").get()).toEqual({ dismissed: 1 });
     await syncHealthConnect();
     expect(await g.linkGarminActivity(a, raw)).toBe("skipped");
     expect(workoutRows()).toHaveLength(0);
@@ -185,7 +188,7 @@ describe("a synced workout deleted by hand stays deleted", () => {
   test("a Garmin-made one isn't brought back by Health Connect", async () => {
     const { a, raw } = activity("602", T, 25);
     expect(await g.linkGarminActivity(a, raw)).toBe("created");
-    await db.deleteWorkout(workoutRows()[0]!["id"] as string);
+    await db.deleteWorkout(at(workoutRows(), 0).id);
     hc.sessions = [{ id: "hc-602", startMs: T + 5_000, endMs: T + 25 * MIN }];
     await syncHealthConnect();
     expect(await g.linkGarminActivity(a, raw)).toBe("skipped");
@@ -195,11 +198,11 @@ describe("a synced workout deleted by hand stays deleted", () => {
   test("the deletion syncs as a record, named after the workout", async () => {
     hc.sessions = [{ id: "hc-rec", startMs: T, endMs: T + 40 * MIN }];
     await syncHealthConnect();
-    await db.deleteWorkout(workoutRows()[0]!["id"] as string);
-    const rec = sqlite.query("SELECT id, external_id FROM deleted_imports").all() as Row[];
+    await db.deleteWorkout(at(workoutRows(), 0).id);
+    const rec = rowsOf(StoredRow, sqlite.query("SELECT id, external_id FROM deleted_imports").all());
     expect(rec).toHaveLength(1);
-    expect(rec[0]!["external_id"]).toBe("hc-rec");
-    expect(versionOf("deleted_imports", rec[0]!["id"])).toBeTruthy();
+    expect(at(rec, 0).external_id).toBe("hc-rec");
+    expect(versionOf("deleted_imports", at(rec, 0).id)).toBeTruthy();
   });
 });
 
@@ -270,11 +273,11 @@ describe("nights: Garmin's times and stages", () => {
     expect(nightRows()).toHaveLength(1);
     expect(nightRows()[0]).toMatchObject({ external_id: "hc-n", deep_min: 72, started_at: iso(nightStart + 10 * MIN) });
 
-    const before = versionOf("sleep_sessions", nightRows()[0]!["id"]);
+    const before = versionOf("sleep_sessions", at(nightRows(), 0).id);
     await syncHealthConnect();
     await g.applyGarminSleep();
     expect(nightRows()[0]).toMatchObject({ deep_min: 72 });
-    expect(versionOf("sleep_sessions", nightRows()[0]!["id"])).toBe(before);
+    expect(versionOf("sleep_sessions", at(nightRows(), 0).id)).toBe(before);
   });
 
   test("a night only Garmin has is added, then follows Garmin's later numbers", async () => {

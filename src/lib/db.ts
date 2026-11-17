@@ -104,6 +104,7 @@ import {
   parseSqlRows,
   parseTrialRatings,
 } from "./schemas";
+import { isOneOf } from "./guards";
 
 const DB_URL = "sqlite:tally.db";
 
@@ -1528,10 +1529,8 @@ export async function listAllFasts(): Promise<Fast[]> {
 type DocumentRow = typeof documents.$inferSelect;
 
 function toDocument(r: DocumentRow): LibraryDocument {
-  const kinds = ["lab", "imaging", "report", "note", "other"] as const;
-  const kind = (kinds as readonly string[]).includes(r.kind)
-    ? (r.kind as LibraryDocument["kind"])
-    : "other";
+  const kinds: readonly LibraryDocument["kind"][] = ["lab", "imaging", "report", "note", "other"];
+  const kind = isOneOf(kinds, r.kind) ? r.kind : "other";
   const status =
     r.status === "pending" || r.status === "error" ? r.status : "ready";
   return {
@@ -2599,7 +2598,7 @@ export const NOTED_ENTRY_KINDS: NotedEntryKind[] = [
 ];
 
 export function isNotedEntryKind(v: unknown): v is NotedEntryKind {
-  return typeof v === "string" && (NOTED_ENTRY_KINDS as string[]).includes(v);
+  return isOneOf(NOTED_ENTRY_KINDS, v);
 }
 
 type EntryNoteRow = typeof entryNotes.$inferSelect;

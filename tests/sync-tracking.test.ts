@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { readFileSync } from "node:fs";
+import { z } from "zod";
+import { at, must, rowOf, rowsOf } from "./helpers";
 import { sqlite } from "./testDb";
 import { LOCAL_TABLES } from "../scripts/sync-triggers";
 
@@ -10,21 +12,23 @@ import { LOCAL_TABLES } from "../scripts/sync-triggers";
 const { addFoodEntry, updateFoodEntry, deleteFoodEntry, getFoodEntry, setSetting, addCapture, listPendingCaptures, createChat, chatVersion, updateChatMessagesIf } = await import("../src/lib/db");
 
 const rust = readFileSync(new URL("../src-tauri/src/lib.rs", import.meta.url), "utf8");
-const files = [...rust.matchAll(/include_str!\("\.\.\/migrations\/([^"]+)"\)/g)].map((m) => m[1]!);
+const files = [...rust.matchAll(/include_str!\("\.\.\/migrations\/([^"]+)"\)/g)].map((m) => must(m[1], "migration file"));
 const read = (f: string) => readFileSync(new URL(`../src-tauri/migrations/${f}`, import.meta.url), "utf8");
 
 // Version-vector entries are clock values as 64-bit integers (~1.8e18):
 // beyond what a JS number holds exactly, so they're read as text and
 // compared as BigInt.
-type Version = { hlc: string; origin: string; deleted: number; seq: number; vv: bigint };
-function versionOf(db: Database, tbl: string, pk: string): Version | null {
-  const r = db
+const VersionRow = z.object({ hlc: z.string(), origin: z.string(), deleted: z.number(), seq: z.number(), vv: z.string() });
+const NameRow = z.object({ name: z.string() });
+const DeviceRow = z.object({ device_id: z.string() });
+function versionOf(db: Database, tbl: string, pk: string) {
+  const r = VersionRow.nullable().parse(db
     .query(
       `SELECT hlc, origin, deleted, seq,
          (SELECT CAST(coalesce(sum(counter), 0) AS TEXT) FROM sync_vv v WHERE v.tbl = r.tbl AND v.pk = r.pk) AS vv
        FROM sync_rows r WHERE tbl = ? AND pk = ?`,
     )
-    .get(tbl, pk) as (Omit<Version, "vv"> & { vv: string }) | null;
+    .get(tbl, pk));
   return r ? { ...r, vv: BigInt(r.vv) } : null;
 }
 
@@ -40,8 +44,8 @@ const meal = {
 
 describe("sync tracking", () => {
   test("every table is either tracked by all three triggers or declared local", () => {
-    const tables = (sqlite.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((t) => t.name);
-    const triggers = new Set((sqlite.query("SELECT name FROM sqlite_master WHERE type = 'trigger'").all() as { name: string }[]).map((t) => t.name));
+    const tables = rowsOf(NameRow, sqlite.query("SELECT name FROM sqlite_master WHERE type = 'table'").all()).map((t) => t.name);
+    const triggers = new Set(rowsOf(NameRow, sqlite.query("SELECT name FROM sqlite_master WHERE type = 'trigger'").all()).map((t) => t.name));
     const untracked: string[] = [];
     for (const t of tables) {
       const has = ["ai", "au", "ad"].map((k) => triggers.has(`sync_${t}_${k}`));
@@ -61,31 +65,34 @@ describe("sync tracking", () => {
     // A column added later (ALTER TABLE … ADD) must be added to the trigger's
     // list too — `bun scripts/sync-triggers.ts --retrigger <table>` — or
     // changes to it alone would never sync.
-    const triggers = sqlite.query("SELECT tbl_name, sql FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'sync\\_%\\_au' ESCAPE '\\'").all() as { tbl_name: string; sql: string }[];
+    const triggers = rowsOf(
+      z.object({ tbl_name: z.string(), sql: z.string() }),
+      sqlite.query("SELECT tbl_name, sql FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'sync\\_%\\_au' ESCAPE '\\'").all(),
+    );
     expect(triggers.length).toBeGreaterThan(30);
     for (const t of triggers) {
-      const watched = [...t.sql.matchAll(/OLD\.`([^`]+)` IS NOT NEW\./g)].map((m) => m[1]!).sort();
-      const columns = (sqlite.query(`PRAGMA table_info("${t.tbl_name}")`).all() as { name: string }[]).map((c) => c.name).sort();
+      const watched = [...t.sql.matchAll(/OLD\.`([^`]+)` IS NOT NEW\./g)].map((m) => must(m[1], "column")).sort();
+      const columns = rowsOf(NameRow, sqlite.query(`PRAGMA table_info("${t.tbl_name}")`).all()).map((c) => c.name).sort();
       expect({ table: t.tbl_name, watched }).toEqual({ table: t.tbl_name, watched: columns });
     }
   });
 
   test("inserts, updates and deletes from the app are recorded", async () => {
     const id = await addFoodEntry(meal);
-    const v1 = versionOf(sqlite, "food_entries", id)!;
+    const v1 = must(versionOf(sqlite, "food_entries", id), "a sync version");
     expect(v1.deleted).toBe(0);
     expect(v1.vv > 0n).toBe(true);
-    const device = (sqlite.query("SELECT device_id FROM sync_state").get() as { device_id: string }).device_id;
+    const device = rowOf(DeviceRow, sqlite.query("SELECT device_id FROM sync_state").get()).device_id;
     expect(v1.origin).toBe(device);
 
-    await updateFoodEntry({ ...(await getFoodEntry(id))!, title: "Porridge" });
-    const v2 = versionOf(sqlite, "food_entries", id)!;
+    await updateFoodEntry({ ...must(await getFoodEntry(id), "the meal"), title: "Porridge" });
+    const v2 = must(versionOf(sqlite, "food_entries", id), "a sync version");
     expect(v2.vv > v1.vv).toBe(true);
     expect(v2.seq).toBeGreaterThan(v1.seq);
     expect(v2.hlc > v1.hlc).toBe(true);
 
     await deleteFoodEntry(id);
-    const v3 = versionOf(sqlite, "food_entries", id)!;
+    const v3 = must(versionOf(sqlite, "food_entries", id), "a sync version");
     expect(v3.deleted).toBe(1);
     expect(v3.vv > v2.vv).toBe(true);
     expect(v3.hlc > v2.hlc).toBe(true);
@@ -93,9 +100,9 @@ describe("sync tracking", () => {
 
   test("upserts are recorded; device-local settings are not", async () => {
     await setSetting("calorie_target_kcal", "2000");
-    const first = versionOf(sqlite, "settings", "calorie_target_kcal")!;
+    const first = must(versionOf(sqlite, "settings", "calorie_target_kcal"), "a sync version");
     await setSetting("calorie_target_kcal", "2100");
-    const second = versionOf(sqlite, "settings", "calorie_target_kcal")!;
+    const second = must(versionOf(sqlite, "settings", "calorie_target_kcal"), "a sync version");
     expect(second.deleted).toBe(0);
     expect(second.seq).toBeGreaterThan(first.seq);
     await setSetting("garmin_last_sync_at", "x");
@@ -113,14 +120,14 @@ describe("sync tracking", () => {
   });
 
   test("the clock never goes backwards, even within one millisecond", () => {
-    const before = (sqlite.query("SELECT max(hlc) AS h FROM sync_rows").get() as { h: string }).h;
+    const before = rowOf(z.object({ h: z.string() }), sqlite.query("SELECT max(hlc) AS h FROM sync_rows").get()).h;
     for (let i = 0; i < 50; i++) {
       sqlite.query("INSERT INTO incomplete_days (day, updated_at) VALUES (?, 'x')").run(`2030-01-${String(i + 1).padStart(2, "0")}`.slice(0, 10) + `-${i}`);
     }
-    const hlcs = (sqlite.query("SELECT hlc FROM sync_rows WHERE tbl = 'incomplete_days' ORDER BY seq").all() as { hlc: string }[]).map((r) => r.hlc);
+    const hlcs = rowsOf(z.object({ hlc: z.string() }), sqlite.query("SELECT hlc FROM sync_rows WHERE tbl = 'incomplete_days' ORDER BY seq").all()).map((r) => r.hlc);
     expect(hlcs).toHaveLength(50);
-    for (let i = 1; i < hlcs.length; i++) expect(hlcs[i]! > hlcs[i - 1]!).toBe(true);
-    expect(hlcs[0]! > before).toBe(true);
+    for (let i = 1; i < hlcs.length; i++) expect(at(hlcs, i) > at(hlcs, i - 1)).toBe(true);
+    expect(at(hlcs, 0) > before).toBe(true);
   });
 
   test("cascaded deletes are recorded too", () => {
@@ -135,10 +142,10 @@ describe("sync tracking", () => {
 describe("saving a chat", () => {
   test("only overwrites the version it was built on", async () => {
     const id = await createChat("Plan", [{ role: "user", content: "q1" }]);
-    const v = (await chatVersion(id))!;
+    const v = must(await chatVersion(id), "the chat's version");
     expect(v.mine).toBe(true);
     expect(await updateChatMessagesIf(id, [{ role: "user", content: "q1" }, { role: "assistant", content: "a1" }], v.hlc)).toBe(true);
-    const v2 = (await chatVersion(id))!;
+    const v2 = must(await chatVersion(id), "the chat's version");
     expect(v2.hlc > v.hlc).toBe(true);
     // Another device's version lands (as the sync engine writes it).
     sqlite.exec(`UPDATE sync_state SET applying = 1;
@@ -146,14 +153,14 @@ describe("saving a chat", () => {
       UPDATE sync_rows SET hlc = '9999999999998.000000', origin = 'the-mac' WHERE tbl = 'chats' AND pk = '${id}';
       UPDATE sync_state SET applying = 0;`);
     // Whose it is: a device of the vault by name, or unknown.
-    expect((await chatVersion(id))!).toMatchObject({ mine: false, device: null });
+    expect(must(await chatVersion(id), "the chat's version")).toMatchObject({ mine: false, device: null });
     sqlite.exec(`UPDATE sync_state SET applying = 1;
       INSERT INTO vault_devices (id, name, public_key, platform, added_at) VALUES ('the-mac', 'Studio Mac', 'k', 'macos', '2026-11-16T08:00:00.000Z');
       UPDATE sync_state SET applying = 0;`);
-    expect((await chatVersion(id))!).toMatchObject({ mine: false, device: "Studio Mac" });
+    expect(must(await chatVersion(id), "the chat's version")).toMatchObject({ mine: false, device: "Studio Mac" });
     // A save built on the old version doesn't touch theirs.
     expect(await updateChatMessagesIf(id, [{ role: "user", content: "stale" }], v2.hlc)).toBe(false);
-    const row = sqlite.query("SELECT messages FROM chats WHERE id = ?").get(id) as { messages: string };
+    const row = rowOf(z.object({ messages: z.string() }), sqlite.query("SELECT messages FROM chats WHERE id = ?").get(id));
     expect(row.messages).toContain("from the mac");
   });
 });
@@ -188,7 +195,7 @@ describe("migration 0039 on an existing database", () => {
     db.exec(read("0039_sync.sql"));
     db.exec("COMMIT");
 
-    const rows = db.query("SELECT tbl, pk, deleted, seq FROM sync_rows ORDER BY seq").all() as { tbl: string; pk: string; seq: number }[];
+    const rows = rowsOf(z.object({ tbl: z.string(), pk: z.string(), seq: z.number() }), db.query("SELECT tbl, pk, deleted, seq FROM sync_rows ORDER BY seq").all());
     const tracked = rows.filter((r) => r.tbl !== "state_categories").map((r) => `${r.tbl}/${r.pk}`);
     expect(tracked).toEqual([
       "settings/calorie_target_kcal",
@@ -199,7 +206,7 @@ describe("migration 0039 on an existing database", () => {
     ]);
     // Seqs are unique, start at 1 and leave no gaps; the counter carries on from there.
     expect(rows.map((r) => r.seq)).toEqual(rows.map((_, i) => i + 1));
-    const state = db.query("SELECT seq, device_id FROM sync_state").get() as { seq: number; device_id: string };
+    const state = rowOf(z.object({ seq: z.number(), device_id: z.string() }), db.query("SELECT seq, device_id FROM sync_state").get());
     expect(state.seq).toBe(rows.length);
     expect(state.device_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     expect(db.query("SELECT count(*) AS n FROM sync_vv").get()).toEqual({ n: rows.length });
@@ -212,7 +219,7 @@ describe("migration 0039 on an existing database", () => {
     const ids = [0, 1].map(() => {
       const db = new Database(":memory:");
       for (const f of files) db.exec(read(f));
-      return (db.query("SELECT device_id FROM sync_state").get() as { device_id: string }).device_id;
+      return rowOf(DeviceRow, db.query("SELECT device_id FROM sync_state").get()).device_id;
     });
     expect(ids[0]).not.toBe(ids[1]);
   });

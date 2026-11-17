@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { at, must } from "./helpers";
 import {
   ANSWERING_ELSEWHERE_MS,
   COACH_CONTEXT_MARK,
@@ -40,21 +41,21 @@ function conversation(): ChatMessage[] {
 describe("coach transcript", () => {
   test("context notes are not their messages", () => {
     const msgs = conversation();
-    expect(isCoachContext(msgs[1]!)).toBe(true);
-    expect(isCoachContext(msgs[2]!)).toBe(false);
+    expect(isCoachContext(at(msgs, 1))).toBe(true);
+    expect(isCoachContext(at(msgs, 2))).toBe(false);
     expect(lastUserIndexOf(msgs)).toBe(10);
   });
 
   test("shortens earlier results and notes, keeps the live turn", () => {
     const out = compactTranscript(conversation());
-    expect(out[1]!.content).toBe(STALE_CONTEXT);
-    expect(out[4]!.content).toContain("run_sql result from an earlier turn");
+    expect(at(out, 1).content).toBe(STALE_CONTEXT);
+    expect(at(out, 4).content).toContain("run_sql result from an earlier turn");
     // The schema stays: it would only be fetched again.
-    expect(out[6]!.content).toBe(big);
-    expect(out[8]!.content).toBe("short");
+    expect(at(out, 6).content).toBe(big);
+    expect(at(out, 8).content).toBe("short");
     // The live note and the message being answered are untouched.
-    expect(out[9]!.content).toBe(`${COACH_CONTEXT_MARK} Tuesday digest`);
-    expect(out[10]!.content).toBe("And sleep?");
+    expect(at(out, 9).content).toBe(`${COACH_CONTEXT_MARK} Tuesday digest`);
+    expect(at(out, 10).content).toBe("And sleep?");
   });
 
   test("is stable: compacting twice changes nothing", () => {

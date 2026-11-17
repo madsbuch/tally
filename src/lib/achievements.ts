@@ -27,19 +27,11 @@ import {
   todayStr,
 } from "./db";
 import { dayOf as stampedDayOf, timeOf } from "./daystamp";
-import { REFERENCE_INTAKES, nutrientDef, scaleNutrients, sumNutrients } from "./nutrients";
+import { NUTRIENT_DEFS, REFERENCE_INTAKES, scaleNutrients, sumNutrients } from "./nutrients";
+import { lazy } from "./must";
 import { getStreakInfo } from "./streak";
-import type { StreakInfo } from "./streak";
-import type {
-  Fast,
-  FoodEntry,
-  HealthMetric,
-  NutrientKey,
-  Nutrients,
-  SleepSession,
-  SupplementLogWithSupplement,
-  Workout,
-} from "./types";
+import type { Fast, Nutrients } from "./types";
+import { parseUnlockedKeys } from "./schemas";
 
 export const ACHIEVEMENT_UNLOCKED_EVENT = "tally:achievement-unlocked";
 
@@ -146,56 +138,29 @@ function fastHours(f: Fast): number {
  * most once no matter how many checks consume it.
  */
 class ScanContext {
-  private cache = new Map<string, Promise<unknown>>();
-
-  private memo<T>(key: string, load: () => Promise<T>): Promise<T> {
-    let p = this.cache.get(key) as Promise<T> | undefined;
-    if (!p) {
-      p = load();
-      this.cache.set(key, p);
-    }
-    return p;
-  }
-
-  streak(): Promise<StreakInfo> {
-    return this.memo("streak", getStreakInfo);
-  }
-  foodEntries(): Promise<FoodEntry[]> {
-    return this.memo("food", listAllFoodEntries);
-  }
-  workouts(): Promise<Workout[]> {
-    return this.memo("workouts", listAllWorkouts);
-  }
-  suppLogs(): Promise<SupplementLogWithSupplement[]> {
-    return this.memo("supps", listAllSupplementLogs);
-  }
-  fasts(): Promise<Fast[]> {
-    return this.memo("fasts", listAllFasts);
-  }
-  sleep(): Promise<SleepSession[]> {
-    return this.memo("sleep", listAllSleepSessions);
-  }
-  metrics(): Promise<HealthMetric[]> {
-    return this.memo("metrics", listAllHealthMetrics);
-  }
+  readonly streak = lazy(getStreakInfo);
+  readonly foodEntries = lazy(listAllFoodEntries);
+  readonly workouts = lazy(listAllWorkouts);
+  readonly suppLogs = lazy(listAllSupplementLogs);
+  readonly fasts = lazy(listAllFasts);
+  readonly sleep = lazy(listAllSleepSessions);
+  readonly metrics = lazy(listAllHealthMetrics);
 
   /** Per-day nutrient totals (food + supplements), keyed by local day. */
-  dayNutrients(): Promise<Map<string, Nutrients>> {
-    return this.memo("dayNutrients", async () => {
-      const [entries, supps] = await Promise.all([this.foodEntries(), this.suppLogs()]);
-      const byDay = new Map<string, Nutrients[]>();
-      const push = (day: string, n: Nutrients) => {
-        const list = byDay.get(day);
-        if (list) list.push(n);
-        else byDay.set(day, [n]);
-      };
-      for (const e of entries) push(dayOf(e, e.eaten_at), e.nutrients);
-      for (const l of supps) push(dayOf(l, l.taken_at), scaleNutrients(l.nutrients, l.amount));
-      const out = new Map<string, Nutrients>();
-      for (const [day, list] of byDay) out.set(day, sumNutrients(list));
-      return out;
-    });
-  }
+  readonly dayNutrients = lazy(async (): Promise<Map<string, Nutrients>> => {
+    const [entries, supps] = await Promise.all([this.foodEntries(), this.suppLogs()]);
+    const byDay = new Map<string, Nutrients[]>();
+    const push = (day: string, n: Nutrients) => {
+      const list = byDay.get(day);
+      if (list) list.push(n);
+      else byDay.set(day, [n]);
+    };
+    for (const e of entries) push(dayOf(e, e.eaten_at), e.nutrients);
+    for (const l of supps) push(dayOf(l, l.taken_at), scaleNutrients(l.nutrients, l.amount));
+    const out = new Map<string, Nutrients>();
+    for (const [day, list] of byDay) out.set(day, sumNutrients(list));
+    return out;
+  });
 
   /** Most recent synced body weight, or null if never synced. */
   async latestWeightKg(): Promise<number | null> {
@@ -501,11 +466,12 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     category: "nutrition",
     check: (ctx) =>
       someDay(ctx, (n) =>
-        Object.entries(REFERENCE_INTAKES).every(([key, ref]) => {
+        NUTRIENT_DEFS.every((def) => {
+          const ref = REFERENCE_INTAKES[def.key];
           // Micros only — "other" compounds (e.g. creatine) have supplementation
           // targets, not dietary references, and shouldn't gate this.
-          if (nutrientDef(key as NutrientKey).group !== "micro") return true;
-          return (n[key as keyof Nutrients] ?? 0) >= 0.8 * ref;
+          if (ref == null || def.group !== "micro") return true;
+          return (n[def.key] ?? 0) >= 0.8 * ref;
         }),
       ),
   },
@@ -679,8 +645,9 @@ function dispatchUnlocked(keys: string[]): void {
 
 export function onAchievementsUnlocked(handler: (keys: string[]) => void): () => void {
   const listener = (e: Event) => {
-    const keys = (e as CustomEvent<{ keys?: string[] }>).detail?.keys;
-    if (Array.isArray(keys)) handler(keys);
+    if (!(e instanceof CustomEvent)) return;
+    const keys = parseUnlockedKeys(e.detail);
+    if (keys) handler(keys);
   };
   window.addEventListener(ACHIEVEMENT_UNLOCKED_EVENT, listener);
   return () => window.removeEventListener(ACHIEVEMENT_UNLOCKED_EVENT, listener);

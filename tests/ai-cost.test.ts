@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { at } from "./helpers";
 import {
   cachedShare,
   featureInfo,
@@ -40,10 +41,10 @@ describe("cost center roll-ups", () => {
   test("groups by feature and by model, most expensive first", () => {
     const features = groupBy(rows, "source");
     expect(features.map((g) => g.key)).toEqual(["coach", "diary", "checkin"]);
-    expect(features[0]!.costUsd).toBeCloseTo(0.4);
+    expect(at(features, 0).costUsd).toBeCloseTo(0.4);
     const models = groupBy(rows, "model");
     expect(models.map((g) => g.key)).toEqual(["anthropic/claude", "google/gemini"]);
-    expect(models[1]!.requests).toBe(6);
+    expect(at(models, 1).requests).toBe(6);
   });
 
   test("daily buckets fill the gaps with zero", () => {

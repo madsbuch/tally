@@ -114,6 +114,8 @@ import type {
   ReserveDef,
   WorkoutBurn,
 } from "./storeModels";
+import { isOneOf } from "./guards";
+import { NUTRIENT_KEYS } from "./nutrients";
 
 /** Days of history the weekly stores are built from (vitamin D needs ~2 months). */
 const STORE_DAYS = 120;
@@ -212,10 +214,18 @@ function intakeFrom(
   garminBalance: Intake["garminBalance"] = null,
   fastedDays: Set<string> = new Set(),
 ): Intake {
-  const byDay = Object.fromEntries(DAILY_KEYS.map((k) => [k, new Map<string, number>()])) as Record<
-    DailyKey,
-    Map<string, number>
-  >;
+  // Spelled out, so a new reserve that isn't listed here fails to compile.
+  const byDay: Record<DailyKey, Map<string, number>> = {
+    epa_dha_g: new Map(),
+    iron_mg: new Map(),
+    beta_alanine_g: new Map(),
+    iodine_ug: new Map(),
+    vitamin_a_ug: new Map(),
+    vitamin_e_mg: new Map(),
+    vitamin_k_ug: new Map(),
+    vitamin_b12_ug: new Map(),
+    folate_ug: new Map(),
+  };
   const out: Intake = {
     caffeine: [],
     alcohol: [],
@@ -247,8 +257,9 @@ function intakeFrom(
   }
   for (const l of supplementLogs) {
     const n: Nutrients = {};
-    for (const [k, v] of Object.entries(l.nutrients)) {
-      if (typeof v === "number") n[k as keyof Nutrients] = v * l.amount;
+    for (const k of NUTRIENT_KEYS) {
+      const v = l.nutrients[k];
+      if (typeof v === "number") n[k] = v * l.amount;
     }
     take(l.taken_at, l.day ?? todayStr(new Date(l.taken_at)), l.name, n, true);
   }
@@ -360,7 +371,7 @@ const GARMIN_FRESH_DAYS = 2;
 /** The personal caffeine half-life, falling back to the textbook 5 h. */
 export async function getCaffeineHalfLife(): Promise<number> {
   const raw = Number(await getSetting(SETTING_KEYS.caffeineHalfLife));
-  return (CAFFEINE_HALF_LIVES as readonly number[]).includes(raw)
+  return isOneOf(CAFFEINE_HALF_LIVES, raw)
     ? raw
     : DEFAULT_CAFFEINE_HALF_LIFE_H;
 }
@@ -389,7 +400,7 @@ interface LabMatcher {
 export function labNumber(value: string): number | null {
   const m = /^[<>≤≥~]?\s*(\d+(?:[.,]\d+)?)\s*%?$/.exec(value.trim());
   if (!m) return null;
-  const n = Number(m[1]!.replace(",", "."));
+  const n = Number((m[1] ?? "").replace(",", "."));
   return isFinite(n) && n > 0 ? n : null;
 }
 
@@ -444,7 +455,7 @@ export function findLabTest(docs: LibraryDocument[], today: string, kind: LabKin
 /** Hours of sleep a night to count debt against. */
 export async function getSleepNeed(): Promise<number> {
   const raw = Number(await getSetting(SETTING_KEYS.sleepNeed));
-  return (SLEEP.needs as readonly number[]).includes(raw) ? raw : SLEEP.defaultNeedH;
+  return isOneOf(SLEEP.needs, raw) ? raw : SLEEP.defaultNeedH;
 }
 
 export interface BodyProfile {
@@ -898,7 +909,7 @@ function drainFitOf(intake: Intake, weightKg: number, atMs: number): DrainFit | 
   const past = intake.readings.filter((r) => r.ketone != null && r.at <= atMs);
   const key = `${day}:${past.length}:${weightKg}`;
   let cache = drainFits.get(intake);
-  if (!cache) drainFits.set(intake, (cache = new Map()));
+  if (!cache) drainFits.set(intake, (cache = new Map<string, DrainFit | null>()));
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
 
@@ -1156,8 +1167,9 @@ export function parseLocalMoment(raw: string, now = new Date()): number | null {
   const t = raw.trim();
   const full = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{1,2}):(\d{2})$/.exec(t);
   if (full) {
-    const [, y, m, d, h, min] = full.map(Number) as number[];
-    return new Date(y!, m! - 1, d!, h!, min!).getTime();
+    const [y, m, d, h, min] = full.slice(1).map(Number);
+    if (y === undefined || m === undefined || d === undefined || h === undefined || min === undefined) return null;
+    return new Date(y, m - 1, d, h, min).getTime();
   }
   const hm = /^(\d{1,2}):(\d{2})$/.exec(t);
   if (hm) {

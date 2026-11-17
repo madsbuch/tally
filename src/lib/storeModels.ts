@@ -23,6 +23,7 @@
  */
 import { DAY_MS, DEFAULT_WEIGHT_KG, HOUR_MS } from "./bodyModel";
 import type { Dose, Point } from "./bodyModel";
+import { must } from "./must";
 
 // ---------------------------------------------------------------------------
 // Shared: bands, and a level that follows intake over weeks
@@ -38,7 +39,7 @@ export interface Band {
 }
 
 export function bandOf<B extends Band>(bands: readonly B[], v: number): B {
-  return bands.find((b) => v < b.upTo) ?? bands[bands.length - 1]!;
+  return bands.find((b) => v < b.upTo) ?? must(bands[bands.length - 1], "band");
 }
 
 /**
@@ -416,14 +417,14 @@ export function muscleCostG(w: WorkoutBurn): number {
 
 /** Linear interpolation through `pts` (x ascending), flat beyond the ends. */
 function interp(pts: readonly (readonly [number, number])[], x: number): number {
-  const first = pts[0]!;
+  const first = must(pts[0], "point");
   if (x <= first[0]) return first[1];
-  for (let i = 1; i < pts.length; i++) {
-    const [x1, y1] = pts[i]!;
-    const [x0, y0] = pts[i - 1]!;
+  let [x0, y0] = first;
+  for (const [x1, y1] of pts) {
     if (x <= x1) return y0 + ((x - x0) / (x1 - x0)) * (y1 - y0);
+    [x0, y0] = [x1, y1];
   }
-  return pts[pts.length - 1]![1];
+  return y0;
 }
 
 /** The most liver (0..1) a ketone reading of at least 0.3 mmol/L allows. */
@@ -551,13 +552,12 @@ export function simulateGlycogen(input: GlycogenInput): GlycogenRun {
   let muscleBurnedG = 0;
   let muscleRefilledG = 0;
   for (; t <= toMs; t += g.stepMs) {
-    while (di < doses.length && doses[di]!.at <= t) gut += doses[di++]!.amount;
-    while (bi < burns.length && burns[bi]!.end <= t) lastWorkoutEnd = Math.max(lastWorkoutEnd ?? 0, burns[bi++]!.end);
-    while (ri < reads.length && reads[ri]!.at <= t) {
-      const r = reads[ri++]!;
+    for (let d = doses[di]; d && d.at <= t; d = doses[++di]) gut += d.amount;
+    for (let b = burns[bi]; b && b.end <= t; b = burns[++bi]) lastWorkoutEnd = Math.max(lastWorkoutEnd ?? 0, b.end);
+    for (let r = reads[ri]; r && r.at <= t; r = reads[++ri]) {
       const before = liver / liverCap;
       const sinceWorkout =
-        bi < burns.length && burns[bi]!.start <= r.at
+        (burns[bi]?.start ?? Infinity) <= r.at
           ? 0
           : lastWorkoutEnd != null
             ? (r.at - lastWorkoutEnd) / HOUR_MS
@@ -599,8 +599,8 @@ export function simulateGlycogen(input: GlycogenInput): GlycogenRun {
       liver = Math.max(0, liver - (demand - inflow) * drain * Math.sqrt(liver / liverCap));
     }
     for (let i = bi; i < burns.length; i++) {
-      const b = burns[i]!;
-      if (b.start > t) break;
+      const b = burns[i];
+      if (!b || b.start > t) break;
       if (t >= b.end) continue;
       const fromLiver = b.perStep * g.workoutFromLiver;
       const fromMuscle = b.perStep - fromLiver;
@@ -674,7 +674,8 @@ export function fitDrain(input: Omit<GlycogenInput, "readings" | "drain" | "pin"
     if (!first) return null;
     let cost = DRAIN_PRIOR * Math.log(drain) ** 2;
     for (const r of used) {
-      const p = points[Math.min(points.length - 1, Math.max(0, Math.round((r.at - first.t) / GLYCOGEN.stepMs)))]!;
+      const p = points[Math.min(points.length - 1, Math.max(0, Math.round((r.at - first.t) / GLYCOGEN.stepMs)))];
+      if (!p) continue;
       cost += (squash(p.ketone) - squash(r.ketone)) ** 2;
     }
     // Ties go to the rate nearest the textbook.

@@ -29,8 +29,8 @@ export function countsAsCardio(avgHr: number | null | undefined): boolean {
 export function zone2Share(zoneSecs: readonly number[] | null | undefined): number | null {
   if (!zoneSecs || zoneSecs.length < 2) return null;
   const total = zoneSecs.reduce((a, s) => a + (Number.isFinite(s) && s > 0 ? s : 0), 0);
-  const z2 = zoneSecs[1]!;
-  if (total <= 0 || !Number.isFinite(z2) || z2 < 0) return null;
+  const z2 = zoneSecs[1];
+  if (z2 === undefined || total <= 0 || !Number.isFinite(z2) || z2 < 0) return null;
   return z2 / total;
 }
 
