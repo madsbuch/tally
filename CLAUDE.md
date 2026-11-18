@@ -42,7 +42,11 @@ ESLint (`eslint.config.js`) holds all TypeScript — `src/`, `tests/`,
 - No `any`, and in `src/` no `any` flowing anywhere (`no-unsafe-*`, type-aware):
   give it `unknown` and parse it.
 - No `@ts-ignore` / `@ts-expect-error` / `@ts-nocheck`.
-- Rust: every crate sets `unsafe_code = "forbid"` in its `Cargo.toml`.
+- Rust: every crate sets `unsafe_code = "forbid"` in its `Cargo.toml`, except
+  the app crate (`src-tauri`), which sets `"deny"` for one audited exception:
+  the JNI entry point in `src/sync/background.rs` needs `#[no_mangle]` and
+  carries `#[allow(unsafe_code)]`. That code is Android-only, so a desktop
+  `cargo check` never sees it: only the APK build (CI) does.
 
 Note that drizzle's `.$type<T>()` on JSON columns is a compile-time claim only —
 runtime validation still happens through the schema helpers

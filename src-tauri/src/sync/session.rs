@@ -225,6 +225,12 @@ async fn key_known(pool: &SqlitePool, key: &[u8]) -> Result<bool> {
     .map_err(|e| e.to_string())
 }
 
+/// The refusal when two devices run different versions, which reads right on
+/// either of them and says which one to update.
+fn older_version(older: &str, newer: &str) -> String {
+    format!("{older} has an older version of Tally than {newer}: update {older} and they'll sync again")
+}
+
 /// Whether `theirs` may sync with this device: the same vault, the same
 /// schema, a key the vault lists and hasn't revoked — or, while joining (the
 /// device list is still empty here), the key the QR code named.
@@ -232,21 +238,18 @@ async fn key_known(pool: &SqlitePool, key: &[u8]) -> Result<bool> {
 /// A device is known by its key; its id can change (a restored copy takes a
 /// new one, see `instance.rs`), and the new id arrives with the sync itself.
 async fn check_peer(pool: &SqlitePool, me: &Hello, theirs: &Hello, proven_key: &[u8], vouched: Option<&[u8]>) -> Result<()> {
-    if theirs.protocol != me.protocol {
-        return Err(format!("{} runs a different version of sync; update both devices", theirs.name));
-    }
-    if theirs.schema != me.schema {
-        return Err(format!(
-            "{} is on a different version of Tally ({} vs {}); update both devices",
-            theirs.name, theirs.schema, me.schema
-        ));
+    // These refusals are also sent to the other device, which shows them as
+    // they are: so they name both devices and never say "this" or "you".
+    if theirs.protocol != me.protocol || theirs.schema != me.schema {
+        let they_are_older = (theirs.protocol, theirs.schema) < (me.protocol, me.schema);
+        let (older, newer) = if they_are_older { (theirs, me) } else { (me, theirs) };
+        return Err(older_version(&older.name, &newer.name));
     }
     if !same_build(&me.build, &theirs.build) {
+        let (dev, real) = if me.build == "dev" { (me, theirs) } else { (theirs, me) };
         return Err(format!(
-            "{} is a {} build and this is a {} one: development builds never sync with the real app",
-            theirs.name,
-            if theirs.build.is_empty() { "release" } else { &theirs.build },
-            me.build
+            "{} is a development build and {} the real app: development builds never sync with the real app",
+            dev.name, real.name
         ));
     }
     if me.vault_id.is_none() || theirs.vault_id != me.vault_id {

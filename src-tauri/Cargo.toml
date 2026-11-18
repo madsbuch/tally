@@ -61,5 +61,6 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 futures-core = "0.3"
 
 [lints.rust]
-# No unsafe Rust anywhere in Tally; see CLAUDE.md.
-unsafe_code = "forbid"
+# No unsafe Rust; see CLAUDE.md. "deny" rather than "forbid" here, for one
+# audited exception: the JNI entry point in src/sync/background.rs.
+unsafe_code = "deny"
