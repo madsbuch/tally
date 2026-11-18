@@ -188,9 +188,14 @@ async fn different_versions_of_the_app_do_not_sync() {
     let h = host().await;
     let joiner = device().await;
     join(&joiner.pool, &offer_from(&h).await, false).await.unwrap();
+    for (pool, name) in [(&h.device.pool, "Computer"), (&joiner.pool, "Phone")] {
+        exec(pool, &format!("INSERT OR REPLACE INTO device_settings (key, value) VALUES ('sync_device_name', '{name}')")).await;
+    }
     exec(&joiner.pool, "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) VALUES (999, 'future', 1, x'', 0)").await;
     let err = sync_now(&joiner.pool, h.addr).await.unwrap_err();
-    assert!(err.contains("different version of Tally"), "{err}");
+    // The computer is the older one here; it refuses, and the phone shows the
+    // computer's words as they are, so they name the device to update.
+    assert_eq!(err, "Computer has an older version of Tally than Phone: update Computer and they'll sync again");
 }
 
 #[tokio::test]

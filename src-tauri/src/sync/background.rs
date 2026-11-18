@@ -49,7 +49,12 @@ pub async fn run_once(db_path: &str, budget: Duration) -> String {
     summary
 }
 
+// The one exception to "no unsafe" (Cargo.toml): Android's JVM finds this
+// function by its exact symbol name, which takes `#[no_mangle]` — an unsafe
+// attribute, since two libraries exporting one name would clash. The name is
+// JNI's, unique to this class.
 #[cfg(target_os = "android")]
+#[allow(unsafe_code)]
 #[no_mangle]
 pub extern "system" fn Java_com_madsbuch_tally_syncbg_SyncNative_syncNow<'local>(
     mut env: jni::JNIEnv<'local>,
