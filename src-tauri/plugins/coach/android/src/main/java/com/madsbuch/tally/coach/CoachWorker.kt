@@ -243,7 +243,15 @@ internal object CoachWorker {
             if (winner.trigger.key == "follow_up_due") {
                 CoachDb.clearFollowUps(db, due.map { it.id })
             }
-            return Result(true, winner.trigger.title, message, chatId)
+            // The chat keeps the ids (the app shows them as chips); the
+            // notification can't, so it gets what they stand for.
+            val shown = try {
+                CoachDb.withEntityTitles(db, message)
+            } catch (e: Exception) {
+                android.util.Log.w("Tally", "Couldn't name the ids in a check-in", e)
+                message
+            }
+            return Result(true, winner.trigger.title, shown, chatId)
         } finally {
             try {
                 db.close()

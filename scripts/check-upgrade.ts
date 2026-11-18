@@ -1,6 +1,7 @@
 // Dry-runs the app's pending database migrations on a COPY of a database and
 // checks nothing was lost: every row of every table is still there, every
-// value unchanged (ids re-spelled the way migration 0038 promises), every
+// value unchanged (ids re-spelled the way migrations 0038 and 0041 promise —
+// integers to UUIDs, UUIDs to TypeIDs — sync's bookkeeping with them), every
 // reference still resolves, and SQLite's own integrity checks pass.
 //
 //   bun scripts/check-upgrade.ts path/to/tally-export.db   # a real database
@@ -9,6 +10,10 @@
 // The database given is never written to: it's copied first (VACUUM INTO, so
 // a database still in WAL mode copies whole). Migrations run the way
 // tauri-plugin-sql runs them: each in a transaction, foreign keys on.
+//
+// A database already past 0038 (the usual case now) is checked across 0041
+// alone: ids, references and sync_rows / sync_vv re-spelled, nothing else in
+// them — no new sync records, no clock or sequence moved.
 //
 // The synthetic database is the schema as it stood before 0038, filled with
 // 60 days' worth of rows in every table, linked to each other the way the app
@@ -19,7 +24,9 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { legacyId } from "../src/lib/ids";
+import { ID_PREFIXES, typeIdOf } from "../src/lib/ids";
+import type { IdPrefix, IdTable } from "../src/lib/ids";
+import { isKeyOf } from "../src/lib/guards";
 import { must } from "../src/lib/must";
 import { parseSqlRows } from "../src/lib/schemas";
 
@@ -45,12 +52,24 @@ const migrations = [...rust.matchAll(/version: (\d+),\s*description: "([^"]+)",\
 );
 const sqlOf = (file: string) => readFileSync(new URL(`src-tauri/migrations/${file}`, root), "utf8");
 const UUID_VERSION = must(migrations.find((m) => m.file === "0038_uuid_ids.sql"), "0038 migration").version;
+const TYPE_ID_VERSION = must(migrations.find((m) => m.file === "0041_type_ids.sql"), "0041 migration").version;
 
-/** Columns 0038 re-spells from integers to ids (besides `id`). */
-const REF_COLUMNS = new Set([
-  "supplement_id", "document_id", "manual_id", "experiment_id", "fast_id",
-  "chat_id", "entry_id", "log_id", "source_entry_id", "workout_id",
-]);
+/**
+ * Columns 0038 and 0041 re-spell (besides `id`), with the table each points
+ * into — `log_id` by its table, `entry_id` by its row's `entry_kind`.
+ */
+const REF_TARGETS: Record<string, IdTable> = {
+  supplement_id: "supplements", document_id: "documents", manual_id: "manuals",
+  experiment_id: "experiments", fast_id: "fasts", chat_id: "chats",
+  source_entry_id: "food_entries", workout_id: "workouts",
+};
+const LOG_TARGETS: Record<string, IdTable> = { state_log_tags: "state_logs", performance_stats: "performance_logs" };
+const ENTRY_TARGETS: Record<string, IdTable> = {
+  meal: "food_entries", workout: "workouts", reading: "blood_readings",
+  state: "state_logs", performance: "performance_logs", sleep: "sleep_sessions",
+};
+const REF_COLUMNS = new Set([...Object.keys(REF_TARGETS), "entry_id", "log_id"]);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Tables whose rows carry their own integer `id` before 0038. */
 const DEVICE_KEYS = [
   "models_cache", "models_cache_at",
@@ -92,13 +111,18 @@ const applied = new Set<number>(
 const pending = migrations.filter((m) => !applied.has(m.version));
 console.log(`Database: ${given ?? "synthetic (60 days)"}`);
 console.log(`Applied migrations: ${applied.size}; pending: ${pending.map((m) => m.description).join(", ") || "none"}`);
-if (!pending.some((m) => m.version === UUID_VERSION)) {
-  console.log("Migration 0038 is already applied here; nothing to check.");
+/** Integers become UUIDs (0038 is pending). */
+const rekeys = pending.some((m) => m.version === UUID_VERSION);
+/** UUIDs become TypeIDs (0041 is pending). */
+const retypes = pending.some((m) => m.version === TYPE_ID_VERSION);
+if (!rekeys && !retypes) {
+  console.log("Migrations 0038 and 0041 are already applied here; nothing to check.");
   process.exit(0);
 }
+const FROM_VERSION = rekeys ? UUID_VERSION : TYPE_ID_VERSION;
 for (const m of pending) {
-  if (m.version >= UUID_VERSION) break;
-  console.log(`Applying ${m.description} first (pending, before 0038)`);
+  if (m.version >= FROM_VERSION) break;
+  console.log(`Applying ${m.description} first (pending, before ${rekeys ? "0038" : "0041"})`);
   runMigration(m);
 }
 
@@ -126,7 +150,7 @@ const dietValues = before.get("food_entries")?.filter((r) => r["diet"] != null).
 // ---------------------------------------------------------------------------
 
 const started = performance.now();
-for (const m of pending.filter((p) => p.version >= UUID_VERSION)) {
+for (const m of pending.filter((p) => p.version >= FROM_VERSION)) {
   try {
     runMigration(m);
   } catch (e) {
@@ -147,13 +171,36 @@ if (fk.length) fail(`${fk.length} broken reference(s) after upgrading: ${JSON.st
 const leftovers = db.query("SELECT name FROM sqlite_master WHERE instr(sql, '__new_') > 0").all();
 if (leftovers.length) fail(`Schema still mentions __new_ tables: ${JSON.stringify(leftovers)}`);
 
-const mapId = (v: unknown) => (v == null ? null : legacyId(Number(v)));
+/**
+ * A row id of `table` as the pending migrations leave it: an integer (or its
+ * digits) as 0038's UUID, then a UUID as 0041's TypeID. Anything else stays.
+ */
+function respell(table: IdTable | undefined, v: unknown): unknown {
+  if (v == null) return v;
+  let out = v;
+  if (rekeys && (typeof v === "number" || (typeof v === "string" && /^\d+$/.test(v)))) {
+    out = `00000000-0000-7000-8000-${Number(v).toString(16).padStart(12, "0")}`;
+  }
+  // 0041 leaves a reference it can't place (an unknown entry_kind) as it is.
+  if (retypes && table && typeof out === "string" && UUID.test(out)) out = typeIdOf(prefixOf(table), out);
+  return out;
+}
+const prefixOf = (t: IdTable): IdPrefix => ID_PREFIXES[t];
+const idTable = (t: unknown): IdTable | undefined => (typeof t === "string" && isKeyOf(ID_PREFIXES, t) ? t : undefined);
+/** The table a reference column of `t` points into, for this row. */
+function refTarget(t: string, c: string, row: Row): IdTable | undefined {
+  if (c === "entry_id") return typeof row["entry_kind"] === "string" ? ENTRY_TARGETS[row["entry_kind"]] : undefined;
+  if (c === "log_id") return LOG_TARGETS[t];
+  return REF_TARGETS[c];
+}
+/** The table a sync_rows / sync_vv pk is a row of (document_files: by its document). */
+const syncTarget = (tbl: unknown): IdTable | undefined => (tbl === "document_files" ? "documents" : idTable(tbl));
 let rowsChecked = 0;
 let valuesChecked = 0;
 
 for (const t of tables) {
   const old = must(before.get(t), `rows of ${t} before`);
-  if (t === "settings") {
+  if (t === "settings" && rekeys) {
     checkSettings(old);
     continue;
   }
@@ -169,8 +216,10 @@ for (const t of tables) {
     const expected: Row = {};
     for (const [c, v] of Object.entries(o)) {
       if (t === "food_entries" && c === "diet") continue;
-      if (c === "id" && typeof v === "number") expected[c] = mapId(v);
-      else if (REF_COLUMNS.has(c)) expected[c] = mapId(v);
+      if (c === "id" && (typeof v === "number" || retypes)) expected[c] = respell(idTable(t), v);
+      else if (REF_COLUMNS.has(c)) expected[c] = respell(refTarget(t, c, o), v);
+      else if ((t === "sync_rows" || t === "sync_vv") && c === "pk") expected[c] = respell(syncTarget(o["tbl"]), v);
+      else if (t === "device_settings" && c === "value" && o["key"] === "coach_unread_chat") expected[c] = respell("chats", v);
       else expected[c] = v;
     }
     const got = byKey.get(keyOf(expected));
@@ -184,8 +233,12 @@ for (const t of tables) {
       let want = v;
       if (t === "entry_messages" && c === "before_entry" && typeof v === "string") {
         // The undo snapshot's id is re-spelled inside the JSON; the rest is untouched.
-        const oldId = rowOf(z.object({ i: z.number() }), db.query("SELECT json_extract(?, '$.id') AS i").get(v)).i;
-        want = rowOf(z.object({ j: z.string() }), db.query("SELECT json_set(?, '$.id', ?) AS j").get(v, mapId(oldId))).j;
+        const oldId = rowOf(z.object({ i: z.union([z.number(), z.string()]).nullable() }), db.query("SELECT CASE WHEN json_valid(?1) THEN json_extract(?1, '$.id') END AS i").get(v)).i;
+        const target = typeof o["entry_kind"] === "string" ? ENTRY_TARGETS[o["entry_kind"]] : undefined;
+        const newId = respell(target, oldId);
+        if (newId !== oldId && typeof newId === "string") {
+          want = rowOf(z.object({ j: z.string() }), db.query("SELECT json_set(?, '$.id', ?) AS j").get(v, newId)).j;
+        }
       }
       if (!same(got[c], want)) fail(`${t} ${keyOf(expected)}.${c}: was ${show(want)}, now ${show(got[c])}`);
     }
@@ -216,8 +269,9 @@ report();
 
 function report(): never {
   console.log("");
-  if (dietValues) notes.push(`food_entries.diet held ${dietValues} non-empty value(s); that column is dropped (the app never reads it).`);
-  else notes.push("food_entries.diet was empty everywhere, so dropping it loses nothing.");
+  // Only 0038 drops the diet column.
+  if (rekeys && dietValues) notes.push(`food_entries.diet held ${dietValues} non-empty value(s); that column is dropped (the app never reads it).`);
+  else if (rekeys) notes.push("food_entries.diet was empty everywhere, so dropping it loses nothing.");
   console.log(`Checked ${tables.length} tables, ${rowsChecked} rows, ${valuesChecked} values, ${photoHashes.size} photos (byte for byte).`);
   console.log(`Upgrade took ${Math.round(tookMs)} ms.`);
   for (const n of notes) console.log(`Note: ${n}`);
@@ -240,7 +294,7 @@ function checkSettings(old: Row[]) {
     const isDevice = DEVICE_KEYS.includes(key);
     const got = (isDevice ? device : synced).get(key);
     let want = o["value"];
-    if (key === "coach_unread_chat" && typeof want === "string" && /^\d+$/.test(want)) want = legacyId(Number(want));
+    if (key === "coach_unread_chat") want = respell("chats", want);
     rowsChecked++;
     valuesChecked++;
     if (got !== want) fail(`setting ${key}: was ${show(want)}, now ${show(got)} (in ${isDevice ? "device_settings" : "settings"})`);
