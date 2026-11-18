@@ -29,6 +29,7 @@ import type { LabelArgs, OffProduct } from "./schemas";
 import { SETTING_KEYS } from "./types";
 import type { NutrientKey, Nutrients } from "./types";
 import { fieldsOf } from "./guards";
+import { gtinProblem } from "./barcode";
 
 const BASE = "https://world.openfoodfacts.org";
 const SEARCH_BASE = "https://search.openfoodfacts.org";
@@ -593,6 +594,8 @@ function errorText(e: unknown): string {
 export async function executeFoodFactsSearch(args: Record<string, unknown>): Promise<string> {
   const query = str(args["query"]);
   if (!query) throw new Error("query is required");
+  const misread = gtinProblem(query);
+  if (misread) return JSON.stringify({ products: [], error: misread });
   const region = await foodRegion();
 
   let result: SearchResult;
@@ -645,6 +648,8 @@ export interface LabelPortion {
  * message meant for the model when the label can't answer.
  */
 export async function labelPortion(label: LabelArgs): Promise<LabelPortion> {
+  const misread = gtinProblem(label.barcode);
+  if (misread) throw new Error(misread);
   const region = await foodRegion();
   const p = await productByBarcode(label.barcode, region);
   if (!p) {

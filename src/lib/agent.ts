@@ -65,6 +65,7 @@ import { STAT_DEFS, customMetricKey, statDef, statKeys } from "./performance";
 import { onAppResume, wasSuspendedSince } from "./appLifecycle";
 import { withBackgroundTask } from "./background";
 import { readPhotoDataUrl, savePhoto } from "./photos";
+import { dataUrlBytes, readProductBarcodes } from "./barcode";
 import { dayOf, shiftDay, timeOf } from "./daystamp";
 import { idArg, idArgProblem } from "./ids";
 import type {
@@ -631,6 +632,7 @@ function buildSystemPrompt(
     "- When what they ate is one of their saved meals listed above (by name, brand or what the photo shows) → log_saved_meal with its #id, before considering log_meal or search_packaged_food. A saved meal holds numbers they checked; never re-estimate it.",
     "- Decide what the capture shows: food/drink → log_meal; supplements count as food (see below) → log_meal; exercise → log_workout; a blood meter screen (glucose or ketones) → log_reading; fitness stats from a watch/training app (FTP, VO2 max, HRV, lactate threshold, training readiness, race predictions) → log_performance; something they NOTICED in body or mind (a feeling, a symptom, a bodily observation, a craving, a thought or belief that came up: \"bloated\", \"low all afternoon\", \"headache\", \"loose stool\", \"thinking I'm lazy if I rest\") → log_state, tagged with every tag from their list above that fits.",
     "- When an observation is a thought or belief, put the thought in the note in THEIR words, in their language. Never translate, tidy, soften or rephrase it, and don't argue with it or reassure them about it in your confirmation, only say what was recorded.",
+    "- When the user message says Tally read a barcode off the photo, that code is exact (decoded from the bars, check digit verified): never read digits off the photo yourself, and don't search for it again. If its Open Food Facts result shows what was eaten, log it with log_meal and `label` (that barcode); if it found nothing, search by the name printed on the package or estimate.",
     `- Branded/packaged products (wrappers, bottles, cans, labels, barcodes): look them up with search_packaged_food first, by the barcode digits when the photo shows them legibly, else by the name as printed on the package. ${foodCountry == null ? "" : `Searches cover products sold in ${foodCountry} first, then worldwide; prefer a match sold in their country. `}When a result is what was eaten, call log_meal with \`label\` (its barcode plus grams, servings or packages) and let Tally do the label arithmetic; put in \`nutrients\` only what the label lacks (usually the micronutrients). Never search for home-cooked or generic foods; if the search fails or nothing matches, estimate everything yourself and log without \`label\`.`,
     "- Supplements are food: \"800mg fish oil\", \"2 tsp psyllium husk\", \"magnesium\" → log_meal with icon \"supplement\", titled by what it is and how much (\"Fish oil 800 mg\"), and `nutrients` for the AMOUNT TAKEN, e.g. the omega-3 in 800 mg of fish oil (and its EPA + DHA as epa_dha_g), the fiber in the husk, the magnesium in the dose, beta-alanine in a pre-workout as beta_alanine_g. A supplement photo or label shows the dose; with no amount given, assume one typical serving and say so in the description. \"The usual\"/\"same as yesterday\" → repeat_meal like any food.",
     "- Never use em dashes in anything you write (titles, notes, replies). Use a comma, a colon or a new sentence.",
@@ -990,6 +992,33 @@ export function installCaptureLifecycle(): () => void {
   return onAppResume(() => void resumePendingCaptures());
 }
 
+/**
+ * The barcodes Tally reads off the photo itself, each with its Open Food
+ * Facts lookup already done — exact where the model's reading of the printed
+ * digits is a guess, and one tool round trip fewer. Nothing when the photo
+ * has no readable barcode, or the decoder fails: the model then goes by the
+ * photo as it always did.
+ */
+async function barcodeParts(dataUrl: string): Promise<ContentPart[]> {
+  let codes: string[];
+  try {
+    const bytes = dataUrlBytes(dataUrl);
+    codes = bytes ? await readProductBarcodes(bytes) : [];
+  } catch (e) {
+    console.warn("Reading barcodes off the photo failed", e);
+    return [];
+  }
+  const parts: ContentPart[] = [];
+  for (const code of codes) {
+    const found = await executeFoodFactsSearch({ query: code });
+    parts.push({
+      type: "text",
+      text: `Tally read barcode ${code} off the photo. Open Food Facts for it: ${found}`,
+    });
+  }
+  return parts;
+}
+
 async function runCapture(capture: Capture): Promise<void> {
   const apiKey = await getSetting(SETTING_KEYS.openrouterApiKey);
   if (!apiKey) {
@@ -1014,6 +1043,7 @@ async function runCapture(capture: Capture): Promise<void> {
     // is CSP-blocked on Android.
     const dataUrl = await readPhotoDataUrl(capture.photo_path);
     parts.push({ type: "image_url", image_url: { url: dataUrl } });
+    parts.push(...(await barcodeParts(dataUrl)));
   }
 
   const foodCountry = region.cc ? regionLabel(region) : null;
