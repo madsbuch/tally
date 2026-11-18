@@ -2264,7 +2264,7 @@ export async function listAllCaptures(): Promise<Capture[]> {
 type ReadingRow = typeof bloodReadings.$inferSelect;
 
 const toBloodReading = (r: ReadingRow): BloodReading => {
-  if (!isReadingKind(r.kind)) throw new Error(`Reading #${r.id} has kind "${r.kind}"`);
+  if (!isReadingKind(r.kind)) throw new Error(`Reading ${r.id} has kind "${r.kind}"`);
   return {
     id: r.id,
     measured_at: r.measuredAt,
@@ -2732,7 +2732,7 @@ async function withTags(rows: StateRow[]): Promise<StateLog[]> {
   return rows.map((r) => {
     const tagging = r.tagging;
     if (tagging !== null && !isTaggingStatus(tagging)) {
-      throw new Error(`Observation #${r.id} has tagging "${tagging}"`);
+      throw new Error(`Observation ${r.id} has tagging "${tagging}"`);
     }
     return {
       id: r.id,

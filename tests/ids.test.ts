@@ -1,20 +1,63 @@
 import { describe, expect, test } from "bun:test";
 import { sqlite } from "./testDb";
-import { derivedId, idArg, legacyId, newId, parseRowId } from "../src/lib/ids";
+import {
+  derivedId,
+  idArg,
+  idArgProblem,
+  legacyId,
+  newId,
+  parseRowId,
+  parseTypeId,
+  prefixOf,
+  splitTypeIds,
+  typeIdOf,
+} from "../src/lib/ids";
+import { must } from "./helpers";
 import { SETTING_KEYS } from "../src/lib/types";
 
 // db.ts must load after testDb has mocked the SQL plugin.
 const { getSetting, setSetting, upsertSleepSession } = await import("../src/lib/db");
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const TYPE_ID = /^meal_[0-7][0-9a-hjkmnp-tv-z]{25}$/;
+
+// The TypeID spec's own examples (typeid/spec/valid.yml). The migration
+// (tests/type-id-migration.test.ts), Rust and Kotlin are held to the same.
+const SPEC: [string, string][] = [
+  ["00000000-0000-0000-0000-000000000000", "00000000000000000000000000"],
+  ["00000000-0000-0000-0000-000000000001", "00000000000000000000000001"],
+  ["00000000-0000-0000-0000-00000000000a", "0000000000000000000000000a"],
+  ["00000000-0000-0000-0000-000000000010", "0000000000000000000000000g"],
+  ["00000000-0000-0000-0000-000000000020", "00000000000000000000000010"],
+  ["ffffffff-ffff-ffff-ffff-ffffffffffff", "7zzzzzzzzzzzzzzzzzzzzzzzzz"],
+  ["01890a5d-ac96-774b-bcce-b302099a8057", "01h455vb4pex5vsknk084sn02q"],
+];
 
 describe("row ids", () => {
-  test("are UUIDv7, ordered as text in the order they were made", () => {
-    const ids = Array.from({ length: 5000 }, () => newId());
+  test("spell a UUID the way the TypeID spec does, and read back", () => {
+    for (const [uuid, suffix] of SPEC) {
+      expect(typeIdOf("meal", uuid)).toBe(`meal_${suffix}`);
+      expect(parseTypeId(`meal_${suffix}`)).toEqual({ prefix: "meal", uuid });
+    }
+  });
+
+  test("carry their table's prefix", () => {
+    expect(newId("food_entries").startsWith("meal_")).toBe(true);
+    expect(newId("state_logs").startsWith("observation_")).toBe(true);
+    expect(prefixOf(newId("supplement_logs"))).toBe("dose");
+    // Unknown prefixes and malformed suffixes aren't ours.
+    expect(parseTypeId("user_01h455vb4pex5vsknk084sn02q")).toBeNull();
+    expect(parseTypeId("meal_81h455vb4pex5vsknk084sn02q")).toBeNull();
+    expect(parseTypeId("meal_01h455vb4pex5vsknk084sn02")).toBeNull();
+    expect(parseTypeId("meal_01h455vb4pex5vsknk084sn0iq")).toBeNull();
+  });
+
+  test("are UUIDv7 inside, ordered as text in the order they were made", () => {
+    const ids = Array.from({ length: 5000 }, () => newId("food_entries"));
     for (const id of ids) {
-      expect(id).toMatch(UUID);
-      expect(id[14]).toBe("7");
-      expect("89ab").toContain(id[19] ?? "");
+      expect(id).toMatch(TYPE_ID);
+      const uuid = must(parseTypeId(id), "parsed id").uuid;
+      expect(uuid[14]).toBe("7");
+      expect("89ab").toContain(uuid[19] ?? "");
     }
     expect([...ids].sort()).toEqual(ids);
     expect(new Set(ids).size).toBe(ids.length);
@@ -22,45 +65,72 @@ describe("row ids", () => {
 
   test("carry their timestamp first", () => {
     const at = Date.now() + 86_400_000;
-    const a = newId(at);
-    const b = newId(at + 1000);
+    const a = newId("workouts", at);
+    const b = newId("workouts", at + 1000);
     expect(b > a).toBe(true);
-    expect(b.slice(0, 13)).toBe((at + 1000).toString(16).padStart(12, "0").replace(/^(.{8})/, "$1-"));
+    const uuid = must(parseTypeId(b), "parsed id").uuid;
+    expect(uuid.slice(0, 13)).toBe((at + 1000).toString(16).padStart(12, "0").replace(/^(.{8})/, "$1-"));
     // A clock that steps back doesn't break the order.
-    expect(newId(at) > b).toBe(true);
+    expect(newId("workouts", at) > b).toBe(true);
   });
 
   test("legacy ids sort before every new one, in their old order", () => {
-    expect(legacyId(1)).toBe("00000000-0000-7000-8000-000000000001");
-    expect(legacyId(255) > legacyId(16)).toBe(true);
-    expect(legacyId(2 ** 40) < newId()).toBe(true);
+    expect(legacyId("meal", 1)).toBe(typeIdOf("meal", "00000000-0000-7000-8000-000000000001"));
+    expect(legacyId("meal", 255) > legacyId("meal", 16)).toBe(true);
+    expect(legacyId("meal", 2 ** 40) < newId("food_entries")).toBe(true);
   });
 
   test("derived ids are stable per key and differ between keys", async () => {
-    const a = await derivedId("workout", "hc-123");
-    expect(a).toMatch(UUID);
-    expect(await derivedId("workout", "hc-123")).toBe(a);
-    expect(await derivedId("workout", "hc-124")).not.toBe(a);
-    expect(await derivedId("sleep", "hc-123")).not.toBe(a);
+    const a = await derivedId("workouts", "hc-123");
+    expect(a.startsWith("workout_")).toBe(true);
+    expect(await derivedId("workouts", "hc-123")).toBe(a);
+    expect(await derivedId("workouts", "hc-124")).not.toBe(a);
+    expect(prefixOf(await derivedId("sleep_sessions", "hc-123"))).toBe("sleep");
   });
 
-  test("tool arguments accept ids and the numbers old chats still quote", () => {
-    const id = newId();
-    expect(idArg(id)).toBe(id);
-    expect(idArg(` #${id} `)).toBe(id);
-    expect(idArg(12)).toBe(legacyId(12));
-    expect(idArg("#12")).toBe(legacyId(12));
-    expect(idArg("")).toBeNull();
-    expect(idArg(null)).toBeNull();
-    expect(idArg(-3)).toBeNull();
+  test("tool arguments: the id of the right kind, or one an old chat quotes", () => {
+    const id = newId("food_entries");
+    expect(idArg(id, "meal")).toBe(id);
+    expect(idArg(` #${id} `, "meal")).toBe(id);
+    // Another kind's id isn't a meal's.
+    expect(idArg(newId("workouts"), "meal")).toBeNull();
+    // Before TypeIDs: a bare UUID, and before that a number.
+    const uuid = must(parseTypeId(id), "parsed id").uuid;
+    expect(idArg(uuid, "meal")).toBe(id);
+    expect(idArg(uuid.toUpperCase(), "meal")).toBe(id);
+    expect(idArg(12, "meal")).toBe(legacyId("meal", 12));
+    expect(idArg("#12", "meal")).toBe(legacyId("meal", 12));
+    expect(idArg("", "meal")).toBeNull();
+    expect(idArg(null, "meal")).toBeNull();
+    expect(idArg(-3, "meal")).toBeNull();
   });
 
-  test("URL segments are only ids when shaped like one", () => {
-    const id = newId();
-    expect(parseRowId(id)).toBe(id);
-    expect(parseRowId("12")).toBeNull();
-    expect(parseRowId("memory")).toBeNull();
-    expect(parseRowId(undefined)).toBeNull();
+  test("a wrong id says what it is and what was wanted", () => {
+    const workout = newId("workouts");
+    expect(idArgProblem(workout, "meal")).toBe(`${workout} is a workout's id; this needs a meal's id (meal_…).`);
+    expect(idArgProblem(undefined, "meal")).toBe("This needs a meal's id (meal_…).");
+    expect(idArgProblem("lunch", "meal")).toBe("lunch isn't an id; this needs a meal's id (meal_…).");
+  });
+
+  test("URL segments are only ids of the page's kind", () => {
+    const id = newId("chats");
+    expect(parseRowId(id, "chat")).toBe(id);
+    expect(parseRowId(id, "meal")).toBeNull();
+    // A notification posted before the update carries the bare UUID.
+    expect(parseRowId(must(parseTypeId(id), "parsed id").uuid, "chat")).toBe(id);
+    expect(parseRowId("12", "chat")).toBeNull();
+    expect(parseRowId("memory", "chat")).toBeNull();
+    expect(parseRowId(undefined, "chat")).toBeNull();
+  });
+
+  test("ids are found in running text, not inside longer words", () => {
+    const id = newId("food_entries");
+    expect(splitTypeIds(`Had ${id}, then \`${id}\`.`)).toEqual(["Had ", { id }, ", then `", { id }, "`."]);
+    expect(splitTypeIds(`x${id} ${id}y`)).toEqual([`x${id} ${id}y`]);
+    // The longest prefix wins: an observation_tag id isn't an observation's.
+    const tag = newId("state_log_tags");
+    expect(splitTypeIds(tag)).toEqual([{ id: tag }]);
+    expect(splitTypeIds("no ids here")).toEqual(["no ids here"]);
   });
 });
 

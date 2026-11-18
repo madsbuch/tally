@@ -628,15 +628,16 @@ async fn write_settling_clashes(
     Ok(true)
 }
 
-/// The deterministic id of the chat split off from `pk` at `hlc`/`origin`.
+/// The deterministic id of the chat split off from `pk` at `hlc`/`origin`:
+/// a UUIDv8 from the SHA-256 of what identifies the split, spelled as a
+/// `chat_` TypeID like every other chat id (src/lib/ids.ts).
 fn fork_id(pk: &str, hlc: &str, origin: &str) -> String {
     let d = Sha256::digest(format!("chat-fork:{pk}:{hlc}:{origin}").as_bytes());
     let mut b = [0u8; 16];
     b.copy_from_slice(&d[..16]);
     b[6] = 0x80 | (b[6] & 0x0f);
     b[8] = 0x80 | (b[8] & 0x3f);
-    let h = hex::encode(b);
-    format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
+    crate::type_id::type_id("chat", b)
 }
 
 /// Keeps the losing side of a chat continued on two devices as a chat of its

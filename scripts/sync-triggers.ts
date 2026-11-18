@@ -101,7 +101,7 @@ INSERT INTO sync_vv (tbl, pk, device, counter)
   SELECT '${table}', t.\`${pk}\`, s.device_id, 1 FROM \`${table}\` t, sync_state s WHERE s.id = 1;`;
 }
 
-function shapeOf(db: Database, table: string): { pk: string; columns: string[] } {
+export function shapeOf(db: Database, table: string): { pk: string; columns: string[] } {
   const cols = z.array(z.object({ name: z.string(), pk: z.number() })).parse(db.query(`PRAGMA table_info("${table}")`).all());
   const pk = cols.filter((c) => c.pk > 0);
   const [only] = pk;

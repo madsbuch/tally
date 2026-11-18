@@ -91,11 +91,21 @@ the real Health Connect sync against a fake one.
 
 The database is meant to sync between devices, so:
 
-- Every table is keyed by a UUIDv7 string (`rowId()` in `src/db/schema.ts`,
-  `newId()` in `src/lib/ids.ts`) — never an auto-increment integer. Rows
-  imported from an external system get `derivedId(namespace, externalKey)` so
-  two devices importing the same record agree on its id. Raw SQL inserts
-  (Kotlin `CoachDb`, Rust, tests) must supply the id themselves.
+- Every table is keyed by a TypeID string — the table's prefix and a
+  UUIDv7, `meal_01jd4x8m2kf7r9q3vz5w6t0hyc` (`rowId("<table>")` in
+  `src/db/schema.ts`, `newId("<table>")` in `src/lib/ids.ts`) — never an
+  auto-increment integer. A new table gets its prefix in `ID_PREFIXES`; a
+  prefix never changes once rows exist. Rows imported from an external system
+  get `derivedId(table, externalKey)` so two devices importing the same record
+  agree on its id. Raw SQL inserts (Kotlin `CoachDb`, Rust, tests) must supply
+  the id themselves, spelled the same way (Kotlin and Rust have their own
+  encoder, pinned to the spec's examples like the TS one).
+- Ids are how the coach points at things: tools take them through
+  `idArg(raw, prefix)` (which also reads the bare UUIDs and numbers old chats
+  quote, and refuses another kind's id — say why with `idArgProblem`), and an
+  id the coach writes in a message shows as a chip with that entity's title
+  (`src/lib/entities.ts`, `components/EntityChip.tsx`). A new kind of entity
+  the coach can name should get a title and a screen there.
 - Settings that belong to one device (sync bookmarks, caches, the unread
   badge) are listed in `DEVICE_SETTING_KEYS` (`src/lib/types.ts`) and live in
   `device_settings`; `getSetting`/`setSetting` route them. Keep the Kotlin

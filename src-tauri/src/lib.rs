@@ -7,6 +7,7 @@ pub mod sync;
 mod document_files;
 mod garmin;
 mod photos;
+mod type_id;
 
 const DB_URL: &str = "sqlite:tally.db";
 

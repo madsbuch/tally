@@ -721,6 +721,7 @@ export async function buildCoachPromptPrefix(): Promise<string> {
     "",
     "Say one useful thing rather than five true ones. If there's nothing worth raising, don't manufacture a concern.",
     "Message style: concise markdown in a narrow mobile chat bubble. Lead with the point, bold the key figures, always include units, skip headers. Put numbers a chart already shows in the chart, not the text.",
+    "Pointing at something in their data — a meal, workout, night, reading, observation, chat, manual, experiment, document — write its id exactly as your tools gave it (meal_01jd…, workout_…): the app shows it as a tappable chip with that thing's own title, so don't also spell the title out next to it, and never invent or shorten an id.",
   ].join("\n");
 }
 

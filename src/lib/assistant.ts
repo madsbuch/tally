@@ -89,10 +89,11 @@ import {
   readCalories,
 } from "./calories";
 import { SETTING_KEYS } from "./types";
-import { idArg } from "./ids";
+import { ID_PREFIXES, idArg, idArgProblem } from "./ids";
+import type { IdPrefix } from "./ids";
 import { coachModelFor, coachReasoning } from "./coachModel";
 import type { CoachPurpose } from "./coachModel";
-import type { Nutrients } from "./types";
+import type { NotedEntryKind, Nutrients } from "./types";
 import { isKeyOf } from "./guards";
 
 // ---------------------------------------------------------------------------
@@ -331,7 +332,7 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
               "Which table the entry is in: meal = food_entries, workout = workouts, reading = blood_readings, " +
               "state = state_logs, performance = performance_logs, sleep = sleep_sessions.",
           },
-          id: { type: "string", description: "The entry's id, from a query_* tool or run_sql." },
+          id: { type: "string", description: "The entry's id (meal_…, workout_…, reading_…, observation_…, performance_…, sleep_…), from a query_* tool or run_sql." },
           text: {
             type: "string",
             description:
@@ -405,7 +406,7 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
       parameters: {
         type: "object",
         properties: {
-          id: { type: "string", description: "The food entry's id (food_entries.id)." },
+          id: { type: "string", description: "The meal's id (meal_…)." },
           name: {
             type: "string",
             description: "What they'd call it, brand or shop included. Omit to use the entry's title.",
@@ -426,7 +427,7 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
       parameters: {
         type: "object",
         properties: {
-          id: { type: "string", description: "Saved meal id." },
+          id: { type: "string", description: "The saved meal's id (saved_meal_…)." },
           action: { type: "string", enum: ["rename", "delete"] },
           name: { type: "string", description: "The new name, for rename." },
         },
@@ -938,6 +939,16 @@ function dayArgs(args: Record<string, unknown>): { start: string; end: string } 
   return start <= end ? { start, end } : { start: end, end: start };
 }
 
+/** The prefix of the ids an `annotate_entry` kind takes. */
+const NOTED_KIND_PREFIX: Record<NotedEntryKind, IdPrefix> = {
+  meal: "meal",
+  workout: "workout",
+  reading: "reading",
+  state: "observation",
+  performance: "performance",
+  sleep: "sleep",
+};
+
 const SQL_FORBIDDEN =
   /\b(insert|update|delete|drop|alter|create|replace|attach|detach|pragma|vacuum|reindex|begin|commit|rollback)\b/i;
 
@@ -1271,15 +1282,15 @@ export async function executeAssistantTool(
     if (!isNotedEntryKind(kind)) {
       throw new Error('kind must be one of "meal", "workout", "reading", "state", "performance", "sleep"');
     }
-    const id = idArg(args["id"]);
-    if (!id) throw new Error("id is required");
+    const id = idArg(args["id"], NOTED_KIND_PREFIX[kind]);
+    if (!id) throw new Error(idArgProblem(args["id"], NOTED_KIND_PREFIX[kind]));
     const text = typeof args["text"] === "string" ? args["text"].trim() : "";
     if (!text) throw new Error("text is required");
     if (text.length > 500) throw new Error("Keep the note to a sentence or two.");
     const what = await describeNotedEntry(kind, id);
-    if (what == null) throw new Error(`There is no ${kind} #${id}.`);
+    if (what == null) throw new Error(`There is no ${kind} ${id}.`);
     const noteId = await addEntryNote(kind, id, text);
-    return JSON.stringify({ noted: { id: noteId, on: `${kind} #${id} (${what})`, text } });
+    return JSON.stringify({ noted: { id: noteId, on: `${kind} ${id} (${what})`, text } });
   }
 
   if (name === "query_body_levels") {
@@ -1469,10 +1480,10 @@ export async function executeAssistantTool(
   }
 
   if (name === "save_meal") {
-    const id = idArg(args["id"]);
-    if (!id) throw new Error("id is required");
+    const id = idArg(args["id"], "meal");
+    if (!id) throw new Error(idArgProblem(args["id"], "meal"));
     const entry = await getFoodEntry(id);
-    if (!entry) throw new Error(`There is no meal #${id}.`);
+    if (!entry) throw new Error(`There is no meal ${id}.`);
     const given = typeof args["name"] === "string" ? args["name"].trim() : "";
     const mealName = given || entry.title;
     const saved = await saveMeal({
@@ -1492,17 +1503,17 @@ export async function executeAssistantTool(
   }
 
   if (name === "edit_saved_meal") {
-    const id = idArg(args["id"]);
-    if (!id) throw new Error("id is required");
+    const id = idArg(args["id"], "saved_meal");
+    if (!id) throw new Error(idArgProblem(args["id"], "saved_meal"));
     if (args["action"] === "delete") {
       const ok = await deleteSavedMeal(id);
-      return JSON.stringify(ok ? { deleted_saved_meal: id } : { error: `No saved meal #${id}.` });
+      return JSON.stringify(ok ? { deleted_saved_meal: id } : { error: `No saved meal ${id}.` });
     }
     if (args["action"] === "rename") {
       const newName = typeof args["name"] === "string" ? args["name"].trim() : "";
       if (!newName) throw new Error("name is required to rename");
       const ok = await renameSavedMeal(id, newName);
-      return JSON.stringify(ok ? { renamed_saved_meal: id, name: newName } : { error: `No saved meal #${id}.` });
+      return JSON.stringify(ok ? { renamed_saved_meal: id, name: newName } : { error: `No saved meal ${id}.` });
     }
     throw new Error('action must be "rename" or "delete"');
   }
@@ -1528,8 +1539,8 @@ export async function executeAssistantTool(
   }
 
   if (name === "update_memory") {
-    const id = idArg(args["id"]);
-    if (!id) throw new Error("id is required");
+    const id = idArg(args["id"], "memory");
+    if (!id) throw new Error(idArgProblem(args["id"], "memory"));
     const patch: {
       text?: string;
       status?: "open" | "done" | "dropped";
@@ -1554,15 +1565,15 @@ export async function executeAssistantTool(
   }
 
   if (name === "forget") {
-    const id = idArg(args["id"]);
-    if (!id) throw new Error("id is required");
+    const id = idArg(args["id"], "memory");
+    if (!id) throw new Error(idArgProblem(args["id"], "memory"));
     await deleteCoachMemory(id);
     return JSON.stringify({ forgot: id });
   }
 
   if (name === "read_manual") {
-    const id = idArg(args["id"]);
-    if (!id) throw new Error("id is required");
+    const id = idArg(args["id"], "manual");
+    if (!id) throw new Error(idArgProblem(args["id"], "manual"));
     const m = await getManual(id);
     if (!m) return JSON.stringify({ error: `No manual with id ${id}.` });
     return JSON.stringify({
@@ -1587,7 +1598,8 @@ export async function executeAssistantTool(
     if (!draft.title || !draft.situation || !draft.body) {
       throw new Error("title, situation and body are all required");
     }
-    const givenId = idArg(args["id"]);
+    const givenId = idArg(args["id"], "manual");
+    if (!givenId && args["id"] != null && args["id"] !== "") throw new Error(idArgProblem(args["id"], "manual"));
     if (givenId) {
       const id = givenId;
       // Leaving applies_when out keeps what the manual had, rather than
@@ -1603,8 +1615,8 @@ export async function executeAssistantTool(
   }
 
   if (name === "delete_manual") {
-    const id = idArg(args["id"]);
-    if (!id) throw new Error("id is required");
+    const id = idArg(args["id"], "manual");
+    if (!id) throw new Error(idArgProblem(args["id"], "manual"));
     await removeManual(id);
     return JSON.stringify({ deleted_manual: id });
   }
@@ -1631,7 +1643,8 @@ export async function executeAssistantTool(
       assignment: d.assignment,
       target_per_arm: d.target_per_arm,
     };
-    const givenId = idArg(args["id"]);
+    const givenId = idArg(args["id"], "experiment");
+    if (!givenId && args["id"] != null && args["id"] !== "") throw new Error(idArgProblem(args["id"], "experiment"));
     if (givenId) {
       const id = givenId;
       if (!(await getExperiment(id))) return JSON.stringify({ error: `No experiment with id ${id}.` });
@@ -1643,8 +1656,8 @@ export async function executeAssistantTool(
   }
 
   if (name === "read_experiment") {
-    const id = idArg(args["id"]);
-    if (!id) throw new Error("id is required");
+    const id = idArg(args["id"], "experiment");
+    if (!id) throw new Error(idArgProblem(args["id"], "experiment"));
     const e = await getExperiment(id);
     if (!e) return JSON.stringify({ error: `No experiment with id ${id}.` });
     const trials = await listTrials(id);
@@ -1697,8 +1710,8 @@ export async function executeAssistantTool(
   }
 
   if (name === "record_trial") {
-    const expId = idArg(args["experiment_id"]);
-    if (!expId) throw new Error("experiment_id is required");
+    const expId = idArg(args["experiment_id"], "experiment");
+    if (!expId) throw new Error(idArgProblem(args["experiment_id"], "experiment"));
     const e = await getExperiment(expId);
     if (!e) return JSON.stringify({ error: `No experiment with id ${expId}.` });
     const armArg = typeof args["arm"] === "string" ? args["arm"].trim().toUpperCase() : undefined;
@@ -1721,7 +1734,8 @@ export async function executeAssistantTool(
     const excluded = typeof args["excluded"] === "boolean" ? args["excluded"] : undefined;
 
     let trialId: string;
-    const trialArg = idArg(args["trial_id"]);
+    const trialArg = idArg(args["trial_id"], "trial");
+    if (!trialArg && args["trial_id"] != null && args["trial_id"] !== "") throw new Error(idArgProblem(args["trial_id"], "trial"));
     if (trialArg) {
       const t = await getTrial(trialArg);
       if (!t || t.experiment_id !== e.id) {
@@ -1759,8 +1773,8 @@ export async function executeAssistantTool(
   }
 
   if (name === "conclude_experiment") {
-    const id = idArg(args["id"]);
-    if (!id) throw new Error("id is required");
+    const id = idArg(args["id"], "experiment");
+    if (!id) throw new Error(idArgProblem(args["id"], "experiment"));
     const status = args["status"];
     if (status !== "concluded" && status !== "dropped" && status !== "running") {
       throw new Error('status must be "concluded", "dropped" or "running"');
@@ -1768,7 +1782,8 @@ export async function executeAssistantTool(
     if (!(await getExperiment(id))) return JSON.stringify({ error: `No experiment with id ${id}.` });
     const conclusion = typeof args["conclusion"] === "string" ? args["conclusion"].trim() || null : undefined;
     let manualId: string | undefined;
-    const manualArg = idArg(args["manual_id"]);
+    const manualArg = idArg(args["manual_id"], "manual");
+    if (!manualArg && args["manual_id"] != null && args["manual_id"] !== "") throw new Error(idArgProblem(args["manual_id"], "manual"));
     if (manualArg) {
       if (!(await getManual(manualArg))) {
         return JSON.stringify({ error: `No manual with id ${manualArg}.` });
@@ -1786,7 +1801,9 @@ export async function executeAssistantTool(
 // System prompt
 // ---------------------------------------------------------------------------
 
-export const DB_SCHEMA_DOC = `Tables (SQLite; all timestamps ISO-8601 UTC strings like "2026-07-20T06:30:00.000Z"):
+export const DB_SCHEMA_DOC = `Tables (SQLite; all timestamps ISO-8601 UTC strings like "2026-07-20T06:30:00.000Z"; every id is a TypeID naming its kind: ${Object.entries(ID_PREFIXES)
+  .map(([table, prefix]) => `${table} → ${prefix}_…`)
+  .join(", ")}):
 - food_entries(id, eaten_at, day /* local "YYYY-MM-DD" */, tz_offset_min /* minutes east of UTC where it was logged */, title, description, nutrients /* JSON: calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, … */, fast_ok_note /* why it doesn't break a fast; NULL = it counts as eating */)
 - workouts(id, performed_at, day, tz_offset_min, title, description, calories_burned /* kcal; summed per day this is burned_workouts */, duration_min, avg_hr /* recorded average heart rate in bpm; NULL = unknown */, zone2_min /* explicitly recorded minutes, NULL = unknown */, cardio /* 1 = counts toward the cardio goal: automatically avg_hr > 125 unless manually overridden. The full positive duration_min counts, default goal 300 min per 7 days. Unknown HR counts only when manually enabled */, cardio_by_hand /* 1 = manual cardio on/off choice; takes precedence over average HR and persists through sync and field edits */, source /* "Garmin", "Health Connect" or NULL = manual */, external_id)
 - sleep_sessions(id, started_at, ended_at, day /* the morning it ended on */, tz_offset_min, duration_min, deep_min, rem_min, light_min, awake_min, source)

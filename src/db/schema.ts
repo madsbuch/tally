@@ -11,12 +11,15 @@ import {
 import type { FoodEntry, Nutrients, Workout } from "../lib/types";
 import type { ChatMessage, DocumentValue, GarminLap } from "../lib/schemas";
 import { newId } from "../lib/ids";
+import type { IdTable } from "../lib/ids";
 
 /**
- * Every row's key: a UUIDv7 string made on the device that wrote it, so rows
- * from different devices never collide (see lib/ids.ts).
+ * Every row's key: a TypeID made on the device that wrote it — the table's
+ * prefix and a UUIDv7 (`meal_01jd4x…`), so rows from different devices never
+ * collide and an id says what it names (see lib/ids.ts). A new table needs
+ * its prefix in `ID_PREFIXES`.
  */
-const rowId = () => text("id").primaryKey().$defaultFn(() => newId());
+const rowId = (table: IdTable) => text("id").primaryKey().$defaultFn(() => newId(table));
 
 /**
  * Preferences that belong to the person — targets, models, the OpenRouter key
@@ -40,7 +43,7 @@ export const deviceSettings = sqliteTable("device_settings", {
 export const foodEntries = sqliteTable(
   "food_entries",
   {
-    id: rowId(),
+    id: rowId("food_entries"),
     eatenAt: text("eaten_at").notNull(),
     title: text("title").notNull(),
     description: text("description"),
@@ -73,7 +76,7 @@ export const foodEntries = sqliteTable(
 export const workouts = sqliteTable(
   "workouts",
   {
-    id: rowId(),
+    id: rowId("workouts"),
     performedAt: text("performed_at").notNull(),
     title: text("title").notNull(),
     description: text("description"),
@@ -121,7 +124,7 @@ export const workouts = sqliteTable(
 );
 
 export const supplements = sqliteTable("supplements", {
-  id: rowId(),
+  id: rowId("supplements"),
   name: text("name").notNull(),
   doseAmount: real("dose_amount"),
   doseUnit: text("dose_unit"),
@@ -133,7 +136,7 @@ export const supplements = sqliteTable("supplements", {
 export const supplementLogs = sqliteTable(
   "supplement_logs",
   {
-    id: rowId(),
+    id: rowId("supplement_logs"),
     supplementId: text("supplement_id")
       .notNull()
       .references(() => supplements.id),
@@ -161,7 +164,7 @@ export const supplementLogs = sqliteTable(
 export const captures = sqliteTable(
   "captures",
   {
-    id: rowId(),
+    id: rowId("captures"),
     createdAt: text("created_at").notNull(),
     /** Local diary day ("YYYY-MM-DD") the capture was added to. */
     day: text("day").notNull(),
@@ -177,7 +180,7 @@ export const captures = sqliteTable(
 export const sleepSessions = sqliteTable(
   "sleep_sessions",
   {
-    id: rowId(),
+    id: rowId("sleep_sessions"),
     /** Health Connect record UID for dedup. */
     externalId: text("external_id").notNull(),
     startedAt: text("started_at").notNull(),
@@ -233,7 +236,7 @@ export const healthMetrics = sqliteTable("health_metrics", {
 export const chats = sqliteTable(
   "chats",
   {
-    id: rowId(),
+    id: rowId("chats"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
     title: text("title").notNull(),
@@ -257,7 +260,7 @@ export const dayGoalAdjustments = sqliteTable("day_goal_adjustments", {
 });
 
 export const fasts = sqliteTable("fasts", {
-  id: rowId(),
+  id: rowId("fasts"),
   startedAt: text("started_at").notNull(),
   goalHours: real("goal_hours").notNull(),
   /**
@@ -290,7 +293,7 @@ export const fasts = sqliteTable("fasts", {
 export const documents = sqliteTable(
   "documents",
   {
-    id: rowId(),
+    id: rowId("documents"),
     createdAt: text("created_at").notNull(),
     /** Local day the document refers to; null until it's been read. */
     documentDate: text("document_date"),
@@ -354,7 +357,7 @@ export const documentFiles = sqliteTable("document_files", {
 export const coachMemory = sqliteTable(
   "coach_memory",
   {
-    id: rowId(),
+    id: rowId("coach_memory"),
     /** "goal" | "commitment" | "preference" | "note" (see lib/coach.ts). */
     kind: text("kind").notNull(),
     text: text("text").notNull(),
@@ -380,7 +383,7 @@ export const coachMemory = sqliteTable(
  * the person can read and edit them.
  */
 export const manuals = sqliteTable("manuals", {
-  id: rowId(),
+  id: rowId("manuals"),
   title: text("title").notNull(),
   /** One line: when this manual applies ("When fasting longer than a day"). */
   situation: text("situation").notNull(),
@@ -405,7 +408,7 @@ export const manuals = sqliteTable("manuals", {
 export const manualRevisions = sqliteTable(
   "manual_revisions",
   {
-    id: rowId(),
+    id: rowId("manual_revisions"),
     manualId: text("manual_id")
       .notNull()
       .references(() => manuals.id),
@@ -427,7 +430,7 @@ export const manualRevisions = sqliteTable(
  * the first one (see lib/experiments.ts).
  */
 export const experiments = sqliteTable("experiments", {
-  id: rowId(),
+  id: rowId("experiments"),
   title: text("title").notNull(),
   /** The idea being tested, in their words. */
   hypothesis: text("hypothesis").notNull(),
@@ -465,7 +468,7 @@ export const experiments = sqliteTable("experiments", {
 export const experimentTrials = sqliteTable(
   "experiment_trials",
   {
-    id: rowId(),
+    id: rowId("experiment_trials"),
     experimentId: text("experiment_id")
       .notNull()
       .references(() => experiments.id),
@@ -500,7 +503,7 @@ export const experimentTrials = sqliteTable(
 export const coachRuns = sqliteTable(
   "coach_runs",
   {
-    id: rowId(),
+    id: rowId("coach_runs"),
     /** Trigger that won the evaluation (see lib/coachTriggers.ts). */
     triggerKey: text("trigger_key").notNull(),
     /** Local day "YYYY-MM-DD" it fired on. */
@@ -520,7 +523,7 @@ export const coachRuns = sqliteTable(
 export const aiUsage = sqliteTable(
   "ai_usage",
   {
-    id: rowId(),
+    id: rowId("ai_usage"),
     createdAt: text("created_at").notNull(),
     /** Local day "YYYY-MM-DD" it was spent on. */
     day: text("day").notNull(),
@@ -558,7 +561,7 @@ export const achievements = sqliteTable("achievements", {
 export const entryMessages = sqliteTable(
   "entry_messages",
   {
-    id: rowId(),
+    id: rowId("entry_messages"),
     /** "meal" | "workout" — which table `entryId` points into. */
     entryKind: text("entry_kind").notNull(),
     entryId: text("entry_id").notNull(),
@@ -591,7 +594,7 @@ export const entryMessages = sqliteTable(
 export const stateLogs = sqliteTable(
   "state_logs",
   {
-    id: rowId(),
+    id: rowId("state_logs"),
     loggedAt: text("logged_at").notNull(),
     /** What they wrote about it; for an untagged one, the whole observation. */
     note: text("note"),
@@ -621,7 +624,7 @@ export const stateLogs = sqliteTable(
 export const stateLogTags = sqliteTable(
   "state_log_tags",
   {
-    id: rowId(),
+    id: rowId("state_log_tags"),
     logId: text("log_id")
       .notNull()
       .references(() => stateLogs.id, { onDelete: "cascade" }),
@@ -646,7 +649,7 @@ export const stateLogTags = sqliteTable(
 export const stateCategories = sqliteTable(
   "state_categories",
   {
-    id: rowId(),
+    id: rowId("state_categories"),
     label: text("label").notNull(),
     /** The emoji itself, picked by the model when the category was created. */
     icon: text("icon").notNull(),
@@ -667,7 +670,7 @@ export const stateCategories = sqliteTable(
 export const bloodReadings = sqliteTable(
   "blood_readings",
   {
-    id: rowId(),
+    id: rowId("blood_readings"),
     measuredAt: text("measured_at").notNull(),
     /** "glucose" | "ketone". */
     kind: text("kind").notNull(),
@@ -703,7 +706,7 @@ export const bloodReadings = sqliteTable(
 export const performanceLogs = sqliteTable(
   "performance_logs",
   {
-    id: rowId(),
+    id: rowId("performance_logs"),
     measuredAt: text("measured_at").notNull(),
     /** Short heading, e.g. "Garmin performance stats". */
     title: text("title").notNull(),
@@ -731,7 +734,7 @@ export const performanceLogs = sqliteTable(
 export const performanceStats = sqliteTable(
   "performance_stats",
   {
-    id: rowId(),
+    id: rowId("performance_stats"),
     logId: text("log_id")
       .notNull()
       .references(() => performanceLogs.id),
@@ -758,7 +761,7 @@ export const performanceStats = sqliteTable(
 export const entryNotes = sqliteTable(
   "entry_notes",
   {
-    id: rowId(),
+    id: rowId("entry_notes"),
     /** "meal" | "workout" | "reading" | "state" | "performance" | "sleep". */
     entryKind: text("entry_kind").notNull(),
     entryId: text("entry_id").notNull(),
@@ -789,7 +792,7 @@ export const incompleteDays = sqliteTable("incomplete_days", {
 export const savedMeals = sqliteTable(
   "saved_meals",
   {
-    id: rowId(),
+    id: rowId("saved_meals"),
     /** What they call it; matched case-insensitively, so saving again updates. */
     name: text("name").notNull(),
     description: text("description"),
@@ -833,7 +836,7 @@ export const photos = sqliteTable("photos", {
 export const progressPhotos = sqliteTable(
   "progress_photos",
   {
-    id: rowId(),
+    id: rowId("progress_photos"),
     /** When it was taken (for a picked older photo: the file's own time). */
     takenAt: text("taken_at").notNull(),
     /** Local day it was taken on, stamped where it happened (lib/daystamp.ts). */
@@ -857,7 +860,7 @@ export const progressPhotos = sqliteTable(
 export const deletedImports = sqliteTable(
   "deleted_imports",
   {
-    id: rowId(),
+    id: rowId("deleted_imports"),
     externalId: text("external_id").notNull(),
     startedAt: text("started_at").notNull(),
     endedAt: text("ended_at").notNull(),
