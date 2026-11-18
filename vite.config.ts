@@ -65,6 +65,14 @@ function pdfStandardFonts(): Plugin {
 export default defineConfig(async () => ({
   plugins: [react(), generouted(), pdfStandardFonts()],
 
+  build: {
+    // The largest chunk is pdf.js (about 500 kB), loaded only when a PDF is
+    // added and kept on its legacy build for the phone's WebView (lib/pdf.ts).
+    // Screens load lazily, so the startup chunk is well under this; anything
+    // past it is something heavy that slipped into what every launch loads.
+    chunkSizeWarningLimit: 600,
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors
@@ -74,13 +82,9 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: host || false,
-    hmr: host
-      ? {
-          protocol: "ws",
-          host,
-          port: 1421,
-        }
-      : undefined,
+    // Left out rather than `undefined` when there's no dev host
+    // (exactOptionalPropertyTypes, tsconfig.node.json).
+    ...(host ? { hmr: { protocol: "ws", host, port: 1421 } } : {}),
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],

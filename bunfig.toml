@@ -1,0 +1,4 @@
+[install]
+# Only packages published at least two weeks ago, transitive ones included:
+# a compromised release is usually caught and pulled within days.
+minimumReleaseAge = 1209600

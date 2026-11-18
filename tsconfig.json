@@ -13,6 +13,9 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
+    /* TypeScript 6 includes no global @types packages unless listed; zxing-wasm's
+       types use emscripten's globals without importing them. */
+    "types": ["emscripten"],
 
     /* Linting */
     "strict": true,

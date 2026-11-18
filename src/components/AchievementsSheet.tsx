@@ -138,7 +138,7 @@ export default function AchievementsSheet({
     scanAchievements()
       .catch(() => [])
       .then(() =>
-        Promise.all([listUnlockedAchievements(), measureFamilies().catch(() => new Map())]),
+        Promise.all([listUnlockedAchievements(), measureFamilies().catch((): Map<string, number> => new Map())] as const),
       )
       .then(([m, values]) => {
         if (!alive) return;
