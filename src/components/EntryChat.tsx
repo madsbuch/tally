@@ -17,6 +17,7 @@ import InfoButton from "./InfoButton";
 import { errMsg } from "./EntryBits";
 import type { EntryMessage, FoodEntry, Workout } from "../lib/types";
 import { useTablesVersion } from "../lib/live";
+import { EntityText } from "./CoachMarkdown";
 
 const PLACEHOLDER = "Ask about it, or correct it";
 
@@ -24,7 +25,9 @@ const PLACEHOLDER = "Ask about it, or correct it";
 function Message({ msg }: { msg: EntryMessage }) {
   return (
     <div className={`chat-msg chat-msg-${msg.role}`}>
-      <div className="chat-bubble">{msg.text}</div>
+      <div className="chat-bubble">
+        <EntityText text={msg.text} />
+      </div>
       {msg.changes.length > 0 && (
         <ul className="chat-changes">
           {msg.changes.map((c) => (

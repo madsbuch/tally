@@ -8,8 +8,7 @@
  */
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import CoachMarkdown from "../components/CoachMarkdown";
 import { getManual, listManualRevisions } from "../lib/db";
 import type { Manual, ManualRevision, ManualTrigger } from "../lib/types";
 import {
@@ -149,7 +148,7 @@ function History({ revisions }: { revisions: ManualRevision[] }) {
             </button>
             {open === r.id && (
               <div className="chat-md manual-body" style={{ marginTop: 10 }}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{r.body}</ReactMarkdown>
+                <CoachMarkdown>{r.body}</CoachMarkdown>
               </div>
             )}
           </div>
@@ -246,7 +245,7 @@ export default function ManualPage() {
           </div>
           <div className="card">
             <div className="chat-md manual-body">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{manual.body}</ReactMarkdown>
+              <CoachMarkdown>{manual.body}</CoachMarkdown>
             </div>
           </div>
           <div className="input-row">

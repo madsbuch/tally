@@ -69,23 +69,31 @@ const prefixOf = (t: IdTable) => ID_PREFIXES[t];
 const UUID_GLOB = [8, 4, 4, 4, 12].map((n) => "[0-9a-f]".repeat(n)).join("-");
 
 /**
- * The TypeID suffix of `h`, a column holding the UUID's 32 hex digits. The
- * 128 bits are read as the top byte (hex digits 1–2) and six 20-bit groups
- * (5 hex digits each); base32 takes the byte's top 3 bits (with TypeID's two
- * zero bits ahead of them) and its low 5 as the first two characters, then 4
- * characters per group — 2 + 6 × 4 = 26, most significant first.
+ * The UUID's 128 bits, read off `h` (its 32 hex digits) as the top byte `b`
+ * (hex digits 1–2) and six 20-bit groups `g1`…`g6` (5 hex digits each).
  */
-export function suffixSql(h: string): string {
+function bitsSql(h: string): string {
   const digit = (i: number) => `(instr('0123456789abcdef', substr(${h}, ${i}, 1)) - 1)`;
-  const char = (x: string) => `substr('${ALPHABET}', (${x}) + 1, 1)`;
-  const top = `(${digit(1)} * 16 + ${digit(2)})`;
-  const parts = [char(`${top} >> 5`), char(`${top} & 31`)];
+  const cols = [`${digit(1)} * 16 + ${digit(2)} AS b`];
   for (let g = 0; g < 6; g++) {
     const first = 3 + g * 5;
-    const value = `(${[0, 1, 2, 3, 4].map((k) => `${digit(first + k)} * ${16 ** (4 - k)}`).join(" + ")})`;
-    parts.push(char(`${value} >> 15`), char(`(${value} >> 10) & 31`), char(`(${value} >> 5) & 31`), char(`${value} & 31`));
+    cols.push(`${[0, 1, 2, 3, 4].map((k) => (k === 4 ? digit(first + k) : `${digit(first + k)} * ${16 ** (4 - k)}`)).join(" + ")} AS g${g + 1}`);
   }
-  return parts.join("\n      || ");
+  return cols.join(",\n    ");
+}
+
+/**
+ * The 26-character suffix from those bits, most significant first: the top
+ * byte's high 3 bits (behind TypeID's two zero bits) and low 5, then four
+ * characters per group — 2 + 6 × 4 = 26.
+ */
+function suffixSql(): string {
+  const char = (x: string) => `substr('${ALPHABET}', (${x}) + 1, 1)`;
+  const parts = [char("b >> 5"), char("b & 31")];
+  for (let g = 1; g <= 6; g++) {
+    parts.push(char(`g${g} >> 15`), char(`(g${g} >> 10) & 31`), char(`(g${g} >> 5) & 31`), char(`g${g} & 31`));
+  }
+  return parts.join("\n  || ");
 }
 
 /** `CASE <kind> WHEN 'meal' THEN 'meal' …` — the prefix an entry kind's ids take. */
@@ -148,12 +156,17 @@ export function migrationSql(db: Database): string {
   PRIMARY KEY (prefix, old)
 ) WITHOUT ROWID;`);
   push(`INSERT INTO ${MAP} (prefix, old, new)
-SELECT prefix, old, prefix || '_' || ${suffixSql("h")}
+SELECT prefix, old, prefix || '_'
+  || ${suffixSql()}
 FROM (
-  SELECT prefix, old, replace(lower(old), '-', '') AS h FROM (
-    ${sources.join("\n    UNION\n    ")}
+  SELECT prefix, old,
+    ${bitsSql("h")}
+  FROM (
+    SELECT prefix, old, replace(lower(old), '-', '') AS h FROM (
+      ${sources.join("\n      UNION\n      ")}
+    )
+    WHERE prefix IS NOT NULL AND typeof(old) = 'text' AND lower(old) GLOB '${UUID_GLOB}'
   )
-  WHERE prefix IS NOT NULL AND typeof(old) = 'text' AND lower(old) GLOB '${UUID_GLOB}'
 );`);
 
   for (const t of touched) {

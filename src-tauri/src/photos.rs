@@ -270,7 +270,12 @@ pub(crate) mod tests {
             sqlx::query(stmt).execute(&pool).await.unwrap();
         }
 
-        Migrator::new(AppMigrations).await.unwrap().run(&pool).await.unwrap();
+        // Up to the spelling 0038 gives them (0041, version 42, re-spells
+        // them as TypeIDs; tests/type-id-migration.test.ts checks that).
+        let mut migrator = Migrator::new(AppMigrations).await.unwrap();
+        let all = migrator.migrations.to_vec();
+        migrator.migrations = all.into_iter().filter(|m| m.version < 42).collect::<Vec<_>>().into();
+        migrator.run(&pool).await.unwrap();
 
         let id = |n: u32| format!("00000000-0000-7000-8000-{n:012x}");
         let log: (String, String) = sqlx::query_as("SELECT id, supplement_id FROM supplement_logs")

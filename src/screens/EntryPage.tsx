@@ -108,6 +108,7 @@ import WorkoutCardioToggle from "../components/WorkoutCardioToggle";
 import MealFastOk from "../components/MealFastOk";
 import GarminWorkoutDetails from "../components/GarminWorkoutDetails";
 import EntryChat from "../components/EntryChat";
+import { EntityText } from "../components/CoachMarkdown";
 import { parseRowId } from "../lib/ids";
 import type { IdPrefix } from "../lib/ids";
 import { confirmAction } from "../lib/confirm";
@@ -695,7 +696,9 @@ export default function EntryPage() {
           <div className="list">
             {coachNotes.map((n) => (
               <div key={n.id} className="info-row info-row-static coach-note">
-                <span className="coach-note-text">{n.text}</span>
+                <span className="coach-note-text">
+                  <EntityText text={n.text} />
+                </span>
                 <button
                   className="btn btn-ghost btn-sm"
                   aria-label="Remove this note"

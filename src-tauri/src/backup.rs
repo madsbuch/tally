@@ -1,5 +1,5 @@
 //! A copy of the database taken just before a migration that rewrites every
-//! table (0038, UUID ids). The migration runs in a transaction and rolls back
+//! table (0038, UUID ids; 0041, TypeIDs — each into a file of its own). The migration runs in a transaction and rolls back
 //! whole if anything in it fails, but a database is a person's whole history:
 //! one more copy, made by the app itself before it touches anything, costs a
 //! little disk and buys a way back from anything the migration's tests didn't

@@ -13,6 +13,7 @@ import type { CoachMemory } from "../lib/types";
 import InfoButton from "../components/InfoButton";
 import { useUp } from "../lib/navigation";
 import { useTablesVersion } from "../lib/live";
+import { EntityText } from "../components/CoachMarkdown";
 
 function shortDay(day: string): string {
   const [y = 0, m = 1, d = 1] = day.slice(0, 10).split("-").map(Number);
@@ -55,7 +56,7 @@ function MemoryRow({
     <div className="list-row">
       <div className="row-main">
         <div className="row-title" style={{ whiteSpace: "normal" }}>
-          {m.text}
+          <EntityText text={m.text} />
         </div>
         <div className="row-sub">{parts.join(" · ")}</div>
       </div>

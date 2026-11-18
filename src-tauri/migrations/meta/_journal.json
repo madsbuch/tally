@@ -288,6 +288,13 @@
       "when": 1794867259270,
       "tag": "0040_garmin_first",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1794999876917,
+      "tag": "0041_type_ids",
+      "breakpoints": true
     }
   ]
 }

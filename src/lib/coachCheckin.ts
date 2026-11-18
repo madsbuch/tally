@@ -34,6 +34,7 @@ import {
 } from "./coachTriggers";
 import type { Evaluation } from "./coachTriggers";
 import { markCheckinUnread } from "./coachInbox";
+import { withEntityTitles } from "./entities";
 import { withBackgroundTask } from "./background";
 import { ensureNotificationPermission } from "./fasting";
 import { SETTING_KEYS } from "./types";
@@ -198,7 +199,8 @@ export async function runCoachCheckin(
         /* it will simply be raised again */
       });
     }
-    await notify(chatId, def?.title ?? "Your coach", firstMessage.replace(/[*_`#]/g, ""));
+    // Ids the coach wrote read as what they name: a notification can't show a chip.
+    await notify(chatId, def?.title ?? "Your coach", (await withEntityTitles(firstMessage)).replace(/[*_`#]/g, ""));
     return { sent: true, reason: "ok", chatId };
   } catch (e) {
     console.warn("Coach check-in failed", e);

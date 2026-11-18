@@ -33,6 +33,7 @@ import { startAssistantChat } from "../lib/assistantRunner";
 import TrialCard, { formatMetric } from "../components/TrialCard";
 import type { AutoMetric } from "../lib/schemas";
 import { confirmAction } from "../lib/confirm";
+import { EntityText } from "../components/CoachMarkdown";
 
 interface Loaded {
   e: Experiment;
@@ -254,7 +255,7 @@ export default function ExperimentPage() {
       {data && e && (
         <>
           <p className="muted small" style={{ margin: "0 2px 6px" }}>
-            {e.hypothesis}
+            <EntityText text={e.hypothesis} />
           </p>
           <div className="chips" style={{ margin: "0 0 12px" }}>
             <span className={`chip${running ? " chip-accent" : ""}`}>
@@ -272,7 +273,9 @@ export default function ExperimentPage() {
             <div className="card">
               <h2 className="card-title">What it showed</h2>
               {e.conclusion && (
-                <p style={{ margin: 0, lineHeight: 1.5 }}>{e.conclusion}</p>
+                <p style={{ margin: 0, lineHeight: 1.5 }}>
+                  <EntityText text={e.conclusion} />
+                </p>
               )}
               {manual && (
                 <button className="manual-link" onClick={() => go(manualPath(manual.id))}>
