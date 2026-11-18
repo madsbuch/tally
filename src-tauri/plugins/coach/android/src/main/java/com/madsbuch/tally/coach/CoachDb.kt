@@ -104,21 +104,125 @@ internal object CoachDb {
 
     private val random = java.security.SecureRandom()
 
+    /** Crockford's base32, lower case, as TypeID spells it. */
+    private const val ID_ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz"
+
+    private var lastMs = -1L
+    private var lastSeq = 0
+
     /**
-     * A fresh UUIDv7 row id, the same shape `newId()` makes on the JS side
-     * (src/lib/ids.ts): rows are keyed by strings so two devices in a vault
-     * never hand out the same one.
+     * A fresh row id for a table whose ids carry `prefix` ("chat",
+     * "coach_run", "ai_usage" — ID_PREFIXES in src/lib/ids.ts): a TypeID,
+     * the prefix and a UUIDv7 in 26 characters of base32, laid out exactly
+     * as `newId` in src/lib/ids.ts lays it out, so two devices in a vault
+     * never hand out the same one and ids still sort by creation time.
      */
-    fun newId(): String {
+    @Synchronized
+    fun newId(prefix: String): String {
+        var ms = maxOf(System.currentTimeMillis(), lastMs)
+        val seq: Int
+        if (ms == lastMs) {
+            var next = lastSeq + 1
+            if (next > 0xfff) {
+                ms += 1
+                next = 0
+            }
+            seq = next
+        } else {
+            // Start low in the counter's range, leaving room to count up.
+            seq = random.nextInt(0x800)
+        }
+        lastMs = ms
+        lastSeq = seq
+
         val b = ByteArray(16)
         random.nextBytes(b)
-        val ms = System.currentTimeMillis()
         for (i in 0..5) b[i] = (ms shr (8 * (5 - i))).toByte()
-        b[6] = ((b[6].toInt() and 0x0f) or 0x70).toByte()
+        b[6] = (0x70 or (seq shr 8)).toByte()
+        b[7] = (seq and 0xff).toByte()
         b[8] = ((b[8].toInt() and 0x3f) or 0x80).toByte()
-        val hex = b.joinToString("") { String.format("%02x", it.toInt() and 0xff) }
-        return "${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-" +
-            "${hex.substring(16, 20)}-${hex.substring(20)}"
+        return "${prefix}_${encodeIdSuffix(b)}"
+    }
+
+    /** 16 bytes as TypeID's suffix: the 128-bit big-endian value in 26 base32 digits. */
+    internal fun encodeIdSuffix(b: ByteArray): String {
+        var n = java.math.BigInteger(1, b)
+        val out = CharArray(26)
+        for (i in 25 downTo 0) {
+            out[i] = ID_ALPHABET[n.toInt() and 31]
+            n = n.shiftRight(5)
+        }
+        return String(out)
+    }
+
+    // -- ids in text ----------------------------------------------------------
+
+    /**
+     * Every id prefix (ID_PREFIXES in src/lib/ids.ts), with how a row of that
+     * kind is spoken of when it isn't looked up by name.
+     */
+    private val ID_NOUNS = linkedMapOf(
+        "meal" to "a meal", "workout" to "a workout", "supplement" to "a supplement",
+        "dose" to "a dose", "capture" to "a capture", "sleep" to "a night's sleep",
+        "chat" to "a chat", "fast" to "a fast", "document" to "a document",
+        "memory" to "a memory", "manual" to "a manual", "manual_revision" to "a manual revision",
+        "experiment" to "an experiment", "trial" to "a trial", "coach_run" to "a check-in",
+        "ai_usage" to "an AI usage record", "entry_message" to "an entry message",
+        "observation" to "an observation", "observation_tag" to "an observation tag",
+        "tag" to "a tag", "reading" to "a reading", "performance" to "a performance",
+        "performance_stat" to "a performance stat", "note" to "a note",
+        "saved_meal" to "a saved meal", "progress_photo" to "a progress photo",
+        "deleted_import" to "a deleted import",
+    )
+
+    /** Kinds whose title is one column away: prefix → (table, column). */
+    private val ID_TITLES = mapOf(
+        "meal" to ("food_entries" to "title"),
+        "workout" to ("workouts" to "title"),
+        "chat" to ("chats" to "title"),
+        "manual" to ("manuals" to "title"),
+        "experiment" to ("experiments" to "title"),
+        "document" to ("documents" to "title"),
+        "supplement" to ("supplements" to "name"),
+        "saved_meal" to ("saved_meals" to "name"),
+    )
+
+    /** An id of ours in text, not inside a longer word (splitTypeIds in ids.ts). */
+    private val ID_IN_TEXT = Regex(
+        "(?<![A-Za-z0-9_])(" +
+            ID_NOUNS.keys.sortedByDescending { it.length }.joinToString("|") +
+            ")_[0-7][0-9a-hjkmnp-tv-z]{25}(?![A-Za-z0-9_])",
+    )
+
+    /**
+     * Plain text with every id in it replaced by what it stands for — for the
+     * notification, which can't show the app's chips. Mirrors
+     * withEntityTitles (src/lib/entities.ts): a row's title where it's one
+     * column away, "a deleted meal" for one that's gone, and otherwise how
+     * that kind is spoken of ("a night's sleep").
+     */
+    fun withEntityTitles(db: SQLiteDatabase, text: String): String {
+        val seen = HashMap<String, String>()
+        return ID_IN_TEXT.replace(text) { m ->
+            seen.getOrPut(m.value) { entityTitle(db, m.groupValues[1], m.value) }
+        }
+    }
+
+    private fun entityTitle(db: SQLiteDatabase, prefix: String, id: String): String {
+        val noun = ID_NOUNS[prefix] ?: return id
+        val (table, column) = ID_TITLES[prefix] ?: return noun
+        val title = try {
+            db.rawQuery("SELECT $column FROM $table WHERE id = ?", arrayOf(id)).use { c ->
+                if (c.moveToFirst()) c.getString(0) ?: "" else null
+            }
+        } catch (_: Exception) {
+            return noun
+        }
+        return when {
+            title == null -> "a deleted ${prefix.replace('_', ' ')}"
+            title.isBlank() -> noun
+            else -> title.trim()
+        }
     }
 
     // -- settings -------------------------------------------------------------
@@ -564,7 +668,7 @@ internal object CoachDb {
         )
 
         val now = nowIso()
-        val id = newId()
+        val id = newId("chat")
         val stmt = db.compileStatement(
             "INSERT INTO chats (id, created_at, updated_at, title, messages) VALUES (?, ?, ?, ?, ?)",
         )
@@ -581,7 +685,7 @@ internal object CoachDb {
         val stmt = db.compileStatement(
             "INSERT INTO coach_runs (id, trigger_key, day, created_at, chat_id) VALUES (?, ?, ?, ?, ?)",
         )
-        stmt.bindString(1, newId())
+        stmt.bindString(1, newId("coach_run"))
         stmt.bindString(2, triggerKey)
         stmt.bindString(3, day)
         stmt.bindString(4, nowIso())
@@ -621,7 +725,7 @@ internal object CoachDb {
                     "prompt_tokens, cached_tokens, completion_tokens, cost_usd) " +
                     "VALUES (?, ?, ?, 'checkin', ?, ?, 1, ?, ?, ?, ?)",
             )
-            stmt.bindString(1, newId())
+            stmt.bindString(1, newId("ai_usage"))
             stmt.bindString(2, nowIso())
             stmt.bindString(3, day)
             if (chatId != null) stmt.bindString(4, chatId) else stmt.bindNull(4)

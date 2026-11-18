@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useParams } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { deleteChat, getChatMessages, getSetting, listChats } from "../lib/db";
 import { SETTING_KEYS } from "../lib/types";
 import type { ChatSummary } from "../lib/types";
@@ -21,6 +19,7 @@ import { markCheckinRead, useUnreadCheckin } from "../lib/coachInbox";
 import { chatPath, parseChatId, useGo, useUp } from "../lib/navigation";
 import InfoButton from "../components/InfoButton";
 import CoachShelf from "../components/CoachShelf";
+import CoachMarkdown, { EntityText } from "../components/CoachMarkdown";
 import { confirmAction } from "../lib/confirm";
 import { useTablesVersion } from "../lib/live";
 
@@ -384,12 +383,10 @@ export default function AssistantPage() {
                 <div className="chat-bubble">
                   {item.kind === "message" ? (
                     <div className="chat-md">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {item.text}
-                      </ReactMarkdown>
+                      <CoachMarkdown>{item.text}</CoachMarkdown>
                     </div>
                   ) : (
-                    item.text
+                    <EntityText text={item.text} />
                   )}
                 </div>
               </div>

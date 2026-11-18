@@ -59,7 +59,7 @@ export function experimentPath(id: string): string {
 
 /** The experiment id in a `:experimentId` param, or null when it isn't one. */
 export function parseExperimentId(raw: string | undefined): string | null {
-  return parseRowId(raw);
+  return parseRowId(raw, "experiment");
 }
 
 export function onExperimentsChanged(handler: () => void): () => void {

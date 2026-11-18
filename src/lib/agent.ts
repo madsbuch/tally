@@ -66,7 +66,7 @@ import { onAppResume, wasSuspendedSince } from "./appLifecycle";
 import { withBackgroundTask } from "./background";
 import { readPhotoDataUrl, savePhoto } from "./photos";
 import { dayOf, shiftDay, timeOf } from "./daystamp";
-import { idArg } from "./ids";
+import { idArg, idArgProblem } from "./ids";
 import type {
   Capture,
   Fast,
@@ -394,7 +394,7 @@ const DIARY_TOOLS: ToolDef[] = [
         properties: {
           id: {
             type: "string",
-            description: "Entry id (the text after #) from the diary listing in your instructions",
+            description: "The meal's id (meal_…) from the diary listing in your instructions",
           },
           portion: {
             type: "number",
@@ -421,7 +421,7 @@ const DIARY_TOOLS: ToolDef[] = [
       parameters: {
         type: "object",
         properties: {
-          id: { type: "string", description: "Saved meal id (the text after #) from your instructions" },
+          id: { type: "string", description: "The saved meal's id (saved_meal_…) from your instructions" },
           portion: {
             type: "number",
             description:
@@ -529,7 +529,7 @@ function renderDiaryContext(ctx: DiaryContext, day: string, isToday: boolean): s
     for (const m of ctx.meals) {
       const p = m.nutrients.protein_g;
       lines.push(
-        `  #${m.id} ${timeOf(m.eaten_at, m.tz_offset_min)} ate "${m.title}"` +
+        `  ${m.id} ${timeOf(m.eaten_at, m.tz_offset_min)} ate "${m.title}"` +
           `, ${kcalOf(m)} kcal${p != null ? `, ${Math.round(p)}g protein` : ""}`,
       );
     }
@@ -551,7 +551,7 @@ function renderDiaryContext(ctx: DiaryContext, day: string, isToday: boolean): s
     lines.push(
       `Eaten in the last week (for "the usual" when it isn't on the list above): ` +
         ctx.recentMeals
-          .map((m) => `#${m.id} "${m.title}" ${kcalOf(m)} kcal`)
+          .map((m) => `${m.id} "${m.title}" ${kcalOf(m)} kcal`)
           .join(", "),
     );
   }
@@ -560,7 +560,7 @@ function renderDiaryContext(ctx: DiaryContext, day: string, isToday: boolean): s
     lines.push("Saved meals (for log_saved_meal, exact numbers they kept):");
     for (const m of ctx.savedMeals) {
       const kcal = Math.round(m.nutrients.calories ?? 0);
-      lines.push(`  #${m.id} "${m.name}", ${kcal} kcal${m.description ? `: ${m.description}` : ""}`);
+      lines.push(`  ${m.id} "${m.name}", ${kcal} kcal${m.description ? `: ${m.description}` : ""}`);
     }
   }
 
@@ -598,7 +598,7 @@ function renderFastContext(ctx: DiaryContext): string[] {
         : "counted as breaking it";
       if (e.fast_ok_note) allowed += kcalOf(e);
       lines.push(
-        `    #${e.id} ${dayOf(e.eaten_at, e.tz_offset_min)} ${timeOf(e.eaten_at, e.tz_offset_min)} "${e.title}" (${kcalOf(e)} kcal) ${verdict}`,
+        `    ${e.id} ${dayOf(e.eaten_at, e.tz_offset_min)} ${timeOf(e.eaten_at, e.tz_offset_min)} "${e.title}" (${kcalOf(e)} kcal) ${verdict}`,
       );
     }
     lines.push(`  Total of the entries that fit the fast: ${allowed} kcal.`);
@@ -793,11 +793,11 @@ async function executeTool(
   }
 
   if (name === "repeat_meal") {
-    const rawId = idArg(args["id"]);
-    if (rawId == null) return "Error: id is required.";
+    const rawId = idArg(args["id"], "meal");
+    if (rawId == null) return `Error: ${idArgProblem(args["id"], "meal")}`;
     const source = await getFoodEntry(rawId);
     if (!source) {
-      return `Error: there is no diary entry #${rawId}, log it with log_meal instead.`;
+      return `Error: there is no diary entry ${rawId}, log it with log_meal instead.`;
     }
     // A portion is a multiple of what that entry was, so the bounds only have
     // to keep a nonsense number from turning into a nonsense day.
@@ -817,15 +817,15 @@ async function executeTool(
       fast_ok_note: fastOk(args["fast_ok"]),
     });
     ctx.logged++;
-    return `Logged "${title}" at ${time}, copied from #${source.id}.`;
+    return `Logged "${title}" at ${time}, copied from ${source.id}.`;
   }
 
   if (name === "log_saved_meal") {
-    const rawId = idArg(args["id"]);
-    if (rawId == null) return "Error: id is required.";
+    const rawId = idArg(args["id"], "saved_meal");
+    if (rawId == null) return `Error: ${idArgProblem(args["id"], "saved_meal")}`;
     const saved = await getSavedMeal(rawId);
     if (!saved) {
-      return `Error: there is no saved meal #${rawId}, log it with log_meal instead.`;
+      return `Error: there is no saved meal ${rawId}, log it with log_meal instead.`;
     }
     const portion = Math.min(20, Math.max(0.05, num(args["portion"]) ?? 1));
     const title = portion === 1 ? saved.name : `${saved.name} (${round2(portion)}×)`;

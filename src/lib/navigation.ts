@@ -55,7 +55,7 @@ export function chatPath(chatId: string): string {
 
 /** The chat id in a `:chatId` param, or null when it isn't one. */
 export function parseChatId(raw: string | undefined): string | null {
-  return parseRowId(raw);
+  return parseRowId(raw, "chat");
 }
 
 /** The conversation a path shows, or null when it shows anything else. */

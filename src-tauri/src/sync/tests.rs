@@ -387,6 +387,10 @@ async fn a_split_chat_comes_out_the_same_on_both_devices() {
     // The later edit (the Mac's) keeps the chat; the phone's becomes its own.
     assert_eq!(chats[0], ("c".into(), "Plan".into(), "[\"q1\",\"mac\"]".into()));
     assert_eq!(chats[1].1, "Plan (continued in parallel)");
+    // A chat id like any other: `chat_` and 26 digits of TypeID base32.
+    let (prefix, suffix) = chats[1].0.split_once('_').unwrap();
+    assert_eq!(prefix, "chat", "{}", chats[1].0);
+    assert!(suffix.len() == 26 && suffix.bytes().all(|c| b"0123456789abcdefghjkmnpqrstvwxyz".contains(&c)), "{}", chats[1].0);
     assert_eq!(chats[1].2, "[\"q1\",\"phone\"]");
 }
 

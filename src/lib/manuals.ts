@@ -40,7 +40,7 @@ export function manualPath(id: string): string {
 
 /** The manual id in a `:manualId` param, or null when it isn't one. */
 export function parseManualId(raw: string | undefined): string | null {
-  return parseRowId(raw);
+  return parseRowId(raw, "manual");
 }
 
 function shortDate(iso: string): string {

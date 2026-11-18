@@ -3,7 +3,6 @@ import { Database } from "bun:sqlite";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { must, rowOf, rowsOf } from "./helpers";
-import { legacyId } from "../src/lib/ids";
 
 // Migration 0038 re-keys every table from integers to UUID strings. It runs
 // the way tauri-plugin-sql runs it: inside a transaction, foreign keys ON.
@@ -29,6 +28,9 @@ function migrate(db: Database) {
 }
 
 const T = "2026-01-01T08:00:00.000Z";
+
+/** The id 0038 gives the row that had integer `n` (before 0041 re-spelled it as a TypeID). */
+const legacyId = (n: number) => `00000000-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 
 describe("migration 0038 (uuid ids)", () => {
   test("re-keys rows and every reference to them", () => {

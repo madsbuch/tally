@@ -560,6 +560,60 @@ textarea.input {
   background: color-mix(in srgb, var(--warn) 10%, transparent);
 }
 
+/* An id the coach wrote, shown as what it names (components/EntityChip).
+   Sits in running text, so it keeps the line's size and only a little
+   padding; colours follow the text around it, which keeps it legible on the
+   accent-filled user bubble as well as on cards, in both themes. */
+.entity-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  max-width: 100%;
+  margin: 0 1px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.45;
+  color: inherit;
+  white-space: normal;
+  text-align: left;
+  vertical-align: baseline;
+}
+
+.entity-chip-link {
+  cursor: pointer;
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.entity-chip-link:active {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.chat-msg-user .entity-chip-link {
+  color: inherit;
+  border-color: color-mix(in srgb, currentColor 40%, transparent);
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.entity-chip-glyph {
+  font-weight: 400;
+}
+
+.entity-chip-loading,
+.entity-chip-gone {
+  font-weight: 500;
+  opacity: 0.65;
+}
+
+.entity-chip-gone {
+  font-style: italic;
+}
+
 /* Picking how you feel. Bigger than a .chip because these are tapped, not
    read — a 12px pill is a fine label and a poor target for a thumb. */
 .state-chips {

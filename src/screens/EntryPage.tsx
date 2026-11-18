@@ -108,11 +108,24 @@ import WorkoutCardioToggle from "../components/WorkoutCardioToggle";
 import MealFastOk from "../components/MealFastOk";
 import GarminWorkoutDetails from "../components/GarminWorkoutDetails";
 import EntryChat from "../components/EntryChat";
+import { EntityText } from "../components/CoachMarkdown";
 import { parseRowId } from "../lib/ids";
+import type { IdPrefix } from "../lib/ids";
 import { confirmAction } from "../lib/confirm";
 import { DIARY_TABLES, onTablesChanged } from "../lib/live";
 
 type Kind = "meal" | "workout" | "supplement" | "sleep" | "state" | "reading" | "performance";
+
+/** The prefix of the ids each kind of entry page shows (lib/ids.ts). */
+const KIND_PREFIX: Record<Kind, IdPrefix> = {
+  meal: "meal",
+  workout: "workout",
+  supplement: "dose",
+  sleep: "sleep",
+  state: "observation",
+  reading: "reading",
+  performance: "performance",
+};
 
 /** Nutrients shown without asking; the rest hide behind "all nutrients". */
 const BASE_KEYS: NutrientKey[] = ["calories", "protein_g", "carbs_g", "fat_g"];
@@ -255,7 +268,7 @@ export default function EntryPage() {
   // Back to the Diary: the page it was opened from, which is right beneath it.
   const back = useUp();
   const kind = isKind(params["kind"]) ? params["kind"] : null;
-  const id = parseRowId(params["id"]);
+  const id = kind ? parseRowId(params["id"], KIND_PREFIX[kind]) : null;
 
   const [meal, setMeal] = useState<FoodEntry | null>(null);
   const [workout, setWorkout] = useState<Workout | null>(null);
@@ -683,7 +696,9 @@ export default function EntryPage() {
           <div className="list">
             {coachNotes.map((n) => (
               <div key={n.id} className="info-row info-row-static coach-note">
-                <span className="coach-note-text">{n.text}</span>
+                <span className="coach-note-text">
+                  <EntityText text={n.text} />
+                </span>
                 <button
                   className="btn btn-ghost btn-sm"
                   aria-label="Remove this note"
