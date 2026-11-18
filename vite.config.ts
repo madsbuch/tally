@@ -62,8 +62,29 @@ function pdfStandardFonts(): Plugin {
 }
 
 // https://vite.dev/config/
+/**
+ * libheif's Emscripten build (lib/photos.ts) also runs under Node, so it
+ * `require`s fs, path and crypto inside branches that never run in the app.
+ * They get an empty module of their own, for that library only — rather than
+ * Vite's "externalized for browser compatibility" stand-in and its warning.
+ */
+function libheifNodeShims(): Plugin {
+  const shim = "\0libheif-node-shim";
+  return {
+    name: "libheif-node-shims",
+    enforce: "pre",
+    resolveId(id, importer) {
+      const nodeOnly = id === "fs" || id === "path" || id === "crypto";
+      return nodeOnly && importer?.includes("/libheif-js/libheif-wasm/") ? shim : null;
+    },
+    load(id) {
+      return id === shim ? "export default {};" : null;
+    },
+  };
+}
+
 export default defineConfig(async () => ({
-  plugins: [react(), generouted(), pdfStandardFonts()],
+  plugins: [react(), generouted(), pdfStandardFonts(), libheifNodeShims()],
 
   build: {
     // The largest chunk is pdf.js (about 500 kB), loaded only when a PDF is
