@@ -36,6 +36,6 @@ kotlin {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.19.1")
+    implementation("androidx.core:core-ktx:1.18.0")
     implementation(project(":tauri-android"))
 }
