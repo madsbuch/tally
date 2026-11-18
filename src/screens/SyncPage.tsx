@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import jsQR from "jsqr";
-import { useUp } from "../lib/navigation";
+import { useUp, useUpLabel } from "../lib/navigation";
 import {
   ago,
   backupLine,
@@ -111,6 +111,7 @@ function DeviceRow({ d, onRemove }: { d: SyncDevice; onRemove: (d: SyncDevice) =
 
 export default function SyncPage() {
   const up = useUp();
+  const upLabel = useUpLabel("Settings");
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -267,7 +268,7 @@ export default function SyncPage() {
           </InfoButton>
         </h1>
         <button className="btn btn-ghost btn-sm" onClick={up}>
-          ‹ Settings
+          ‹ {upLabel}
         </button>
       </header>
 

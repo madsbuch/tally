@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import { addProgressPhoto, deleteProgressPhoto, listProgressPhotos } from "../lib/db";
 import { compressImage, readPhotoDataUrl, savePhoto } from "../lib/photos";
-import { useUp } from "../lib/navigation";
+import { useUp, useUpLabel } from "../lib/navigation";
 import { useSheetHistory } from "../lib/sheetHistory";
 import type { ProgressPhoto } from "../lib/types";
 import InfoButton from "../components/InfoButton";
@@ -152,6 +152,7 @@ function PhotoSheet({
 
 export default function ProgressPhotosPage() {
   const up = useUp();
+  const upLabel = useUpLabel("Summary");
   const [photos, setPhotos] = useState<ProgressPhoto[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -220,7 +221,7 @@ export default function ProgressPhotosPage() {
           </InfoButton>
         </h1>
         <button className="btn btn-ghost btn-sm" onClick={up}>
-          ‹ Summary
+          ‹ {upLabel}
         </button>
       </header>
 

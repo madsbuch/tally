@@ -56,13 +56,22 @@ runtime validation still happens through the schema helpers
 
 What's on screen is the URL's to say: every screen has an address (a coach
 conversation is `/assistant/:chatId`), and anything that shows you something —
-the tab bar, a banner, a sheet handing off, a notification tap — gets there
-with `go()` from `src/lib/navigation.ts`. It keeps history in one shape: the
-tab, at most one of its pages, then any open sheets — so back from a page lands
-on its tab and back from a tab leaves the app. Don't push or replace around it
-(a plain `<Link>` from a tab into one of its own pages is fine); back buttons
-use `useUp()`. A new page goes under its tab's path (`/assistant/…`) — that's
-how `tabOf()` knows which tab it belongs to; the Diary, being `/`, owns the rest.
+the tab bar, a banner, a sheet handing off, a chip in a coach message, a
+notification tap — gets there with `go()` from `src/lib/navigation.ts`. Each
+tab holds a stack: the tab, the pages you went into from it, then any open
+sheets. `go(page)` pushes onto the stack you're in, even when the page's
+address is another tab's (a meal opened from a chat stays on the Coach's
+stack, and the tab bar keeps the Coach lit — `useCurrentTab()`, not
+`tabOf()`); a page already on the stack is popped back to. The tab bar and
+notification taps use `{ jump: true }` (start the tab afresh, page on top);
+a redirect off a page that's gone uses `{ replace: true }`. Back buttons use
+`useUp(parent?)` — to where you came from, else the page's usual parent —
+and `useUpLabel(usual, parent?)` names where that is. Don't push or replace
+around `go` (a plain `<Link>` from a tab into one of its own pages is fine).
+A new page goes under its tab's path (`/assistant/…`) — that's how `tabOf()`
+knows which tab it belongs to; the Diary, being `/`, owns the rest — and
+gets a name in `placeName()`. `bun run test:nav` drives the real history in
+Chromium (`tests/browser/`).
 
 ## Live data
 

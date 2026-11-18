@@ -1,6 +1,6 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { JSX } from "react";
-import { Link, Outlet, useLocation } from "react-router-dom";
+import { Link, Outlet } from "react-router-dom";
 import { getDb } from "../lib/db";
 import { resyncFastNotification } from "../lib/fasting";
 import {
@@ -28,7 +28,7 @@ import {
   tookCheckinThisVisit,
   useUnreadCheckin,
 } from "../lib/coachInbox";
-import { STALE_CHAT_MS, chatIdOf, chatPath, tabOf, useGo } from "../lib/navigation";
+import { STALE_CHAT_MS, chatIdOf, chatPath, useCurrentTab, useGo } from "../lib/navigation";
 import type { TabRoot } from "../lib/navigation";
 import { syncHealthConnect, syncHealthConnectIfStale } from "../lib/healthConnect";
 import { syncGarminIfStale } from "../lib/garmin";
@@ -118,8 +118,7 @@ const TABS: { to: TabRoot; label: string; icon: JSX.Element }[] = [
 ];
 
 export default function App() {
-  const { pathname } = useLocation();
-  const currentTab = tabOf(pathname);
+  const currentTab = useCurrentTab();
   const go = useGo();
   const assistant = useSyncExternalStore(subscribeAssistant, getAssistantState);
   // The assistant keeps working after you leave its tab, so say so — otherwise
@@ -269,7 +268,7 @@ export default function App() {
   useEffect(() => {
     const follow = async (): Promise<void> => {
       const chatId = await takeOpenedCheckin();
-      if (chatId !== null) go(chatPath(chatId));
+      if (chatId !== null) go(chatPath(chatId), { jump: true });
     };
     void follow();
     const offTap = onCheckinTapped(() => void follow());
@@ -320,7 +319,9 @@ export default function App() {
               to={to}
               onClick={(e) => {
                 e.preventDefault();
-                go(to);
+                // A tab starts its stack afresh; the Coach's open conversation
+                // goes on top of it, with the list beneath.
+                go(to, { jump: true });
               }}
               className={`tab ${currentTab === t.to ? "tab-active" : ""}`}
             >

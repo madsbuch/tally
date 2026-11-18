@@ -21,7 +21,7 @@ import {
   updatedLabel,
   writtenLabel,
 } from "../lib/manuals";
-import { useGo, useUp } from "../lib/navigation";
+import { useGo, useUp, useUpLabel } from "../lib/navigation";
 import { confirmAction } from "../lib/confirm";
 
 interface Draft {
@@ -165,7 +165,8 @@ export default function ManualPage() {
   const [revisions, setRevisions] = useState<ManualRevision[]>([]);
   const [editing, setEditing] = useState(false);
   const [refresh, setRefresh] = useState(0);
-  const up = useUp();
+  const up = useUp("/assistant/manuals");
+  const upLabel = useUpLabel("Manuals", "/assistant/manuals");
   const go = useGo();
 
   useEffect(() => {
@@ -192,15 +193,16 @@ export default function ManualPage() {
     if (!manual) return;
     if (!(await confirmAction(`Delete “${manual.title}” and its history?`, { confirmLabel: "Delete", danger: true }))) return;
     await removeManual(manual.id);
-    go("/assistant/manuals");
+    // Not back onto a page that's gone.
+    go("/assistant/manuals", { replace: true });
   }
 
   return (
     <div className="page">
       <header className="page-header">
         <h1 className="page-title">{manual?.title ?? "Manual"}</h1>
-        <button className="btn btn-ghost btn-sm" onClick={() => go("/assistant/manuals")}>
-          ‹ Manuals
+        <button className="btn btn-ghost btn-sm" onClick={up}>
+          ‹ {upLabel}
         </button>
       </header>
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { firstAiUsageDay, listAiUsageSince, todayStr } from "../lib/db";
 import { shiftDay } from "../lib/daystamp";
-import { useUp } from "../lib/navigation";
+import { useUp, useUpLabel } from "../lib/navigation";
 import {
   cachedShare,
   featureInfo,
@@ -127,6 +127,7 @@ function GroupRow({
  */
 export default function CostCenterPage() {
   const up = useUp();
+  const upLabel = useUpLabel("Settings");
   const [period, setPeriod] = useState<Period>(30);
   const [rows, setRows] = useState<UsageRow[] | null>(null);
   const [firstDay, setFirstDay] = useState<string | null>(null);
@@ -199,7 +200,7 @@ export default function CostCenterPage() {
           </InfoButton>
         </h1>
         <button className="btn btn-ghost btn-sm" onClick={up}>
-          ‹ Settings
+          ‹ {upLabel}
         </button>
       </header>
 
