@@ -142,8 +142,10 @@ class HealthConnectPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    // Tauri calls activity callbacks with (Invoke, ActivityResult); the result
+    // itself isn't needed (see below), but the parameter has to be there.
     @ActivityCallback
-    fun onPermissionResult(invoke: Invoke, result: ActivityResult) {
+    fun onPermissionResult(invoke: Invoke, @Suppress("UNUSED_PARAMETER") result: ActivityResult) {
         // Re-query granted permissions rather than parsing the activity result —
         // Health Connect is the source of truth either way.
         scope.launch {

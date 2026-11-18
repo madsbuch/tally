@@ -5,8 +5,16 @@ import org.gradle.api.GradleException
 import org.gradle.api.logging.LogLevel
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.TaskAction
+import org.gradle.process.ExecOperations
+import javax.inject.Inject
 
-open class BuildTask : DefaultTask() {
+// ExecOperations, injected by Gradle, in place of the deprecated project.exec.
+// Nothing here touches `project` while the task runs (deprecated, and in the
+// way of Gradle's configuration cache): the directory is read when the task
+// is created, and logging goes through the task's own logger.
+open class BuildTask @Inject constructor(private val execOperations: ExecOperations) : DefaultTask() {
+    private val projectDir: File = project.projectDir
+
     @Input
     var rootDirRel: String? = null
     @Input
@@ -50,13 +58,13 @@ open class BuildTask : DefaultTask() {
         val release = release ?: throw GradleException("release cannot be null")
         val args = listOf("tauri", "android", "android-studio-script");
 
-        project.exec {
-            workingDir(File(project.projectDir, rootDirRel))
+        execOperations.exec {
+            workingDir(File(projectDir, rootDirRel))
             executable(executable)
             args(args)
-            if (project.logger.isEnabled(LogLevel.DEBUG)) {
+            if (logger.isEnabled(LogLevel.DEBUG)) {
                 args("-vv")
-            } else if (project.logger.isEnabled(LogLevel.INFO)) {
+            } else if (logger.isEnabled(LogLevel.INFO)) {
                 args("-v")
             }
             if (release) {

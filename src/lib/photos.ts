@@ -12,13 +12,36 @@ import { notifyTablesChanged } from "./live";
  * libheif WASM decoder (loaded lazily so non-HEIC picks pay nothing for it). If
  * that also fails, the original decode error is surfaced.
  */
+type HeicDecode = (opts: { buffer: Uint8Array }) => Promise<{ width: number; height: number; data: Uint8ClampedArray<ArrayBuffer> }>;
+let heic: Promise<HeicDecode> | null = null;
+
+/**
+ * heic-decode over libheif's own WebAssembly file, loaded on first use. The
+ * package's default build embeds the 1 MB of WebAssembly in its JavaScript
+ * as text, which is slower to start and makes a 1.4 MB chunk; this one has
+ * the browser compile the file Vite bundles alongside.
+ */
+function heicDecoder(): Promise<HeicDecode> {
+  heic ??= Promise.all([
+    import("libheif-js/libheif-wasm/libheif.js"),
+    import("libheif-js/libheif-wasm/libheif.wasm?url"),
+    import("heic-decode/lib.js"),
+  ]).then(async ([{ default: libheifFactory }, { default: wasmUrl }, { default: decoderFor }]) => {
+    // This build instantiates its WebAssembly synchronously, so it takes the
+    // bytes up front rather than a URL to fetch them from.
+    const wasmBinary = await (await fetch(wasmUrl)).arrayBuffer();
+    return decoderFor(libheifFactory({ wasmBinary })).one;
+  });
+  return heic;
+}
+
 async function decodeToBitmap(file: Blob): Promise<ImageBitmap> {
   try {
     return await createImageBitmap(file);
   } catch (nativeErr) {
     let decoded;
     try {
-      const { default: decode } = await import("heic-decode");
+      const decode = await heicDecoder();
       decoded = await decode({ buffer: new Uint8Array(await file.arrayBuffer()) });
     } catch {
       // Not a HEIC image (or genuinely corrupt): surface the native error.

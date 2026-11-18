@@ -49,10 +49,11 @@ let reader: Promise<typeof import("zxing-wasm/reader")> | null = null;
 
 /** The decoder, loaded on first use from the copy bundled with the app. */
 function zxing(): Promise<typeof import("zxing-wasm/reader")> {
-  reader ??= Promise.all([import("zxing-wasm/reader"), zxingOverrides()]).then(([mod, overrides]) => {
-    mod.prepareZXingModule({ overrides, fireImmediately: true });
+  reader ??= (async () => {
+    const mod = await import("zxing-wasm/reader");
+    mod.prepareZXingModule({ overrides: await zxingOverrides(), fireImmediately: true });
     return mod;
-  });
+  })();
   return reader;
 }
 
