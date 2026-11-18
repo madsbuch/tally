@@ -74,6 +74,12 @@ android {
             )
         }
     }
+    // Java 11, matching Kotlin's jvmTarget below: WorkManager 2.12's inline
+    // functions are JVM 11 bytecode, which a 1.8 target can't inline.
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
     buildFeatures {
         buildConfig = true
     }
@@ -85,7 +91,7 @@ rust {
 
 kotlin {
     compilerOptions {
-        jvmTarget = JvmTarget.JVM_1_8
+        jvmTarget = JvmTarget.JVM_11
     }
 }
 
