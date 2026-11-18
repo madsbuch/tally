@@ -103,7 +103,7 @@ import {
 import AssistantChart from "../components/AssistantChart";
 import type { ChartSpec } from "../lib/assistant";
 import { useSheetHistory } from "../lib/sheetHistory";
-import { useUp } from "../lib/navigation";
+import { useUp, useUpLabel } from "../lib/navigation";
 import WorkoutCardioToggle from "../components/WorkoutCardioToggle";
 import MealFastOk from "../components/MealFastOk";
 import GarminWorkoutDetails from "../components/GarminWorkoutDetails";
@@ -267,6 +267,7 @@ export default function EntryPage() {
   const params = useParams();
   // Back to the Diary: the page it was opened from, which is right beneath it.
   const back = useUp();
+  const backLabel = useUpLabel("Diary");
   const kind = isKind(params["kind"]) ? params["kind"] : null;
   const id = kind ? parseRowId(params["id"], KIND_PREFIX[kind]) : null;
 
@@ -487,7 +488,7 @@ export default function EntryPage() {
     <div className="page entry-page">
       <header className="page-header">
         <button className="btn btn-ghost btn-sm" onClick={back}>
-          ‹ Diary
+          ‹ {backLabel}
         </button>
       </header>
 

@@ -16,7 +16,7 @@ import {
 import type { UiItem } from "../lib/assistantRunner";
 import AssistantChart from "../components/AssistantChart";
 import { markCheckinRead, useUnreadCheckin } from "../lib/coachInbox";
-import { chatPath, parseChatId, useGo, useUp } from "../lib/navigation";
+import { chatPath, parseChatId, useGo, useUp, useUpLabel } from "../lib/navigation";
 import InfoButton from "../components/InfoButton";
 import CoachShelf from "../components/CoachShelf";
 import CoachMarkdown, { EntityText } from "../components/CoachMarkdown";
@@ -81,6 +81,7 @@ export default function AssistantPage() {
 
   const go = useGo();
   const up = useUp();
+  const upLabel = useUpLabel("Chats");
   const unread = useUnreadCheckin();
 
   const [history, setHistory] = useState<ChatSummary[]>([]);
@@ -256,7 +257,7 @@ export default function AssistantPage() {
         </h1>
         {inChat && (
           <button className="btn btn-ghost btn-sm" onClick={up}>
-            ‹ Chats
+            ‹ {upLabel}
           </button>
         )}
       </header>

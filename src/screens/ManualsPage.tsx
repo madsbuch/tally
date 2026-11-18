@@ -16,12 +16,13 @@ import {
   updatedLabel,
 } from "../lib/manuals";
 import InfoButton from "../components/InfoButton";
-import { useGo, useUp } from "../lib/navigation";
+import { useGo, useUp, useUpLabel } from "../lib/navigation";
 
 export default function ManualsPage() {
   const [manuals, setManuals] = useState<Manual[] | null>(null);
   const [refresh, setRefresh] = useState(0);
   const up = useUp();
+  const upLabel = useUpLabel("Coach");
   const go = useGo();
 
   useEffect(() => {
@@ -61,7 +62,7 @@ export default function ManualsPage() {
           </InfoButton>
         </h1>
         <button className="btn btn-ghost btn-sm" onClick={up}>
-          ‹ Coach
+          ‹ {upLabel}
         </button>
       </header>
 

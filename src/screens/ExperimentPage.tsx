@@ -28,7 +28,7 @@ import {
   summarize,
 } from "../lib/experiments";
 import { onManualsChanged, manualPath } from "../lib/manuals";
-import { chatPath, useGo } from "../lib/navigation";
+import { chatPath, useGo, useUp, useUpLabel } from "../lib/navigation";
 import { startAssistantChat } from "../lib/assistantRunner";
 import TrialCard, { formatMetric } from "../components/TrialCard";
 import type { AutoMetric } from "../lib/schemas";
@@ -160,6 +160,8 @@ export default function ExperimentPage() {
   const data = id === null ? null : loaded;
   const [refresh, setRefresh] = useState(0);
   const go = useGo();
+  const up = useUp("/assistant/experiments");
+  const upLabel = useUpLabel("Experiments", "/assistant/experiments");
 
   useEffect(() => {
     let alive = true;
@@ -212,7 +214,8 @@ export default function ExperimentPage() {
     if (!data) return;
     if (!(await confirmAction(`Delete “${data.e.title}” and all its trials?`, { confirmLabel: "Delete", danger: true }))) return;
     await removeExperiment(data.e.id);
-    go("/assistant/experiments");
+    // Not back onto a page that's gone.
+    go("/assistant/experiments", { replace: true });
   }
 
   async function logTrial() {
@@ -229,8 +232,8 @@ export default function ExperimentPage() {
     <div className="page">
       <header className="page-header">
         <h1 className="page-title">{e?.title ?? "Experiment"}</h1>
-        <button className="btn btn-ghost btn-sm" onClick={() => go("/assistant/experiments")}>
-          ‹ Experiments
+        <button className="btn btn-ghost btn-sm" onClick={up}>
+          ‹ {upLabel}
         </button>
       </header>
 
@@ -245,7 +248,7 @@ export default function ExperimentPage() {
           <div className="empty-icon">{EXPERIMENT_GLYPH}</div>
           This experiment is gone.
           <div style={{ marginTop: 12 }}>
-            <button className="btn btn-sm" onClick={() => go("/assistant/experiments")}>
+            <button className="btn btn-sm" onClick={() => go("/assistant/experiments", { replace: true })}>
               All experiments
             </button>
           </div>

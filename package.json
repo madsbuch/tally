@@ -8,6 +8,7 @@
     "build": "tsc && tsc --noEmit -p tsconfig.node.json && eslint . && vite build",
     "lint": "eslint .",
     "test": "TZ=Europe/Copenhagen bun test",
+    "test:nav": "node tests/browser/navigation.check.cjs",
     "preview": "vite preview",
     "tauri": "bun scripts/tauri.mjs"
   },

@@ -11,7 +11,7 @@ import { deleteCoachMemory, listCoachMemory, todayStr } from "../lib/db";
 import { cacheCoachPromptPrefix } from "../lib/coach";
 import type { CoachMemory } from "../lib/types";
 import InfoButton from "../components/InfoButton";
-import { useUp } from "../lib/navigation";
+import { useUp, useUpLabel } from "../lib/navigation";
 import { useTablesVersion } from "../lib/live";
 import { EntityText } from "../components/CoachMarkdown";
 
@@ -74,6 +74,7 @@ function MemoryRow({
 export default function MemoryPage() {
   const [memory, setMemory] = useState<CoachMemory[] | null>(null);
   const up = useUp();
+  const upLabel = useUpLabel("Coach");
   const today = todayStr();
 
   // Live: what the coach (here or on another device) remembers or forgets.
@@ -120,7 +121,7 @@ export default function MemoryPage() {
           </InfoButton>
         </h1>
         <button className="btn btn-ghost btn-sm" onClick={up}>
-          ‹ Coach
+          ‹ {upLabel}
         </button>
       </header>
 

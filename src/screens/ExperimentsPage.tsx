@@ -19,7 +19,7 @@ import {
   onExperimentsChanged,
 } from "../lib/experiments";
 import InfoButton from "../components/InfoButton";
-import { chatPath, useGo, useUp } from "../lib/navigation";
+import { chatPath, useGo, useUp, useUpLabel } from "../lib/navigation";
 import { startAssistantChat } from "../lib/assistantRunner";
 
 const STARTER =
@@ -40,6 +40,7 @@ export default function ExperimentsPage() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [refresh, setRefresh] = useState(0);
   const up = useUp();
+  const upLabel = useUpLabel("Coach");
   const go = useGo();
 
   useEffect(() => {
@@ -89,7 +90,7 @@ export default function ExperimentsPage() {
           </InfoButton>
         </h1>
         <button className="btn btn-ghost btn-sm" onClick={up}>
-          ‹ Coach
+          ‹ {upLabel}
         </button>
       </header>
 

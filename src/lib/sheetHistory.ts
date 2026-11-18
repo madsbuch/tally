@@ -140,6 +140,14 @@ export function unwindHistory(fn: () => void): void {
 }
 
 /**
+ * Close any open sheets and go back `pages` pages beyond them, as one
+ * traversal, then run `fn` there. `fn` must navigate (see `rewind`).
+ */
+export function rewindPages(pages: number, fn: () => void): void {
+  rewind(() => pages, fn);
+}
+
+/**
  * While `open` is true, keep one history entry on the stack so the Android
  * back button closes this sheet (via `close`) instead of leaving the page.
  * Closing by button or backdrop gives that entry back.
