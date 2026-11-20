@@ -23,7 +23,8 @@ than one requirement uses.
 - Constants in the code follow the spec's named values; change both together.
 - `tests/spec.test.ts` (part of `bun test`) checks the spec: schema, unique
   ids, references, histories, deprecations, and that every `Spec:` citation
-  names a real requirement.
+  names a real requirement. CI doesn't run the test suite, so run it before
+  pushing a spec change.
 
 ## JSON boundary rule
 
@@ -48,13 +49,17 @@ parsed through a zod schema defined in `src/lib/schemas.ts`. Concretely:
   schemas for our own persisted data should be strict so corruption surfaces.
 - Value-level coercion helpers like `sanitizeNutrients` (`src/lib/nutrients.ts`)
   are legitimate and used *inside* schemas — don't replace them with naive
-  `z.number()` fields, their clamping semantics are intentional.
+  `z.number()` fields: dropping a bad value (negative, non-finite,
+  non-numeric) rather than failing the whole row is intentional.
 
 ## No casts, no `!`, no `any`, no unsafe
 
 ESLint (`eslint.config.js`) holds all TypeScript — `src/`, `tests/`,
-`scripts/` — to these, and they can't be switched off with a comment (only
-`react-hooks/exhaustive-deps` may be disabled inline):
+`scripts/` — to these, and an `eslint-disable` comment can't switch them off
+(only `react-hooks/exhaustive-deps` may be disabled inline). ESLint doesn't
+yet block inline configuration comments (`/* eslint rule: "off" */`); don't
+use them either. `tsc` typechecks only `src/`, so in `tests/` and `scripts/`
+only an explicit `any` is caught:
 
 - No type assertions (`x as T`; `as const` is fine) and no non-null `!`.
   Narrow instead: `if`/`??`, `isOneOf`/`isKeyOf`/`fieldsOf`
@@ -64,7 +69,8 @@ ESLint (`eslint.config.js`) holds all TypeScript — `src/`, `tests/`,
 - No `any`, and in `src/` no `any` flowing anywhere (`no-unsafe-*`, type-aware):
   give it `unknown` and parse it.
 - No `@ts-ignore` / `@ts-expect-error` / `@ts-nocheck`.
-- Rust: every crate sets `unsafe_code = "forbid"` in its `Cargo.toml`, except
+- Rust: every crate under `src-tauri` sets `unsafe_code = "forbid"` in its
+  `Cargo.toml` (`tools/sqlite-android-compat` sets nothing yet), except
   the app crate (`src-tauri`), which sets `"deny"` for one audited exception:
   the JNI entry point in `src/sync/background.rs` needs `#[no_mangle]` and
   carries `#[allow(unsafe_code)]`. That code is Android-only, so a desktop
@@ -76,8 +82,9 @@ runtime validation still happens through the schema helpers
 
 ## Navigation rule
 
-What's on screen is the URL's to say: every screen has an address (a coach
-conversation is `/assistant/:chatId`), and anything that shows you something —
+What's on screen is the URL's to say: every page has an address (a coach
+conversation is `/assistant/:chatId`; an open sheet holds a history entry but
+no address of its own), and anything that shows you something —
 the tab bar, a banner, a sheet handing off, a chip in a coach message, a
 notification tap — gets there with `go()` from `src/lib/navigation.ts`. Each
 tab holds a stack: the tab, the pages you went into from it, then any open
@@ -102,8 +109,9 @@ another one through sync, or the Android check-in worker while the app was
 away. A screen that reads data subscribes to the tables it shows —
 `useTablesVersion([...])` in its load effect's dependencies, or
 `onTablesChanged` (`src/lib/live.ts`) — rather than loading once. Writes
-through `db.ts` announce themselves (only real changes, judged by sync's
-change counter); anything written past it (Rust commands like `save_photo`)
+through `db.ts` to synced tables announce themselves (only real changes,
+judged by sync's change counter; writes to local tables like
+`device_settings` don't announce); anything written past it (Rust commands like `save_photo`)
 calls `notifyTablesChanged` itself. Forms that hold a draft (Settings) load
 once on open, so a sync never overwrites what you're typing.
 
@@ -117,8 +125,9 @@ numbers are the trusted ones: once Garmin has a day, an activity or a night,
 its values stand — `applyGarminMetrics`, `applyGarminToWorkout`,
 `applyGarminSleep` — and Health Connect's writes defer to them. Above both:
 a field changed by hand (`workouts.edited_by_hand`, `WORKOUT_EDITED`) and a
-session deleted by hand (`deleted_imports`). Rows are matched by time, not
-id (`lib/syncMatch.ts`): every phone's Health Connect names records afresh.
+session deleted by hand (`deleted_imports`). Rows are matched by the source's
+record id when it names one, else by time (`lib/syncMatch.ts`): every phone's
+Health Connect names records afresh, so time is what two phones agree on.
 See the header of `src/lib/garminDb.ts`; `tests/garmin-first.test.ts` drives
 the real Health Connect sync against a fake one.
 
@@ -126,15 +135,18 @@ the real Health Connect sync against a fake one.
 
 The database is meant to sync between devices, so:
 
-- Every table is keyed by a TypeID string — the table's prefix and a
-  UUIDv7, `meal_01jd4x8m2kf7r9q3vz5w6t0hyc` (`rowId("<table>")` in
-  `src/db/schema.ts`, `newId("<table>")` in `src/lib/ids.ts`) — never an
-  auto-increment integer. A new table gets its prefix in `ID_PREFIXES`; a
-  prefix never changes once rows exist. Rows imported from an external system
+- Every entity table (one with a prefix in `ID_PREFIXES`) is keyed by a
+  TypeID string — the table's prefix and a UUID (v7 for new rows),
+  `meal_01jd4x8m2kf7r9q3vz5w6t0hyc` (`rowId("<table>")` in
+  `src/db/schema.ts`, `newId("<table>")` in `src/lib/ids.ts`). Other tables
+  use a natural key (a settings key, a day, a photo's hash, a Garmin
+  activity id); no table uses an auto-increment integer. A new entity table
+  gets its prefix in `ID_PREFIXES`; a prefix never changes once rows exist. Rows imported from an external system
   get `derivedId(table, externalKey)` so two devices importing the same record
-  agree on its id. Raw SQL inserts (Kotlin `CoachDb`, Rust, tests) must supply
-  the id themselves, spelled the same way (Kotlin and Rust have their own
-  encoder, pinned to the spec's examples like the TS one).
+  agree on its id (a UUIDv8). Raw SQL inserts (Kotlin `CoachDb`, Rust, tests)
+  must supply the id themselves, spelled the same way. Kotlin and Rust have
+  their own encoder; the TS and Rust ones are pinned to the TypeID spec's
+  examples by tests, the Kotlin one isn't yet.
 - Ids are how the coach points at things: tools take them through
   `idArg(raw, prefix)` (which also reads the bare UUIDs and numbers old chats
   quote, and refuses another kind's id — say why with `idArgProblem`), and an
@@ -145,8 +157,8 @@ The database is meant to sync between devices, so:
   badge) are listed in `DEVICE_SETTING_KEYS` (`src/lib/types.ts`) and live in
   `device_settings`; `getSetting`/`setSetting` route them. Keep the Kotlin
   mirror in `CoachDb.kt` in step.
-- Photos are named by the SHA-256 of their bytes (`photos.rs`), so a name
-  always means the same image.
+- New photos are named by the SHA-256 of their bytes (`photos.rs`), so a
+  name always means the same image; older photos keep their earlier names.
 - Every table syncs between the vault's devices (`src-tauri/src/sync/`)
   unless it's listed in `LOCAL_TABLES` (`scripts/sync-triggers.ts`). Sync
   rides on triggers: a migration that adds a table must add its triggers
@@ -159,7 +171,7 @@ The database is meant to sync between devices, so:
   the database with it); CI checks with `tools/sqlite-android-compat`.
 - Work waiting on a row (a capture to analyse, a document to read) is done
   only by the device that wrote it (`writtenHere` in `src/lib/db.ts`), and
-  check-ins and Garmin imports only on the phone — otherwise two devices
+  check-ins and Health Connect and Garmin imports only on Android — otherwise two devices
   would both do it.
 
 ## Commands
@@ -176,6 +188,6 @@ The database is meant to sync between devices, so:
     (`same_build` in `src-tauri/src/sync/session.rs`).
   The real database must never be opened by unfinished code: with sync, its
   mistakes would reach every device.
-- `bun run build` — typecheck (`tsc`), lint, and bundle
+- `bun run build` — typecheck `src/` (`tsc`), lint everything, and bundle
 - `bun run lint` — ESLint only
 - `bun run tauri android build --apk` — Android build (CI does this)
