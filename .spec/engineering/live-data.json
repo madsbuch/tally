@@ -5,8 +5,26 @@
   "status": "accepted",
   "order": 4,
   "requirements": [
-    { "id": "LIVE-1", "text": "A screen that shows data reloads when the tables it shows change, whether the change came from this device, from sync or from a background worker." },
-    { "id": "LIVE-2", "text": "Writes announce the tables they changed only when they changed a row." },
-    { "id": "LIVE-3", "text": "A form holding a draft (Settings) loads once when opened, so a sync never overwrites what is being typed." }
+    {
+      "id": "LIVE-1",
+      "text": "A screen that shows data reloads when the tables it shows change, whether the change came from this device, from sync or from a background worker."
+    },
+    {
+      "id": "LIVE-2",
+      "text": "Writes to synced tables announce the tables they changed only when they changed a row.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Writes announce the tables they changed only when they changed a row.",
+          "reason": "Version 1 didn't match the product: writes to device-local tables are not announced.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "LIVE-3",
+      "text": "A form holding a draft (Settings) loads once when opened, so a sync never overwrites what is being typed."
+    }
   ]
 }

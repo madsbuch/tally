@@ -5,9 +5,39 @@
   "status": "accepted",
   "order": 5,
   "requirements": [
-    { "id": "ID-1", "text": "Every table's key is a TypeID string, the table's prefix and a UUIDv7 (`meal_01jd4x8m2kf7r9q3vz5w6t0hyc`), never an auto-increment integer." },
-    { "id": "ID-2", "text": "A table's prefix never changes once rows exist." },
-    { "id": "ID-3", "text": "A row imported from an external system gets an id derived from the table and its external key, so two devices importing it agree on the id." },
-    { "id": "ID-4", "text": "The TypeScript, Kotlin and Rust id encoders produce the same ids, pinned to the TypeID specification's examples." }
+    {
+      "id": "ID-1",
+      "text": "Every entity table (one with a prefix in `ID_PREFIXES`) is keyed by a TypeID: its prefix and a UUID, `meal_01jd4x8m2kf7r9q3vz5w6t0hyc`; other tables use a natural key, and none uses an auto-increment integer.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Every table's key is a TypeID string, the table's prefix and a UUIDv7 (`meal_01jd4x8m2kf7r9q3vz5w6t0hyc`), never an auto-increment integer.",
+          "reason": "Version 1 didn't match the product: settings, per-day and sync tables use natural keys, and derived ids are UUIDv8.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "ID-2",
+      "text": "A table's prefix never changes once rows exist."
+    },
+    {
+      "id": "ID-3",
+      "text": "A row imported from an external system gets an id derived from the table and its external key, so two devices importing it agree on the id."
+    },
+    {
+      "id": "ID-4",
+      "text": "The TypeScript and Rust id encoders and the SQL id migration are tested against the TypeID specification's examples.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The TypeScript, Kotlin and Rust id encoders produce the same ids, pinned to the TypeID specification's examples.",
+          "reason": "Version 1 didn't match the product: the Kotlin encoder has no such test.",
+          "date": "2026-11-20"
+        }
+      ]
+    }
   ]
 }

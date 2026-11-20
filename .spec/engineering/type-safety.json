@@ -5,10 +5,52 @@
   "status": "accepted",
   "order": 1,
   "requirements": [
-    { "id": "TYP-1", "text": "TypeScript in `src/`, `tests/` and `scripts/` has no type assertions other than `as const`, and no non-null `!`." },
-    { "id": "TYP-2", "text": "TypeScript has no `any`, and in `src/` no value of type `any` flows anywhere." },
-    { "id": "TYP-3", "text": "TypeScript has no `@ts-ignore`, `@ts-expect-error` or `@ts-nocheck`." },
-    { "id": "TYP-4", "text": "Lint rules cannot be disabled by a comment, except `react-hooks/exhaustive-deps`." },
-    { "id": "TYP-5", "text": "Every Rust crate forbids unsafe code, except the app crate, which denies it with one audited exception: the Android JNI entry point for background sync." }
+    {
+      "id": "TYP-1",
+      "text": "TypeScript in `src/`, `tests/` and `scripts/` has no type assertions other than `as const`, and no non-null `!`."
+    },
+    {
+      "id": "TYP-2",
+      "text": "TypeScript has no explicit `any`, and in `src/` no value of type `any` flows anywhere.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "TypeScript has no `any`, and in `src/` no value of type `any` flows anywhere.",
+          "reason": "Version 1 didn't match the product: tests and scripts are not typechecked, so only an explicit `any` is caught there.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "TYP-3",
+      "text": "TypeScript has no `@ts-ignore`, `@ts-expect-error` or `@ts-nocheck`."
+    },
+    {
+      "id": "TYP-4",
+      "text": "Lint rules cannot be disabled by an `eslint-disable` comment, except `react-hooks/exhaustive-deps`.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Lint rules cannot be disabled by a comment, except `react-hooks/exhaustive-deps`.",
+          "reason": "Version 1 didn't match the product: an inline `/* eslint rule: off */` configuration comment is not blocked.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "TYP-5",
+      "text": "Every Rust crate under `src-tauri` forbids unsafe code, except the app crate, which denies it with one exception: the Android JNI entry point for background sync.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Every Rust crate forbids unsafe code, except the app crate, which denies it with one audited exception: the Android JNI entry point for background sync.",
+          "reason": "Version 1 didn't match the product: the `tools/sqlite-android-compat` crate sets nothing.",
+          "date": "2026-11-20"
+        }
+      ]
+    }
   ]
 }

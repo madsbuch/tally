@@ -11,25 +11,126 @@
       "as": "someone who logs on the phone and reviews on the computer",
       "want": "both to show the same diary",
       "soThat": "I never wonder which one is right",
-      "requirements": ["#SYN-1", "#SYN-4", "#SYN-5"]
+      "requirements": [
+        "#SYN-1",
+        "#SYN-4",
+        "#SYN-5"
+      ]
     }
   ],
   "requirements": [
-    { "id": "SYN-1", "text": "Devices of one vault sync directly over the local network; no data passes through a server." },
-    { "id": "SYN-2", "text": "Devices find each other by UDP broadcast and by probing each peer's last known address; discovery names the vault by a short tag, never by its id." },
-    { "id": "SYN-3", "text": "The channel between two devices is encrypted (Noise over TCP), and the handshake decides whether a peer belongs to the vault." },
-    { "id": "SYN-4", "text": "Every table syncs unless it is explicitly local to the device." },
-    { "id": "SYN-5", "text": "Concurrent changes to a row resolve to the version with the later hybrid-logical clock, and every device reaches the same result whatever order changes arrive in." },
-    { "id": "SYN-6", "text": "A chat continued on two devices at once is split, the losing side kept as a new chat, so no turn is lost." },
-    { "id": "SYN-7", "text": "Two rows that collide on a unique column keep the one with the lower id; the other is deleted on every device." },
-    { "id": "SYN-8", "text": "A new device joins by scanning a pairing QR code, good for one device for `sync.pairing-lifetime`." },
-    { "id": "SYN-9", "text": "A database restored from an older copy takes a new device id before anything is written, and syncs from scratch." },
-    { "id": "SYN-10", "text": "Settings that belong to one device (sync bookmarks, caches, the unread badge) are never synced." },
-    { "id": "SYN-11", "text": "On Android, sync also runs while the app is closed." },
-    { "id": "SYN-12", "text": "The computer keeps a daily copy of the database for the last two weeks, then a weekly one for about three months." },
-    { "id": "SYN-13", "text": "Development and release builds never sync with each other." }
+    {
+      "id": "SYN-1",
+      "text": "Devices of one vault sync directly over the local network; no data passes through a server."
+    },
+    {
+      "id": "SYN-2",
+      "text": "Devices find each other by UDP broadcast and by probing each peer's last known address.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Devices find each other by UDP broadcast and by probing each peer's last known address; discovery names the vault by a short tag, never by its id.",
+          "reason": "Version 1 held two statements; how the vault is named in a probe is now SYN-14.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "SYN-14",
+      "text": "A discovery probe names the vault by a short tag derived from its id, never by the id itself."
+    },
+    {
+      "id": "SYN-3",
+      "text": "The channel between two devices is encrypted with the Noise protocol over TCP.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The channel between two devices is encrypted (Noise over TCP), and the handshake decides whether a peer belongs to the vault.",
+          "reason": "Version 1 also said the handshake decides membership; that check comes after it and is now SYN-15.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "SYN-15",
+      "text": "A peer is let in only when the key it proved in the handshake belongs to a device of the vault."
+    },
+    {
+      "id": "SYN-4",
+      "text": "Every table syncs unless it is explicitly local to the device."
+    },
+    {
+      "id": "SYN-5",
+      "text": "Concurrent changes to a row resolve to the version with the later hybrid-logical clock, and every device reaches the same result whatever order changes arrive in."
+    },
+    {
+      "id": "SYN-6",
+      "text": "A chat continued on two devices at once is split, the losing side kept as a new chat, so no turn is lost."
+    },
+    {
+      "id": "SYN-7",
+      "text": "Two rows that collide on a unique column keep the one with the lower id; the other is deleted on every device."
+    },
+    {
+      "id": "SYN-8",
+      "text": "A new device joins by scanning a pairing QR code, which works for one device and for `sync.pairing-lifetime`."
+    },
+    {
+      "id": "SYN-9",
+      "text": "A database restored from an older copy is detected at startup, or at its first sync if its marker was restored with it, and then takes a new device id and syncs from scratch.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A database restored from an older copy takes a new device id before anything is written, and syncs from scratch.",
+          "reason": "Version 1 didn't match the product: migrations write before the check, and a restore that brings its marker file along is only caught when syncing.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "SYN-10",
+      "text": "Settings that belong to one device (sync bookmarks, caches, the unread badge) are never synced."
+    },
+    {
+      "id": "SYN-11",
+      "text": "On Android, sync also runs while the app is closed."
+    },
+    {
+      "id": "SYN-12",
+      "text": "While the app runs, the computer keeps a daily copy of the database for `sync.snapshot-daily`, then one a week back to `sync.snapshot-weekly`.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The computer keeps a daily copy of the database for the last two weeks, then a weekly one for about three months.",
+          "reason": "Version 1 didn't name the periods or say copies are made only while the app runs.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "SYN-13",
+      "text": "Development and release builds never sync with each other."
+    }
   ],
   "values": [
-    { "id": "sync.pairing-lifetime", "type": "duration", "value": "10min" }
+    {
+      "id": "sync.pairing-lifetime",
+      "type": "duration",
+      "value": "10min"
+    },
+    {
+      "id": "sync.snapshot-daily",
+      "type": "duration",
+      "value": "14d"
+    },
+    {
+      "id": "sync.snapshot-weekly",
+      "type": "duration",
+      "value": "91d"
+    }
   ]
 }

@@ -6,10 +6,43 @@
   "order": 2,
   "description": "Untrusted JSON is SQLite JSON columns, model output, external API responses, JSON in the settings table, and whatever Tauri commands and plugins return.",
   "requirements": [
-    { "id": "JSN-1", "text": "`JSON.parse` is called only inside `src/lib/schemas.ts`." },
-    { "id": "JSN-2", "text": "Untrusted JSON and the results of Tauri commands are parsed through a zod schema in `src/lib/schemas.ts`, never cast." },
-    { "id": "JSN-3", "text": "Schemas for model and API output coerce and default, so a sloppy answer degrades instead of failing." },
-    { "id": "JSN-4", "text": "Schemas for Tally's own persisted data are strict, so corruption surfaces." },
-    { "id": "JSN-5", "text": "Nutrient values pass through a clamping sanitiser rather than a plain number check." }
+    {
+      "id": "JSN-1",
+      "text": "`JSON.parse` is called only inside `src/lib/schemas.ts`."
+    },
+    {
+      "id": "JSN-2",
+      "text": "Untrusted JSON and the results of Tauri commands are parsed through a zod schema in `src/lib/schemas.ts`, never cast."
+    },
+    {
+      "id": "JSN-3",
+      "text": "Schemas for model and API output coerce and default, so a sloppy answer degrades instead of failing."
+    },
+    {
+      "id": "JSN-4",
+      "text": "Schemas for Tally's own persisted experiment and entry-snapshot data are strict, so corruption surfaces.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Schemas for Tally's own persisted data are strict, so corruption surfaces.",
+          "reason": "Version 1 didn't match the product: other stored JSON (documents, entry changes, nutrients, transcripts) is repaired or dropped silently.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "JSN-5",
+      "text": "Nutrient values pass through a sanitiser that reads numeric strings and drops negative, non-finite or non-numeric values.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Nutrient values pass through a clamping sanitiser rather than a plain number check.",
+          "reason": "Version 1 didn't match the product: the sanitiser drops bad values; it does not clamp.",
+          "date": "2026-11-20"
+        }
+      ]
+    }
   ]
 }

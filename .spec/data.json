@@ -5,14 +5,62 @@
   "status": "accepted",
   "order": 9,
   "requirements": [
-    { "id": "DATA-1", "text": "Export writes a consistent snapshot of the whole database, photos included, and hands it to the Android share sheet (on desktop, shows the file's path)." },
-    { "id": "DATA-2", "text": "Photos are stored in the database, named by the SHA-256 of their bytes." },
-    { "id": "DATA-3", "text": "When the last backup is older than `backup.stale-after`, the app reminds the user to make one." },
-    { "id": "DATA-4", "text": "Copies the app makes of the database (exports, snapshots, the pre-migration backup) are marked as copies." },
-    { "id": "DATA-5", "text": "Schema changes are applied as versioned migrations when the app starts." }
+    {
+      "id": "DATA-1",
+      "text": "Export writes a consistent snapshot of the whole database, photos included, and hands it to the Android share sheet (on desktop, shows the file's path)."
+    },
+    {
+      "id": "DATA-2",
+      "text": "A new photo is stored in the database, named by the SHA-256 of its bytes.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Photos are stored in the database, named by the SHA-256 of their bytes.",
+          "reason": "Version 1 didn't match the product: older photos keep their earlier names.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "DATA-3",
+      "text": "On Android, when the last complete sync with another device of the vault is older than `backup.stale-after`, the Diary shows a reminder to open Tally on that device.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "When the last backup is older than `backup.stale-after`, the app reminds the user to make one.",
+          "reason": "Version 1 didn't match the product: the backup is a sync to another device, not an export, and the reminder is Android-only.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "DATA-4",
+      "text": "Exports, the computer's daily copies and the copy replaced when joining a vault are marked as copies.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Copies the app makes of the database (exports, snapshots, the pre-migration backup) are marked as copies.",
+          "reason": "Version 1 didn't match the product: the pre-migration backup is not marked.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "DATA-5",
+      "text": "Schema changes are applied as versioned migrations when the app starts."
+    }
   ],
   "values": [
-    { "id": "backup.stale-after", "type": "duration", "value": "3d" }
+    {
+      "id": "backup.stale-after",
+      "type": "duration",
+      "value": "3d"
+    }
   ],
-  "related": ["#SYN-9"]
+  "related": [
+    "#SYN-9"
+  ]
 }

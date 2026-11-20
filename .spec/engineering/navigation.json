@@ -5,12 +5,55 @@
   "status": "accepted",
   "order": 3,
   "requirements": [
-    { "id": "NAV-1", "text": "Every screen, sheet and conversation has a URL, and what is on screen is decided by the URL." },
-    { "id": "NAV-2", "text": "Each tab keeps a stack: the tab, the pages opened from it, then any open sheets." },
-    { "id": "NAV-3", "text": "Opening a page pushes it onto the current tab's stack, even when the page lives under another tab, and the tab bar keeps the current tab lit." },
-    { "id": "NAV-4", "text": "Opening a page already on the stack pops back to it." },
-    { "id": "NAV-5", "text": "The tab bar and notification taps start their tab afresh with the page on top." },
-    { "id": "NAV-6", "text": "A back button returns to where the user came from, else to the page's usual parent, and is labelled with that place's name." },
-    { "id": "NAV-7", "text": "A page's path starts with its tab's path; the Diary owns every path no other tab claims." }
+    {
+      "id": "NAV-1",
+      "text": "Every page and conversation has a URL, and what is on screen is decided by it; an open sheet holds a history entry but no address of its own.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Every screen, sheet and conversation has a URL, and what is on screen is decided by the URL.",
+          "reason": "Version 1 didn't match the product: sheets have no address.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "NAV-2",
+      "text": "Each tab keeps a stack: the tab, the pages opened from it, then any open sheets."
+    },
+    {
+      "id": "NAV-3",
+      "text": "Opening a page pushes it onto the current tab's stack, even when the page lives under another tab.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Opening a page pushes it onto the current tab's stack, even when the page lives under another tab, and the tab bar keeps the current tab lit.",
+          "reason": "Version 1 held two statements; the tab bar's highlight is now NAV-8.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "NAV-4",
+      "text": "Opening a page already on the stack pops back to it."
+    },
+    {
+      "id": "NAV-5",
+      "text": "The tab bar and notification taps start their tab afresh with the page on top."
+    },
+    {
+      "id": "NAV-6",
+      "text": "A back button returns to where the user came from, else to the page's usual parent, and is labelled with that place's name."
+    },
+    {
+      "id": "NAV-7",
+      "text": "A page's path starts with its tab's path; the Diary owns every path no other tab claims."
+    },
+    {
+      "id": "NAV-8",
+      "text": "The tab bar lights the tab whose stack is showing, not the tab the page's address belongs to."
+    }
   ]
 }

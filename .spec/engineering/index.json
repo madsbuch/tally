@@ -6,7 +6,26 @@
   "order": 10,
   "description": "A React and TypeScript frontend in a Tauri shell, with SQLite run from Rust. The rules here hold across the whole code base.",
   "requirements": [
-    { "id": "ENG-1", "text": "The frontend is React and TypeScript in a Tauri 2 shell; SQLite runs in Rust and the frontend queries it through drizzle." },
-    { "id": "ENG-2", "text": "`bun run build` typechecks, lints and bundles, and fails on any lint error." }
+    {
+      "id": "ENG-1",
+      "text": "The frontend is React and TypeScript in a Tauri 2 shell; SQLite runs in Rust and the frontend queries it through drizzle."
+    },
+    {
+      "id": "ENG-2",
+      "text": "`bun run build` typechecks `src/`, lints everything and bundles, and fails on any type or lint error.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "`bun run build` typechecks, lints and bundles, and fails on any lint error.",
+          "reason": "Version 1 didn't match the product: tests and scripts are linted but not typechecked.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "ENG-3",
+      "text": "CI builds the Android and macOS apps and checks sync triggers against SQLite 3.39; it does not run the test suite."
+    }
   ]
 }
