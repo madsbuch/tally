@@ -11,13 +11,74 @@
       "as": "someone who gets bloated some afternoons",
       "want": "to log it when it happens",
       "soThat": "I can see whether it follows what I ate",
-      "requirements": ["#OBS-1"]
+      "requirements": [
+        "#OBS-1"
+      ]
     }
   ],
   "requirements": [
-    { "id": "OBS-1", "text": "An observation is logged with a time and a category." },
-    { "id": "OBS-2", "text": "Categories are a list the user owns and can add to; a new install starts with three." },
-    { "id": "OBS-3", "text": "A new category's emoji is chosen by the model; without one, 💭 is shown." },
-    { "id": "OBS-4", "text": "Category names match regardless of case and spacing." }
+    {
+      "id": "OBS-1",
+      "text": "An observation is logged with a time, zero or more tags from the user's categories, and an optional note.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "An observation is logged with a time and a category.",
+          "reason": "Version 1 required one category; an observation can carry several tags or none.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "OBS-2",
+      "text": "Categories are a list the user owns and can add to and remove from; a new install starts with `observation.starters`.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Categories are a list the user owns and can add to; a new install starts with three.",
+          "reason": "Version 1 didn't say categories can be removed or which three a new install has.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "OBS-3",
+      "text": "A new category's emoji is chosen by the model; with no API key or a failed call, 💭 is stored.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A new category's emoji is chosen by the model; without one, 💭 is shown.",
+          "reason": "Version 1 said 💭 is only shown; it is stored with the category.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "OBS-4",
+      "text": "Adding a category whose name differs from an existing one only in case or spacing reuses the existing one.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Category names match regardless of case and spacing.",
+          "reason": "Version 1 didn't say what matching is for.",
+          "date": "2026-11-20"
+        }
+      ]
+    }
+  ],
+  "values": [
+    {
+      "id": "observation.starters",
+      "type": "list",
+      "value": [
+        "Bloated",
+        "Depressive thoughts",
+        "Anxious"
+      ]
+    }
   ]
 }

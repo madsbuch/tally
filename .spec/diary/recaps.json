@@ -5,9 +5,30 @@
   "status": "accepted",
   "order": 6,
   "requirements": [
-    { "id": "RCP-1", "text": "A recap covers a calendar week (Monday to Sunday) or a calendar month." },
-    { "id": "RCP-2", "text": "A recap compares its period with the one before it." },
-    { "id": "RCP-3", "text": "A period still in progress is compared with the same number of days of the period before." },
-    { "id": "RCP-4", "text": "Recaps are computed from the diary on demand; only which finished recaps were seen is stored." }
+    {
+      "id": "RCP-1",
+      "text": "A recap covers a calendar week (Monday to Sunday) or a calendar month."
+    },
+    {
+      "id": "RCP-2",
+      "text": "A recap compares its period with the one before it."
+    },
+    {
+      "id": "RCP-3",
+      "text": "A period still in progress is compared with the same number of days of the period before."
+    },
+    {
+      "id": "RCP-4",
+      "text": "Recaps are computed from the diary on demand; only the latest finished week and month seen are stored.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Recaps are computed from the diary on demand; only which finished recaps were seen is stored.",
+          "reason": "Version 1 implied a record per recap seen; a single high-water mark per kind is stored.",
+          "date": "2026-11-20"
+        }
+      ]
+    }
   ]
 }

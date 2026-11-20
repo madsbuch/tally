@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Fasting",
-  "summary": "A fasting timer built for multi-day fasts.",
+  "summary": "A fasting timer built for multi-day fasts, on the Body tab.",
   "status": "accepted",
   "order": 3,
   "stories": [
@@ -10,18 +10,82 @@
       "as": "someone on a 72-hour fast",
       "want": "to see how long is left without opening the app",
       "soThat": "I can get through the last hours",
-      "requirements": ["#FST-2", "#FST-3"]
+      "requirements": [
+        "#FST-2",
+        "#FST-3"
+      ]
     }
   ],
   "requirements": [
-    { "id": "FST-1", "text": "A fast's goal is one of `fasting.presets` or a custom length up to `fasting.max`." },
-    { "id": "FST-2", "text": "On Android a running fast shows a sticky notification with a live countdown that keeps ticking while the app is killed." },
-    { "id": "FST-3", "text": "On Android an exact alarm announces when the fast's goal is reached." },
-    { "id": "FST-4", "text": "The fasting page shows lifetime records (longest fast, hours fasted, goals hit) and flags a new personal record as it happens." },
-    { "id": "FST-5", "text": "A running fast shows which stage it has reached, by hours fasted." }
+    {
+      "id": "FST-1",
+      "text": "A fast's goal is one of `fasting.presets` or a custom length from 1 hour up to `fasting.max`.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A fast's goal is one of `fasting.presets` or a custom length up to `fasting.max`.",
+          "reason": "Version 1 didn't state the 1-hour minimum.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "FST-2",
+      "text": "On Android a running fast shows a sticky notification with a live countdown, which keeps ticking after the app is swiped away or its process reclaimed.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "On Android a running fast shows a sticky notification with a live countdown that keeps ticking while the app is killed.",
+          "reason": "Version 1 said it survives the app being killed; a force-stop ends it.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "FST-3",
+      "text": "On Android an exact alarm announces when the fast's goal is reached."
+    },
+    {
+      "id": "FST-4",
+      "text": "The fasting section shows lifetime records (longest fast, hours fasted, fasts done, goals hit) once a fast has been completed.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The fasting page shows lifetime records (longest fast, hours fasted, goals hit) and flags a new personal record as it happens.",
+          "reason": "Version 1 didn't match the product: there is no fasting page, and the live flag is a separate requirement, FST-6.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "FST-5",
+      "text": "A running fast shows which stage it has reached, by hours fasted."
+    },
+    {
+      "id": "FST-6",
+      "text": "A running fast longer than any before is flagged as it happens."
+    }
   ],
   "values": [
-    { "id": "fasting.presets", "type": "list", "value": ["13h", "16h", "18h", "24h", "48h", "72h"] },
-    { "id": "fasting.max", "type": "duration", "value": "168h" }
+    {
+      "id": "fasting.presets",
+      "type": "list",
+      "value": [
+        "13h",
+        "16h",
+        "18h",
+        "24h",
+        "48h",
+        "72h"
+      ]
+    },
+    {
+      "id": "fasting.max",
+      "type": "duration",
+      "value": "168h"
+    }
   ]
 }

@@ -6,9 +6,43 @@
   "order": 1,
   "description": "A packaged product has a label; an estimate of it is worse than reading it. Both the diary agent and the coach can look a product up in the free Open Food Facts database.",
   "requirements": [
-    { "id": "OFF-1", "text": "The diary agent and the coach can search Open Food Facts by product name or barcode." },
-    { "id": "OFF-2", "text": "Only the product name or the barcode is sent to Open Food Facts; never a photo or personal data." },
-    { "id": "OFF-3", "text": "Nutrients missing from the label are estimated by the model." },
-    { "id": "OFF-4", "text": "Label nutrition is mapped onto Tally's nutrient keys, per 100 g and per serving." }
+    {
+      "id": "OFF-1",
+      "text": "The diary agent and the coach can search Open Food Facts by product name or barcode."
+    },
+    {
+      "id": "OFF-2",
+      "text": "Only the query (a product name or barcode), the user's country and preferred languages are sent to Open Food Facts; never a photo.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Only the product name or the barcode is sent to Open Food Facts; never a photo or personal data.",
+          "reason": "Version 1 didn't match the product: the country and languages are sent too, to rank local products first.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "OFF-3",
+      "text": "When the diary agent logs a looked-up product, label values win and the model estimates only the nutrients the label lacks.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Nutrients missing from the label are estimated by the model.",
+          "reason": "Version 1 implied the coach logs meals too; only the diary agent does.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "OFF-4",
+      "text": "Label nutrition is mapped onto Tally's nutrient keys, per 100 g and per serving."
+    },
+    {
+      "id": "OFF-5",
+      "text": "A barcode in a capture's photo is decoded on the device and looked up before the model sees the capture."
+    }
   ]
 }

@@ -5,16 +5,73 @@
   "status": "accepted",
   "order": 5,
   "requirements": [
-    { "id": "STR-1", "text": "The streak counts consecutive days with anything logged; a day inside a multi-day fast counts." },
-    { "id": "STR-2", "text": "Every `streak.freeze-every` straight days earn a freeze token, up to `streak.max-freezes` banked." },
-    { "id": "STR-3", "text": "A banked freeze covers a missed day automatically." },
-    { "id": "STR-4", "text": "The streak is shown in the Diary header and opens the achievements." },
-    { "id": "STR-5", "text": "Achievements are derived from the database, so past history counts and a missed scan loses nothing." },
-    { "id": "STR-6", "text": "Tiers of one counting badge (7, 30, 90 … days) show as a single row climbing to its next tier." }
+    {
+      "id": "STR-1",
+      "text": "A day counts toward the streak when it has a meal, a hand-logged workout, a capture, a legacy supplement dose, or a fast running; synced workouts, readings, observations and sleep do not count.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The streak counts consecutive days with anything logged; a day inside a multi-day fast counts.",
+          "reason": "Version 1 said anything logged counts; only these kinds do.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "STR-2",
+      "text": "Every `streak.freeze-every` straight days earn a freeze token, up to `streak.max-freezes` banked."
+    },
+    {
+      "id": "STR-3",
+      "text": "A banked freeze covers a missed day automatically, only to bridge back to an earlier logged day, and is refunded if that day is logged later.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A banked freeze covers a missed day automatically.",
+          "reason": "Version 1 didn't say when a freeze is spent or that it is refunded.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "STR-4",
+      "text": "The streak is shown in the Diary header and opens the achievements."
+    },
+    {
+      "id": "STR-5",
+      "text": "Achievements are derived from the database, so past history counts, except event-only ones, which are recorded when they happen.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Achievements are derived from the database, so past history counts and a missed scan loses nothing.",
+          "reason": "Version 1 said every achievement is derived; a few (such as one capture logging several entries) can only be seen as they happen.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "STR-6",
+      "text": "Each tier family of a counting badge shows as a single row climbing to its next tier."
+    }
   ],
   "values": [
-    { "id": "streak.freeze-every", "type": "number", "value": 7, "unit": "days" },
-    { "id": "streak.max-freezes", "type": "number", "value": 3, "unit": "tokens" }
+    {
+      "id": "streak.freeze-every",
+      "type": "number",
+      "value": 7,
+      "unit": "days"
+    },
+    {
+      "id": "streak.max-freezes",
+      "type": "number",
+      "value": 3,
+      "unit": "tokens"
+    }
   ],
-  "related": ["#GOAL-5"]
+  "related": [
+    "#GOAL-5"
+  ]
 }

@@ -11,18 +11,64 @@
       "as": "someone who overate on Monday",
       "want": "to take the difference off the next days",
       "soThat": "the week still comes out level",
-      "requirements": ["#GOAL-1", "#GOAL-2"]
+      "requirements": [
+        "#GOAL-1",
+        "#GOAL-2"
+      ]
     }
   ],
   "requirements": [
-    { "id": "GOAL-1", "text": "A day's target is the base budget plus that day's correction; a correction applies to its own day only." },
-    { "id": "GOAL-2", "text": "A multi-day period's target is the base budget times its days; corrections do not change it." },
-    { "id": "GOAL-3", "text": "A correction is at most `goal.max-correction` either way." },
-    { "id": "GOAL-4", "text": "A day's target never falls below `goal.min-target`." },
-    { "id": "GOAL-5", "text": "Tally has no achievements or rewards tied to staying under a daily calorie budget." }
+    {
+      "id": "GOAL-1",
+      "text": "A day's target is the base budget plus that day's correction, but never below `goal.min-target`; a correction applies to its own day only.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A day's target is the base budget plus that day's correction; a correction applies to its own day only.",
+          "reason": "Version 1 left out the floor of GOAL-4.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "GOAL-2",
+      "text": "A multi-day period's target is the base budget times its days; corrections do not change it."
+    },
+    {
+      "id": "GOAL-3",
+      "text": "A correction entered on the Diary is limited to `goal.max-correction` either way.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A correction is at most `goal.max-correction` either way.",
+          "reason": "The limit is applied where a correction is entered, not to a correction already stored.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "GOAL-4",
+      "text": "A day's target never falls below `goal.min-target`; a multi-day period's target has no floor."
+    },
+    {
+      "id": "GOAL-5",
+      "text": "Tally has no achievements or rewards tied to staying under a daily calorie budget."
+    }
   ],
   "values": [
-    { "id": "goal.max-correction", "type": "number", "value": 2000, "unit": "kcal" },
-    { "id": "goal.min-target", "type": "number", "value": 200, "unit": "kcal" }
+    {
+      "id": "goal.max-correction",
+      "type": "number",
+      "value": 2000,
+      "unit": "kcal"
+    },
+    {
+      "id": "goal.min-target",
+      "type": "number",
+      "value": 200,
+      "unit": "kcal"
+    }
   ]
 }

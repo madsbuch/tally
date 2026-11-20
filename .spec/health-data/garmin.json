@@ -6,19 +6,95 @@
   "order": 2,
   "description": "Garmin Connect has Training Effect, training load, heart-rate zones, power and laps per activity, and Body Battery, stress, sleep score and HRV status per day. Tally reads them through Garmin's official Personal API.",
   "requirements": [
-    { "id": "GAR-1", "text": "Garmin Connect is reached with a Personal API key the user pastes in Settings, kept in the app's data folder and traded for short-lived tokens." },
-    { "id": "GAR-2", "text": "An optional unofficial sign-in adds training readiness and training status for recent days." },
-    { "id": "GAR-3", "text": "An automatic Garmin sync runs at most every `garmin.auto-sync-interval`; a sync started from Settings ignores that limit." },
-    { "id": "GAR-4", "text": "Requests to Garmin are spaced at least `garmin.request-gap` apart." },
-    { "id": "GAR-5", "text": "When Garmin rate-limits, syncing stops for `garmin.rate-limit-pause`." },
-    { "id": "GAR-6", "text": "History is backfilled in chunks, one per sync, up to `garmin.backfill-max` back." },
-    { "id": "GAR-7", "text": "A Garmin activity attaches to the workout Health Connect already synced for it; an activity Health Connect doesn't have gets a workout of its own." }
+    {
+      "id": "GAR-1",
+      "text": "Garmin Connect is reached with a Personal API key the user pastes in Settings, kept in the app's data folder and traded for short-lived tokens, or with the unofficial sign-in alone.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Garmin Connect is reached with a Personal API key the user pastes in Settings, kept in the app's data folder and traded for short-lived tokens.",
+          "reason": "Version 1 didn't match the product: the sign-in alone can sync too.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "GAR-2",
+      "text": "An optional unofficial sign-in adds training readiness and training status for recent days."
+    },
+    {
+      "id": "GAR-3",
+      "text": "A Garmin sync on app start or resume runs at most every `garmin.auto-sync-interval`; one started from Settings ignores that limit but not a rate-limit pause.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "An automatic Garmin sync runs at most every `garmin.auto-sync-interval`; a sync started from Settings ignores that limit.",
+          "reason": "Version 1 didn't match the product: syncs triggered by Health Connect run sooner (HD-7), and the rate-limit pause holds for manual syncs.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "GAR-4",
+      "text": "Requests to Garmin are spaced at least `garmin.request-gap` apart."
+    },
+    {
+      "id": "GAR-5",
+      "text": "When Garmin rate-limits, syncing stops for `garmin.rate-limit-pause`."
+    },
+    {
+      "id": "GAR-6",
+      "text": "Wellness history is backfilled one chunk per sync, back at most `garmin.backfill-max` and no further than a week before the first Garmin activity.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "History is backfilled in chunks, one per sync, up to `garmin.backfill-max` back.",
+          "reason": "Version 1 didn't match the product: only wellness history is chunked, and it stops before the first activity.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "GAR-7",
+      "text": "A Garmin activity attaches to the workout Health Connect already synced for it; an activity Health Connect doesn't have gets a workout of its own."
+    },
+    {
+      "id": "GAR-8",
+      "text": "Activity history is read in full on the first sync."
+    }
   ],
   "values": [
-    { "id": "garmin.auto-sync-interval", "type": "duration", "value": "3h" },
-    { "id": "garmin.request-gap", "type": "duration", "value": "400ms" },
-    { "id": "garmin.rate-limit-pause", "type": "duration", "value": "24h" },
-    { "id": "garmin.backfill-max", "type": "duration", "value": "1825d" }
+    {
+      "id": "garmin.auto-sync-interval",
+      "type": "duration",
+      "value": "3h"
+    },
+    {
+      "id": "garmin.request-gap",
+      "type": "duration",
+      "value": "400ms"
+    },
+    {
+      "id": "garmin.rate-limit-pause",
+      "type": "duration",
+      "value": "24h"
+    },
+    {
+      "id": "garmin.backfill-max",
+      "type": "duration",
+      "value": "1825d"
+    },
+    {
+      "id": "garmin.hc-sync-interval",
+      "type": "duration",
+      "value": "15min",
+      "description": "A new workout in Health Connect triggers one after 2 minutes."
+    }
   ],
-  "related": ["#HD-2"]
+  "related": [
+    "#HD-2"
+  ]
 }

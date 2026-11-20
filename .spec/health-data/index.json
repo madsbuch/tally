@@ -11,16 +11,94 @@
       "as": "someone who trains with a Garmin watch",
       "want": "my workouts to appear in the diary without logging them",
       "soThat": "their calories count without any effort from me",
-      "requirements": ["#HD-1", "#HC-1"]
+      "requirements": [
+        "#HD-1",
+        "#HC-1"
+      ]
     }
   ],
   "requirements": [
-    { "id": "HD-1", "text": "A session from Health Connect enters the diary at once, as provisional." },
-    { "id": "HD-2", "text": "Once Garmin Connect has a day, an activity or a night, its values replace Health Connect's, and later Health Connect writes leave them alone." },
-    { "id": "HD-3", "text": "A field the user changed by hand is never overwritten by either source." },
-    { "id": "HD-4", "text": "A session the user deleted by hand is never imported again." },
-    { "id": "HD-5", "text": "Imported sessions are matched to existing rows by time, not by the source's record id, so the same session never appears twice." },
-    { "id": "HD-6", "text": "Health Connect and Garmin imports run only on the phone." },
-    { "id": "HD-7", "text": "Movement in Health Connect triggers a Garmin sync, if the last one is stale." }
+    {
+      "id": "HD-1",
+      "text": "A session from Health Connect enters the diary as soon as it is read.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A session from Health Connect enters the diary at once, as provisional.",
+          "reason": "Version 1 called it provisional, which only means something through HD-2.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "HD-2",
+      "text": "Once Garmin Connect has a day, an activity or a night, its values replace Health Connect's, and later Health Connect writes leave them alone."
+    },
+    {
+      "id": "HD-3",
+      "text": "A workout field the user changed by hand is never overwritten by either source.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A field the user changed by hand is never overwritten by either source.",
+          "reason": "Version 1 didn't give the scope: sleep and day metrics have no hand-edit protection.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "HD-4",
+      "text": "A workout the user deleted by hand is never imported again.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A session the user deleted by hand is never imported again.",
+          "reason": "Version 1 didn't give the scope: only workouts are recorded as deleted.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "HD-5",
+      "text": "An imported session is matched to an existing row by the source's record id when it names one, else by overlapping time, so a session from both sources or from two phones is one row.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Imported sessions are matched to existing rows by time, not by the source's record id, so the same session never appears twice.",
+          "reason": "Version 1 didn't match the product: the record id is tried first.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "HD-6",
+      "text": "Health Connect and Garmin imports run only on Android.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Health Connect and Garmin imports run only on the phone.",
+          "reason": "Version 1 said phone; any Android device runs them.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "HD-7",
+      "text": "A new or changed session in Health Connect triggers a Garmin sync, if none ran within `garmin.hc-sync-interval`.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Movement in Health Connect triggers a Garmin sync, if the last one is stale.",
+          "reason": "Version 1 didn't match the product: syncs triggered by Health Connect have their own, shorter limits.",
+          "date": "2026-11-20"
+        }
+      ]
+    }
   ]
 }

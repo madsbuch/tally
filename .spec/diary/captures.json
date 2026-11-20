@@ -6,14 +6,90 @@
   "order": 1,
   "description": "A capture is a picture plus an optional note such as \"ate this earlier today\". It is saved at once and an agent with tools decides what it shows and logs it, so the user never waits on the model.",
   "requirements": [
-    { "id": "CAP-1", "text": "A capture appears in the timeline the moment it is added, marked as being analysed." },
-    { "id": "CAP-2", "text": "The diary agent records what a capture shows through tool calls (meals, workouts, readings, performance stats, observations), resolving relative times in the note against the current time." },
-    { "id": "CAP-3", "text": "One capture can log several entries." },
-    { "id": "CAP-4", "text": "A capture whose analysis failed stays in the timeline with a retry." },
-    { "id": "CAP-5", "text": "A capture whose analysis was interrupted resumes on the next launch." },
-    { "id": "CAP-6", "text": "A meal gets an estimate for every nutrient Tally tracks." },
-    { "id": "CAP-7", "text": "A capture is analysed only by the device that wrote it." },
-    { "id": "CAP-8", "text": "Photos in HEIC/HEIF format are accepted." }
+    {
+      "id": "CAP-1",
+      "text": "A capture appears in the timeline the moment it is added, marked as being analysed."
+    },
+    {
+      "id": "CAP-2",
+      "text": "The diary agent records what a capture shows through tool calls: meals, workouts, readings, performance stats and observations.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The diary agent records what a capture shows through tool calls (meals, workouts, readings, performance stats, observations), resolving relative times in the note against the current time.",
+          "reason": "Version 1 held two statements; how times are resolved is now CAP-9.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "CAP-9",
+      "text": "The diary agent resolves relative times in a capture's note against the current time, and never logs an entry in the future."
+    },
+    {
+      "id": "CAP-3",
+      "text": "One capture can log several entries."
+    },
+    {
+      "id": "CAP-4",
+      "text": "A capture whose analysis fails before anything was logged from it stays in the timeline, marked failed, with Retry and Discard.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A capture whose analysis failed stays in the timeline with a retry.",
+          "reason": "Version 1 covered every failure, but a capture is removed once its first entry is logged, so a later failure leaves nothing to retry.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "CAP-5",
+      "text": "Captures still waiting for analysis are resumed on app start and whenever the app returns to the foreground.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A capture whose analysis was interrupted resumes on the next launch.",
+          "reason": "Version 1 promised to resume any interrupted analysis; only captures still pending are resumed.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "CAP-6",
+      "text": "A meal gets an estimate for each tracked nutrient the model can reasonably estimate; the rest are left out.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A meal gets an estimate for every nutrient Tally tracks.",
+          "reason": "Version 1 promised every nutrient; the agent is told to omit those it cannot estimate.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "CAP-7",
+      "text": "A pending capture is analysed automatically only by the device that wrote it.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A capture is analysed only by the device that wrote it.",
+          "reason": "A failed capture synced from another device can still be retried by hand here.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "CAP-8",
+      "text": "Photos in HEIC/HEIF format are accepted."
+    }
   ],
-  "related": ["summary/food-lookup", "ai"]
+  "related": [
+    "summary/food-lookup",
+    "ai"
+  ]
 }

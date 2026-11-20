@@ -5,9 +5,53 @@
   "status": "accepted",
   "order": 2,
   "requirements": [
-    { "id": "MAN-1", "text": "Only an index of manuals rides in the coach's prompt; the coach reads a manual when it applies." },
-    { "id": "MAN-2", "text": "A manual tied to a situation the app can see (a running fast) is given to the coach in full while that situation holds." },
-    { "id": "MAN-3", "text": "The user can edit a manual, and the coach keeps the user's words as written." },
-    { "id": "MAN-4", "text": "Every change to a manual keeps the version it replaced." }
+    {
+      "id": "MAN-1",
+      "text": "Apart from MAN-2, only an index of manuals rides in the coach's prompt, and the coach reads a manual with a tool when it applies.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Only an index of manuals rides in the coach's prompt; the coach reads a manual when it applies.",
+          "reason": "Version 1 contradicted MAN-2.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "MAN-2",
+      "text": "A manual tied to a situation the app can see (a running fast) is given to the coach in full while that situation holds."
+    },
+    {
+      "id": "MAN-3",
+      "text": "The user can edit a manual.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The user can edit a manual, and the coach keeps the user's words as written.",
+          "reason": "Version 1 also promised the coach keeps the user's words, which is a prompt instruction only; that is now MAN-5.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "MAN-4",
+      "text": "Every edit of a manual's title or body keeps the version it replaced; deleting a manual deletes its history.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Every change to a manual keeps the version it replaced.",
+          "reason": "Version 1 didn't match the product: changes to which situation a manual applies to are not kept, and deletion removes the history.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "MAN-5",
+      "text": "The coach is instructed to keep the user's own edits to a manual as written.",
+      "level": "should"
+    }
   ]
 }

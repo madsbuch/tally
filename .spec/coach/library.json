@@ -5,9 +5,56 @@
   "status": "accepted",
   "order": 4,
   "requirements": [
-    { "id": "DOC-1", "text": "A document is viewable the moment it is added; reading it happens in the background." },
-    { "id": "DOC-2", "text": "A document is read by the model once, at upload; later the coach works from the text." },
-    { "id": "DOC-3", "text": "A document can be a set of photos or a PDF, with its pages in order." },
-    { "id": "DOC-4", "text": "A document is read only by the device that added it." }
+    {
+      "id": "DOC-1",
+      "text": "A document is viewable the moment it is added; reading it happens in the background."
+    },
+    {
+      "id": "DOC-2",
+      "text": "A document is read by the model when it is added, and again only on a retry or after an interrupted read; later the coach works from the text.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A document is read by the model once, at upload; later the coach works from the text.",
+          "reason": "Version 1 said once; a retry or an interrupted read reads it again.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "DOC-3",
+      "text": "A document is one photo or a PDF; of a PDF the first `library.max-pdf-pages` pages are read, in order, and the original is kept.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A document can be a set of photos or a PDF, with its pages in order.",
+          "reason": "Version 1 didn't match the product: a photo document has one page, and PDF reading stops at a cap.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "DOC-4",
+      "text": "A document is read automatically only by the device that added it.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A document is read only by the device that added it.",
+          "reason": "A retry by hand runs on whichever device it is pressed on.",
+          "date": "2026-11-20"
+        }
+      ]
+    }
+  ],
+  "values": [
+    {
+      "id": "library.max-pdf-pages",
+      "type": "number",
+      "value": 8,
+      "unit": "pages"
+    }
   ]
 }

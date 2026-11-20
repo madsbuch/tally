@@ -6,17 +6,108 @@
   "order": 1,
   "description": "A proactive coach that sends a message per rule gets muted. So rules only propose, and one local pass picks at most one to speak; the model is asked only to phrase the winner.",
   "requirements": [
-    { "id": "CHK-1", "text": "The coach starts at most `checkin.daily-budget` check-in a day, whatever fires." },
-    { "id": "CHK-2", "text": "Whether to send a check-in is decided by plain comparisons over the digest, without a model." },
-    { "id": "CHK-3", "text": "Every firing trigger that doesn't win is passed to the winning check-in as material." },
-    { "id": "CHK-4", "text": "A condition trigger has a cooldown, so it raises one thing once rather than every day until fixed." },
-    { "id": "CHK-5", "text": "On Android the check-in is evaluated once a day at a user-set hour, defaulting to `checkin.default-hour`, even when the app is not running." },
-    { "id": "CHK-6", "text": "A check-in is saved as a new chat, never appended to the chat the user has open." },
-    { "id": "CHK-7", "text": "Tapping a check-in's notification opens that check-in's chat." },
-    { "id": "CHK-8", "text": "An unread check-in shows as unread on the Coach tab, also when its notification was dismissed." }
+    {
+      "id": "CHK-1",
+      "text": "Unasked, the coach starts at most `checkin.daily-budget` check-in a day across all the vault's devices; one asked for from Settings is exempt.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The coach starts at most `checkin.daily-budget` check-in a day, whatever fires.",
+          "reason": "Version 1 didn't match the product: the Settings button can send another one the same day.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "CHK-2",
+      "text": "Which trigger, if any, speaks is decided by plain comparisons over the digest; no model is called unless one wins.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Whether to send a check-in is decided by plain comparisons over the digest, without a model.",
+          "reason": "Version 1 read as if nothing else gates a check-in; the spending cap (CHK-9) does too.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "CHK-3",
+      "text": "Every firing trigger that doesn't win is passed to the winning check-in as material."
+    },
+    {
+      "id": "CHK-4",
+      "text": "Each trigger has a cooldown in days, and a trigger is not raised again until its cooldown has passed.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A condition trigger has a cooldown, so it raises one thing once rather than every day until fixed.",
+          "reason": "Version 1 didn't match the product: a condition comes back after its cooldown if it still holds, and occasions have cooldowns too.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "CHK-5",
+      "text": "On Android an alarm evaluates check-ins daily at a user-set hour, `checkin.default-hour` unless changed, even with the app closed, while any trigger is enabled.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "On Android the check-in is evaluated once a day at a user-set hour, defaulting to `checkin.default-hour`, even when the app is not running.",
+          "reason": "Version 1 didn't match the product: the alarm is cancelled when every trigger is off, and the app also evaluates on its own (CHK-10).",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "CHK-6",
+      "text": "A check-in is saved as a new chat, never appended to the chat the user has open."
+    },
+    {
+      "id": "CHK-7",
+      "text": "Tapping a check-in's notification opens that check-in's chat."
+    },
+    {
+      "id": "CHK-8",
+      "text": "An unread check-in shows as unread on the Coach tab, also when its notification was dismissed."
+    },
+    {
+      "id": "CHK-9",
+      "text": "Unasked check-ins stop for the day once that day's check-in model spend reaches the user's optional daily cap in USD."
+    },
+    {
+      "id": "CHK-10",
+      "text": "On Android the app also evaluates check-ins on launch and on resume, at most every `checkin.app-interval`."
+    }
   ],
   "values": [
-    { "id": "checkin.daily-budget", "type": "number", "value": 1, "unit": "check-ins" },
-    { "id": "checkin.default-hour", "type": "text", "value": "07:00" }
+    {
+      "id": "checkin.daily-budget",
+      "type": "number",
+      "value": 1,
+      "unit": "check-ins",
+      "description": "How many check-ins, not money; the spending cap is CHK-9."
+    },
+    {
+      "id": "checkin.default-hour",
+      "type": "number",
+      "value": 7,
+      "unit": "o'clock",
+      "history": [
+        {
+          "value": "07:00",
+          "reason": "Only a whole hour can be set; a time of day suggested minutes too.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "checkin.app-interval",
+      "type": "duration",
+      "value": "10min"
+    }
   ]
 }

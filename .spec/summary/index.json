@@ -11,21 +11,100 @@
       "as": "someone training for endurance",
       "want": "to see my cardio minutes against a weekly target",
       "soThat": "I know whether I need another session before the week ends",
-      "requirements": ["#SUM-2", "#SUM-4"]
+      "requirements": [
+        "#SUM-2",
+        "#SUM-3",
+        "#SUM-4"
+      ]
     }
   ],
   "requirements": [
-    { "id": "SUM-1", "text": "The Summary's period is chosen from `summary.periods`, defaulting to Last 7 days, with navigation between dates." },
-    { "id": "SUM-2", "text": "The 7-day cardio target is `cardio.weekly-target` and can be changed; the 24-day target is four times the 7-day one." },
-    { "id": "SUM-3", "text": "A workout counts its full duration as cardio when its average heart rate is above `cardio.min-avg-hr`; at exactly that value, or with no average, it does not." },
-    { "id": "SUM-4", "text": "A workout's Cardio switch overrides the automatic rule, including after edits and re-syncs, until the user chooses to use the automatic rule again." },
-    { "id": "SUM-5", "text": "Zone 2 minutes are tracked separately from cardio minutes." },
-    { "id": "SUM-6", "text": "Over a multi-day period, nutrition is shown as per-day averages." },
-    { "id": "SUM-7", "text": "Energy and macros are always visible; keto, micronutrients, source filters and other compounds are under Nutrition details." }
+    {
+      "id": "SUM-1",
+      "text": "The Summary's period is chosen from `summary.periods`, defaulting to Last 7 days, with navigation between dates."
+    },
+    {
+      "id": "SUM-2",
+      "text": "The 7-day cardio target is `cardio.weekly-target`; the 24-day target is four times it and a day's is a seventh of it.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The 7-day cardio target is `cardio.weekly-target` and can be changed; the 24-day target is four times the 7-day one.",
+          "reason": "Version 1 didn't match the product: the target cannot be changed in the app, and the Day view's share was missing.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "SUM-3",
+      "text": "A workout counts its full duration as cardio when its average heart rate is above `cardio.min-avg-hr`; at exactly that value, or with no average, it does not."
+    },
+    {
+      "id": "SUM-4",
+      "text": "A workout's Cardio switch overrides the automatic rule, including after edits and re-syncs, until the user chooses to use the automatic rule again."
+    },
+    {
+      "id": "SUM-5",
+      "text": "Each workout records its Zone 2 minutes separately from whether it counts as cardio.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Zone 2 minutes are tracked separately from cardio minutes.",
+          "reason": "Version 1 didn't match the product: the Summary shows no Zone 2 total; the minutes live on each workout.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "SUM-6",
+      "text": "Over a multi-day period, nutrition is shown as per-day averages over every day of the period, days without data included.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Over a multi-day period, nutrition is shown as per-day averages.",
+          "reason": "Version 1 didn't say what the average divides by.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "SUM-7",
+      "text": "Energy, goals, keto, macros, micronutrients and other compounds are each shown as a card, with supplements counted in the same totals as food.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Energy and macros are always visible; keto, micronutrients, source filters and other compounds are under Nutrition details.",
+          "reason": "Version 1 didn't match the product: there is no Nutrition details section and no source filter.",
+          "date": "2026-11-20"
+        }
+      ]
+    }
   ],
   "values": [
-    { "id": "summary.periods", "type": "list", "value": ["Day", "Last 7 days", "Last 24 days"] },
-    { "id": "cardio.weekly-target", "type": "number", "value": 300, "unit": "minutes" },
-    { "id": "cardio.min-avg-hr", "type": "number", "value": 125, "unit": "bpm" }
+    {
+      "id": "summary.periods",
+      "type": "list",
+      "value": [
+        "Day",
+        "Last 7 days",
+        "Last 24 days"
+      ]
+    },
+    {
+      "id": "cardio.weekly-target",
+      "type": "number",
+      "value": 300,
+      "unit": "minutes"
+    },
+    {
+      "id": "cardio.min-avg-hr",
+      "type": "number",
+      "value": 125,
+      "unit": "bpm"
+    }
   ]
 }

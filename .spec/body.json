@@ -11,15 +11,85 @@
       "as": "someone who sleeps badly after late coffee",
       "want": "to see how much caffeine will still be in me at bedtime",
       "soThat": "I know when my last cup should be",
-      "requirements": ["#BODY-1", "#BODY-2"]
+      "requirements": [
+        "#BODY-1",
+        "#BODY-2"
+      ]
     }
   ],
   "requirements": [
-    { "id": "BODY-1", "text": "Body estimates are computed from the nutrients of logged entries (caffeine, alcohol, creatine, vitamin D); nothing extra has to be logged." },
-    { "id": "BODY-2", "text": "Caffeine clears by a half-life the user can set." },
-    { "id": "BODY-3", "text": "Alcohol clears at a constant rate, independent of the amount present." },
-    { "id": "BODY-4", "text": "The vitamin D estimate starts from a seasonal baseline and is pinned to the newest blood test in the library that has a value." },
-    { "id": "BODY-5", "text": "The glycogen estimate is corrected by ketone readings, weighted by the glucose reading taken with them." }
+    {
+      "id": "BODY-1",
+      "text": "Caffeine, alcohol, creatine and vitamin D estimates are computed from the nutrients of logged entries; nothing extra has to be logged for them.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Body estimates are computed from the nutrients of logged entries (caffeine, alcohol, creatine, vitamin D); nothing extra has to be logged.",
+          "reason": "Version 1 covered every Body estimate, but glycogen needs meter readings (BODY-5).",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "BODY-2",
+      "text": "Caffeine clears by a half-life the user picks from `body.caffeine-half-lives`.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Caffeine clears by a half-life the user can set.",
+          "reason": "Version 1 implied free entry; it is a choice from a fixed list.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "BODY-3",
+      "text": "Alcohol clears at a constant rate that scales with body weight and not with the amount present.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Alcohol clears at a constant rate, independent of the amount present.",
+          "reason": "Version 1 left out that the rate depends on the latest logged weight.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "BODY-4",
+      "text": "The vitamin D estimate starts from a seasonal baseline and is pinned to the newest blood test from the past year in the library with a vitamin D value.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The vitamin D estimate starts from a seasonal baseline and is pinned to the newest blood test in the library that has a value.",
+          "reason": "Version 1 said the newest test of any age; tests older than a year are ignored.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "BODY-5",
+      "text": "The glycogen estimate is corrected by ketone readings, weighted by the glucose reading taken with them."
+    }
   ],
-  "related": ["diary/readings", "coach/library"]
+  "related": [
+    "diary/readings",
+    "coach/library"
+  ],
+  "values": [
+    {
+      "id": "body.caffeine-half-lives",
+      "type": "list",
+      "value": [
+        "3h",
+        "4h",
+        "5h",
+        "6h",
+        "7h"
+      ]
+    }
+  ]
 }

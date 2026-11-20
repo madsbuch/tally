@@ -10,14 +10,72 @@
       "as": "someone paying for my own AI usage",
       "want": "to see what each feature costs me",
       "soThat": "I can choose a cheaper model where it does just as well",
-      "requirements": ["#AI-3", "#AI-4"]
+      "requirements": [
+        "#AI-3",
+        "#AI-4"
+      ]
     }
   ],
   "requirements": [
-    { "id": "AI-1", "text": "Model calls go to OpenRouter with an API key the user supplies, stored only in the local database." },
-    { "id": "AI-2", "text": "The model list is fetched live from OpenRouter, and the picker for the diary agent offers only vision models that support tool calling." },
-    { "id": "AI-3", "text": "Every model request is recorded in a usage ledger under the feature that made it, including those made by the Android check-in worker." },
-    { "id": "AI-4", "text": "The Costs page shows spend in total, by feature, by model and over time." },
-    { "id": "AI-5", "text": "Photos leave the device only as the payload of a request to the model the user chose." }
+    {
+      "id": "AI-1",
+      "text": "Model calls go to OpenRouter with an API key the user supplies, which syncs to the vault's devices like other settings.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Model calls go to OpenRouter with an API key the user supplies, stored only in the local database.",
+          "reason": "Version 1 didn't match the product: the key is in the synced settings, not only on one device.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "AI-2",
+      "text": "The model list is fetched live from OpenRouter, shown from a cache until the fetch returns.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The model list is fetched live from OpenRouter, and the picker for the diary agent offers only vision models that support tool calling.",
+          "reason": "Version 1 held two statements; the picker's filter is now AI-6.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "AI-6",
+      "text": "The picker for the vision model (captures, documents, entry chats) offers only vision models that support tool calling."
+    },
+    {
+      "id": "AI-3",
+      "text": "Every model response that reports its cost is recorded in a usage ledger under the feature that made it, including those of the Android check-in worker.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Every model request is recorded in a usage ledger under the feature that made it, including those made by the Android check-in worker.",
+          "reason": "Version 1 said every request; failed requests and responses without usage are not recorded.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "AI-4",
+      "text": "The Costs page shows spend in total, by feature, by model and over time."
+    },
+    {
+      "id": "AI-5",
+      "text": "Photos are sent to no third party but OpenRouter, for the model the user chose or the default; they also reach the vault's devices by sync and leave in exports.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Photos leave the device only as the payload of a request to the model the user chose.",
+          "reason": "Version 1 didn't match the product: photos sync and are exported, and a default model is used until one is chosen.",
+          "date": "2026-11-20"
+        }
+      ]
+    }
   ]
 }

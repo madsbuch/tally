@@ -10,18 +10,98 @@
       "as": "someone breaking long fasts",
       "want": "to find out which way of breaking a fast suits me",
       "soThat": "I decide from my own results, not my mood on the day",
-      "requirements": ["#EXP-1", "#EXP-2", "#EXP-3"]
+      "requirements": [
+        "#EXP-1",
+        "#EXP-2",
+        "#EXP-3"
+      ]
     }
   ],
   "requirements": [
-    { "id": "EXP-1", "text": "An experiment compares two to four options." },
-    { "id": "EXP-2", "text": "Unless the user chose to pick, the app picks the next option: the one with the fewest trials." },
-    { "id": "EXP-3", "text": "What counts as better (ratings, diary numbers) is fixed when the experiment is set up." },
-    { "id": "EXP-4", "text": "The rating for a trial is asked for `experiment.rate-after` after it." },
-    { "id": "EXP-5", "text": "A fasting experiment opens a trial by itself when a fast ends." },
-    { "id": "EXP-6", "text": "When enough trials are in, the coach writes up the result and, if it held, carries it into the manual it was about." }
+    {
+      "id": "EXP-1",
+      "text": "An experiment has at most four options, and the coach is told to design two to four.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "An experiment compares two to four options.",
+          "reason": "Version 1 didn't match the product: only the maximum of four is enforced.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "EXP-2",
+      "text": "Unless the user chose to pick, the app picks the next option: the one with the fewest trials, then the least recently used; a trial opened by a fast always starts on that option and can be switched.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Unless the user chose to pick, the app picks the next option: the one with the fewest trials.",
+          "reason": "Version 1 didn't give the tie-break or what happens for trials a fast opens.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "EXP-3",
+      "text": "What counts as better (ratings, diary numbers) is recorded when the experiment is set up, and the coach is told not to change it after trials begin.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "What counts as better (ratings, diary numbers) is fixed when the experiment is set up.",
+          "reason": "Version 1 didn't match the product: the measures can still be revised; only the prompt holds them fixed.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "EXP-4",
+      "text": "A trial counts as awaiting a rating from `experiment.rate-after` after it starts; a rating can be given earlier.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The rating for a trial is asked for `experiment.rate-after` after it.",
+          "reason": "Version 1 didn't say how the rating is asked for; no prompt fires at that time.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "EXP-5",
+      "text": "A fasting experiment opens a trial by itself when a fast that reached half its goal ends, once per fast.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A fasting experiment opens a trial by itself when a fast ends.",
+          "reason": "Version 1 left out the half-goal condition.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "EXP-6",
+      "text": "When every option has its trials, the coach's prompt says the experiment is ready to conclude; concluding records the result and the manual it went into.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "When enough trials are in, the coach writes up the result and, if it held, carries it into the manual it was about.",
+          "reason": "Version 1 didn't match the product: nothing happens automatically, and carrying the result into the manual is the coach's job.",
+          "date": "2026-11-20"
+        }
+      ]
+    }
   ],
   "values": [
-    { "id": "experiment.rate-after", "type": "duration", "value": "90min" }
+    {
+      "id": "experiment.rate-after",
+      "type": "duration",
+      "value": "90min"
+    }
   ]
 }

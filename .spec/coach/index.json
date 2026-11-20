@@ -11,17 +11,71 @@
       "as": "someone trying to change a habit",
       "want": "a coach that already knows how my week went",
       "soThat": "I can ask it a question without explaining myself first",
-      "requirements": ["#COA-3", "#COA-2"]
+      "requirements": [
+        "#COA-3",
+        "#COA-2"
+      ]
     }
   ],
   "requirements": [
-    { "id": "COA-1", "text": "The stance (ranked imperatives, tone, subjects never to raise) is set by the user and never edited by the coach." },
-    { "id": "COA-2", "text": "The coach's memory (commitments, preferences, notes) is kept apart from chats: deleting a chat keeps it, and a new chat starts with it." },
-    { "id": "COA-3", "text": "Every coach turn carries a digest of the diary computed at that moment." },
-    { "id": "COA-4", "text": "A conversation has its own address, `/assistant/<chatId>`." },
-    { "id": "COA-5", "text": "An entity id the coach writes in a message shows as a chip with that entity's title, opening its page." },
-    { "id": "COA-6", "text": "Coach tools take ids in TypeID form and also accept the bare UUIDs and numbers older chats quote; an id of the wrong kind is refused with the reason." },
-    { "id": "COA-7", "text": "The coach never reads a bare \"calories\": every calorie figure it can query has one name (eaten, burned_workouts, burned_total, target, net, remaining, energy_balance)." },
-    { "id": "COA-8", "text": "The memory is shown on a page the user can read." }
+    {
+      "id": "COA-1",
+      "text": "The stance (ranked imperatives, tone, length, language, notes and subjects never to raise) is set by the user and never edited by the coach.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The stance (ranked imperatives, tone, subjects never to raise) is set by the user and never edited by the coach.",
+          "reason": "Version 1 left out length, language and notes.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "COA-2",
+      "text": "The coach's memory (commitments, preferences, notes) is kept apart from chats: deleting a chat keeps it, and a new chat starts with it."
+    },
+    {
+      "id": "COA-3",
+      "text": "Every coach turn carries a digest of the diary computed at that moment."
+    },
+    {
+      "id": "COA-4",
+      "text": "A conversation has its own address, `/assistant/<chatId>`."
+    },
+    {
+      "id": "COA-5",
+      "text": "An entity id the coach writes in a message shows as a chip with that entity's title; where the entity has a screen, tapping the chip goes there.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "An entity id the coach writes in a message shows as a chip with that entity's title, opening its page.",
+          "reason": "Version 1 didn't match the product: some kinds (supplements, tags, saved meals, captures) have no screen.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "COA-6",
+      "text": "Coach tools take ids in TypeID form and also accept the bare UUIDs and numbers older chats quote; an id of the wrong kind is refused with the reason."
+    },
+    {
+      "id": "COA-7",
+      "text": "`query_calories` names every calorie figure as one of eaten, burned_workouts, burned_total, target, net, remaining or energy_balance, and the coach is told to use it for calorie questions.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The coach never reads a bare \"calories\": every calorie figure it can query has one name (eaten, burned_workouts, burned_total, target, net, remaining, energy_balance).",
+          "reason": "Version 1 didn't match the product: other tools and the digest still show raw calorie fields.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "COA-8",
+      "text": "The memory is shown on a page the user can read."
+    }
   ]
 }

@@ -10,19 +10,46 @@
       "as": "someone tracking food, training and fasting",
       "want": "to log a meal or a workout by taking a photo",
       "soThat": "keeping a diary costs me seconds, not minutes",
-      "requirements": ["#CAP-1", "#CAP-2"]
+      "requirements": [
+        "#CAP-1",
+        "#CAP-2"
+      ]
     },
     {
       "id": "US-2",
       "as": "someone keeping a health diary",
-      "want": "my data to stay on my own devices",
-      "soThat": "no company holds a record of my body",
-      "requirements": ["#TAL-1", "#DATA-1", "#SYN-1"]
+      "want": "my diary to have no server of its own",
+      "soThat": "it stays on my devices unless I send it somewhere",
+      "requirements": [
+        "#TAL-1",
+        "#DATA-1",
+        "#SYN-1",
+        "#AI-5",
+        "#OFF-2"
+      ]
     }
   ],
   "requirements": [
-    { "id": "TAL-1", "text": "All data lives in a SQLite database on the user's devices; Tally has no server of its own." },
-    { "id": "TAL-2", "text": "Tally runs on Android and on macOS." },
-    { "id": "TAL-3", "text": "The app has five tabs, in this order: Diary, Summary, Body, Coach, Settings." }
+    {
+      "id": "TAL-1",
+      "text": "All data lives in a SQLite database on the user's devices; Tally has no server of its own, and data leaves a device only for the AI, food-lookup and Garmin services the user sets up.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "All data lives in a SQLite database on the user's devices; Tally has no server of its own.",
+          "reason": "Version 1 said nothing of what does leave the device: captures and diary context go to OpenRouter, product names to Open Food Facts.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "TAL-2",
+      "text": "Release builds are produced for Android and for macOS."
+    },
+    {
+      "id": "TAL-3",
+      "text": "The app has five tabs, in this order: Diary, Summary, Body, Coach, Settings."
+    }
   ]
 }

@@ -11,14 +11,76 @@
       "as": "someone watching what they eat",
       "want": "to see today's entries and where I stand against my calorie budget",
       "soThat": "I know what room is left for dinner",
-      "requirements": ["#DIA-1", "#DIA-2"]
+      "requirements": [
+        "#DIA-1",
+        "#DIA-2"
+      ]
     }
   ],
   "requirements": [
-    { "id": "DIA-1", "text": "The Diary shows one day's entries in time order, and can step to any other day." },
-    { "id": "DIA-2", "text": "The day's calorie bar shows net calories (eaten minus burned by workouts) against the day's target." },
-    { "id": "DIA-3", "text": "The Diary shows week and month totals; weeks run Monday to Sunday." },
-    { "id": "DIA-4", "text": "Every entry kind (meal, workout, sleep, reading, observation, performance) opens a page of its own at `/entry/<kind>/<id>`." },
-    { "id": "DIA-5", "text": "Supplements are logged as food entries with the nutrients of the amount taken; there is no separate supplement log." }
+    {
+      "id": "DIA-1",
+      "text": "The Diary shows one day's entries, newest first, and steps back and forward a day at a time between past days and today.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The Diary shows one day's entries in time order, and can step to any other day.",
+          "reason": "Version 1 gave no order and claimed any day; the Diary lists newest first and cannot go past today.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "DIA-2",
+      "text": "The day's calorie bar shows net calories (eaten minus burned by workouts) against the day's target."
+    },
+    {
+      "id": "DIA-3",
+      "text": "The Diary shows week and month totals beside the day's.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The Diary shows week and month totals; weeks run Monday to Sunday.",
+          "reason": "Version 1 held two statements; the week's bounds are now DIA-6.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "DIA-6",
+      "text": "A week runs Monday to Sunday; a month is a calendar month."
+    },
+    {
+      "id": "DIA-4",
+      "text": "Every entry kind opens a page of its own at `/entry/<kind>/<id>`, with kinds `meal`, `workout`, `sleep`, `state` (an observation), `reading`, `performance` and `supplement` (a legacy dose).",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Every entry kind (meal, workout, sleep, reading, observation, performance) opens a page of its own at `/entry/<kind>/<id>`.",
+          "reason": "Version 1 put observations at `observation`; their kind in the address is `state`, and legacy supplement doses have a page too.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "DIA-5",
+      "text": "Supplements are logged as food entries with the nutrients of the amount taken; nothing writes to the old supplement log.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Supplements are logged as food entries with the nutrients of the amount taken; there is no separate supplement log.",
+          "reason": "Version 1 said there is no supplement log; the old log's tables and entries still exist until converted.",
+          "date": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "id": "DIA-7",
+      "text": "Legacy supplement-log entries are converted to food entries at app start when an API key is set, and are shown and counted until then."
+    }
   ]
 }
