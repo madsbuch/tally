@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Row ids",
+  "summary": "Every row is keyed by a TypeID that every device agrees on.",
+  "status": "accepted",
+  "order": 5,
+  "requirements": [
+    { "id": "ID-1", "text": "Every table's key is a TypeID string, the table's prefix and a UUIDv7 (`meal_01jd4x8m2kf7r9q3vz5w6t0hyc`), never an auto-increment integer." },
+    { "id": "ID-2", "text": "A table's prefix never changes once rows exist." },
+    { "id": "ID-3", "text": "A row imported from an external system gets an id derived from the table and its external key, so two devices importing it agree on the id." },
+    { "id": "ID-4", "text": "The TypeScript, Kotlin and Rust id encoders produce the same ids, pinned to the TypeID specification's examples." }
+  ]
+}

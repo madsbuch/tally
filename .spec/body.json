@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Body",
+  "summary": "Estimates of what is in the body now, from what was logged.",
+  "status": "accepted",
+  "order": 4,
+  "description": "Caffeine and alcohol come and go within a day; creatine, vitamin D and other stores build over weeks. The Body tab shows textbook models fed by the diary, to show the shape (is the evening coffee still in you at bedtime) rather than a measurement.",
+  "stories": [
+    {
+      "id": "US-8",
+      "as": "someone who sleeps badly after late coffee",
+      "want": "to see how much caffeine will still be in me at bedtime",
+      "soThat": "I know when my last cup should be",
+      "requirements": ["#BODY-1", "#BODY-2"]
+    }
+  ],
+  "requirements": [
+    { "id": "BODY-1", "text": "Body estimates are computed from the nutrients of logged entries (caffeine, alcohol, creatine, vitamin D); nothing extra has to be logged." },
+    { "id": "BODY-2", "text": "Caffeine clears by a half-life the user can set." },
+    { "id": "BODY-3", "text": "Alcohol clears at a constant rate, independent of the amount present." },
+    { "id": "BODY-4", "text": "The vitamin D estimate starts from a seasonal baseline and is pinned to the newest blood test in the library that has a value." },
+    { "id": "BODY-5", "text": "The glycogen estimate is corrected by ketone readings, weighted by the glucose reading taken with them." }
+  ],
+  "related": ["diary/readings", "coach/library"]
+}

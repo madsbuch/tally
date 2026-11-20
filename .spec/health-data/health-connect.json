@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Health Connect",
+  "summary": "Exercise sessions and day metrics read on-device from Android Health Connect.",
+  "status": "accepted",
+  "order": 1,
+  "requirements": [
+    { "id": "HC-1", "text": "Exercise sessions are read from Health Connect on every app start and on demand from Settings, with calories, distance and average heart rate." },
+    { "id": "HC-2", "text": "Health Connect is read entirely on the device; no Garmin account or cloud service is involved." },
+    { "id": "HC-3", "text": "On desktop, Health Connect is absent and its commands do nothing." }
+  ]
+}

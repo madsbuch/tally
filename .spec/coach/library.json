@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Document library",
+  "summary": "Blood results, scan reports and letters, read once so the coach can use them.",
+  "status": "accepted",
+  "order": 4,
+  "requirements": [
+    { "id": "DOC-1", "text": "A document is viewable the moment it is added; reading it happens in the background." },
+    { "id": "DOC-2", "text": "A document is read by the model once, at upload; later the coach works from the text." },
+    { "id": "DOC-3", "text": "A document can be a set of photos or a PDF, with its pages in order." },
+    { "id": "DOC-4", "text": "A document is read only by the device that added it." }
+  ]
+}

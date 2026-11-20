@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Type safety",
+  "summary": "No casts, no non-null assertions, no any, no unsafe Rust.",
+  "status": "accepted",
+  "order": 1,
+  "requirements": [
+    { "id": "TYP-1", "text": "TypeScript in `src/`, `tests/` and `scripts/` has no type assertions other than `as const`, and no non-null `!`." },
+    { "id": "TYP-2", "text": "TypeScript has no `any`, and in `src/` no value of type `any` flows anywhere." },
+    { "id": "TYP-3", "text": "TypeScript has no `@ts-ignore`, `@ts-expect-error` or `@ts-nocheck`." },
+    { "id": "TYP-4", "text": "Lint rules cannot be disabled by a comment, except `react-hooks/exhaustive-deps`." },
+    { "id": "TYP-5", "text": "Every Rust crate forbids unsafe code, except the app crate, which denies it with one audited exception: the Android JNI entry point for background sync." }
+  ]
+}

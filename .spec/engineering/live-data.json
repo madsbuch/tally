@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Live data",
+  "summary": "Screens show what is in the database now, whoever changed it.",
+  "status": "accepted",
+  "order": 4,
+  "requirements": [
+    { "id": "LIVE-1", "text": "A screen that shows data reloads when the tables it shows change, whether the change came from this device, from sync or from a background worker." },
+    { "id": "LIVE-2", "text": "Writes announce the tables they changed only when they changed a row." },
+    { "id": "LIVE-3", "text": "A form holding a draft (Settings) loads once when opened, so a sync never overwrites what is being typed." }
+  ]
+}

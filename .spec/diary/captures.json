@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Photo captures",
+  "summary": "A photo and an optional note become diary entries, read in the background by the diary agent.",
+  "status": "accepted",
+  "order": 1,
+  "description": "A capture is a picture plus an optional note such as \"ate this earlier today\". It is saved at once and an agent with tools decides what it shows and logs it, so the user never waits on the model.",
+  "requirements": [
+    { "id": "CAP-1", "text": "A capture appears in the timeline the moment it is added, marked as being analysed." },
+    { "id": "CAP-2", "text": "The diary agent records what a capture shows through tool calls (meals, workouts, readings, performance stats, observations), resolving relative times in the note against the current time." },
+    { "id": "CAP-3", "text": "One capture can log several entries." },
+    { "id": "CAP-4", "text": "A capture whose analysis failed stays in the timeline with a retry." },
+    { "id": "CAP-5", "text": "A capture whose analysis was interrupted resumes on the next launch." },
+    { "id": "CAP-6", "text": "A meal gets an estimate for every nutrient Tally tracks." },
+    { "id": "CAP-7", "text": "A capture is analysed only by the device that wrote it." },
+    { "id": "CAP-8", "text": "Photos in HEIC/HEIF format are accepted." }
+  ],
+  "related": ["summary/food-lookup", "ai"]
+}

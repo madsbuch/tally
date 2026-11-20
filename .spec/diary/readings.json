@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Glucose and ketone readings",
+  "summary": "Finger-prick meter readings, logged from a photo of the meter.",
+  "status": "accepted",
+  "order": 3,
+  "description": "People on a ketogenic diet or a long fast watch blood glucose and ketones, and above all their ratio. A photo of the meter's screen is enough to log one.",
+  "requirements": [
+    { "id": "RDG-1", "text": "Readings are stored in mmol/L." },
+    { "id": "RDG-2", "text": "Glucose is shown in the unit the meter showed it in (mmol/L or mg/dL)." },
+    { "id": "RDG-3", "text": "A glucose and a ketone reading taken within `reading.pair-window` of each other show their glucose–ketone index (glucose ÷ ketones)." },
+    { "id": "RDG-4", "text": "A reading outside the meter's measurable range is treated as a misread, not stored as given." },
+    { "id": "RDG-5", "text": "A reading's page shows a 30-day trend." }
+  ],
+  "values": [
+    { "id": "reading.pair-window", "type": "duration", "value": "30m" }
+  ]
+}

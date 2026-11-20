@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Manuals",
+  "summary": "What works for this person in one situation, written up by the coach as a page.",
+  "status": "accepted",
+  "order": 2,
+  "requirements": [
+    { "id": "MAN-1", "text": "Only an index of manuals rides in the coach's prompt; the coach reads a manual when it applies." },
+    { "id": "MAN-2", "text": "A manual tied to a situation the app can see (a running fast) is given to the coach in full while that situation holds." },
+    { "id": "MAN-3", "text": "The user can edit a manual, and the coach keeps the user's words as written." },
+    { "id": "MAN-4", "text": "Every change to a manual keeps the version it replaced." }
+  ]
+}

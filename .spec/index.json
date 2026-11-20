@@ -1,0 +1,28 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Tally",
+  "summary": "A local-first health and nutrition tracker for one person, with an AI coach.",
+  "status": "accepted",
+  "description": "Tally keeps a diary of what one person eats, how they train, fast and sleep, and what they notice about themselves, and a coach that reads it. Logging is meant to cost a photo, so the diary actually gets kept.",
+  "stories": [
+    {
+      "id": "US-1",
+      "as": "someone tracking food, training and fasting",
+      "want": "to log a meal or a workout by taking a photo",
+      "soThat": "keeping a diary costs me seconds, not minutes",
+      "requirements": ["#CAP-1", "#CAP-2"]
+    },
+    {
+      "id": "US-2",
+      "as": "someone keeping a health diary",
+      "want": "my data to stay on my own devices",
+      "soThat": "no company holds a record of my body",
+      "requirements": ["#TAL-1", "#DATA-1", "#SYN-1"]
+    }
+  ],
+  "requirements": [
+    { "id": "TAL-1", "text": "All data lives in a SQLite database on the user's devices; Tally has no server of its own." },
+    { "id": "TAL-2", "text": "Tally runs on Android and on macOS." },
+    { "id": "TAL-3", "text": "The app has five tabs, in this order: Diary, Summary, Body, Coach, Settings." }
+  ]
+}

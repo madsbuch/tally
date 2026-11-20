@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Recaps",
+  "summary": "Weekly and monthly reviews of how a period went, against the one before.",
+  "status": "accepted",
+  "order": 6,
+  "requirements": [
+    { "id": "RCP-1", "text": "A recap covers a calendar week (Monday to Sunday) or a calendar month." },
+    { "id": "RCP-2", "text": "A recap compares its period with the one before it." },
+    { "id": "RCP-3", "text": "A period still in progress is compared with the same number of days of the period before." },
+    { "id": "RCP-4", "text": "Recaps are computed from the diary on demand; only which finished recaps were seen is stored." }
+  ]
+}

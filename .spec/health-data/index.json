@@ -1,0 +1,26 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Health data",
+  "summary": "Workouts, sleep and day metrics from the watch, through Health Connect and Garmin Connect.",
+  "status": "accepted",
+  "order": 5,
+  "description": "Health Connect only carries what the Garmin Connect app writes there, so the two are one source arriving twice. Health Connect has data first; Garmin's own numbers are the ones trusted.",
+  "stories": [
+    {
+      "id": "US-9",
+      "as": "someone who trains with a Garmin watch",
+      "want": "my workouts to appear in the diary without logging them",
+      "soThat": "their calories count without any effort from me",
+      "requirements": ["#HD-1", "#HC-1"]
+    }
+  ],
+  "requirements": [
+    { "id": "HD-1", "text": "A session from Health Connect enters the diary at once, as provisional." },
+    { "id": "HD-2", "text": "Once Garmin Connect has a day, an activity or a night, its values replace Health Connect's, and later Health Connect writes leave them alone." },
+    { "id": "HD-3", "text": "A field the user changed by hand is never overwritten by either source." },
+    { "id": "HD-4", "text": "A session the user deleted by hand is never imported again." },
+    { "id": "HD-5", "text": "Imported sessions are matched to existing rows by time, not by the source's record id, so the same session never appears twice." },
+    { "id": "HD-6", "text": "Health Connect and Garmin imports run only on the phone." },
+    { "id": "HD-7", "text": "Movement in Health Connect triggers a Garmin sync, if the last one is stale." }
+  ]
+}

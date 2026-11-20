@@ -1,0 +1,22 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Check-ins",
+  "summary": "Messages the coach starts on its own, at most once a day.",
+  "status": "accepted",
+  "order": 1,
+  "description": "A proactive coach that sends a message per rule gets muted. So rules only propose, and one local pass picks at most one to speak; the model is asked only to phrase the winner.",
+  "requirements": [
+    { "id": "CHK-1", "text": "The coach starts at most `checkin.daily-budget` check-in a day, whatever fires." },
+    { "id": "CHK-2", "text": "Whether to send a check-in is decided by plain comparisons over the digest, without a model." },
+    { "id": "CHK-3", "text": "Every firing trigger that doesn't win is passed to the winning check-in as material." },
+    { "id": "CHK-4", "text": "A condition trigger has a cooldown, so it raises one thing once rather than every day until fixed." },
+    { "id": "CHK-5", "text": "On Android the check-in is evaluated once a day at a user-set hour, defaulting to `checkin.default-hour`, even when the app is not running." },
+    { "id": "CHK-6", "text": "A check-in is saved as a new chat, never appended to the chat the user has open." },
+    { "id": "CHK-7", "text": "Tapping a check-in's notification opens that check-in's chat." },
+    { "id": "CHK-8", "text": "An unread check-in shows as unread on the Coach tab, also when its notification was dismissed." }
+  ],
+  "values": [
+    { "id": "checkin.daily-budget", "type": "number", "value": 1, "unit": "check-ins" },
+    { "id": "checkin.default-hour", "type": "text", "value": "07:00" }
+  ]
+}

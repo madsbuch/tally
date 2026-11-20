@@ -1,0 +1,27 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Fasting",
+  "summary": "A fasting timer built for multi-day fasts.",
+  "status": "accepted",
+  "order": 3,
+  "stories": [
+    {
+      "id": "US-7",
+      "as": "someone on a 72-hour fast",
+      "want": "to see how long is left without opening the app",
+      "soThat": "I can get through the last hours",
+      "requirements": ["#FST-2", "#FST-3"]
+    }
+  ],
+  "requirements": [
+    { "id": "FST-1", "text": "A fast's goal is one of `fasting.presets` or a custom length up to `fasting.max`." },
+    { "id": "FST-2", "text": "On Android a running fast shows a sticky notification with a live countdown that keeps ticking while the app is killed." },
+    { "id": "FST-3", "text": "On Android an exact alarm announces when the fast's goal is reached." },
+    { "id": "FST-4", "text": "The fasting page shows lifetime records (longest fast, hours fasted, goals hit) and flags a new personal record as it happens." },
+    { "id": "FST-5", "text": "A running fast shows which stage it has reached, by hours fasted." }
+  ],
+  "values": [
+    { "id": "fasting.presets", "type": "list", "value": ["13h", "16h", "18h", "24h", "48h", "72h"] },
+    { "id": "fasting.max", "type": "duration", "value": "168h" }
+  ]
+}

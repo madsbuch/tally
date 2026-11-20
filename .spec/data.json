@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Your data",
+  "summary": "Export, backup and where the data lives.",
+  "status": "accepted",
+  "order": 9,
+  "requirements": [
+    { "id": "DATA-1", "text": "Export writes a consistent snapshot of the whole database, photos included, and hands it to the Android share sheet (on desktop, shows the file's path)." },
+    { "id": "DATA-2", "text": "Photos are stored in the database, named by the SHA-256 of their bytes." },
+    { "id": "DATA-3", "text": "When the last backup is older than `backup.stale-after`, the app reminds the user to make one." },
+    { "id": "DATA-4", "text": "Copies the app makes of the database (exports, snapshots, the pre-migration backup) are marked as copies." },
+    { "id": "DATA-5", "text": "Schema changes are applied as versioned migrations when the app starts." }
+  ],
+  "values": [
+    { "id": "backup.stale-after", "type": "duration", "value": "3d" }
+  ],
+  "related": ["#SYN-9"]
+}

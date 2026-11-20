@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Development builds",
+  "summary": "Unfinished code never opens the real database.",
+  "status": "accepted",
+  "order": 6,
+  "description": "With sync, a mistake in the real database reaches every device.",
+  "requirements": [
+    { "id": "DEV-1", "text": "Development builds run as \"Tally Dev\", with their own app identifier and data folder." },
+    { "id": "DEV-2", "text": "A desktop debug build under the release identifier refuses to start." },
+    { "id": "DEV-3", "text": "Android debug builds install beside the release app, as a separate package." }
+  ],
+  "related": ["#SYN-13"]
+}

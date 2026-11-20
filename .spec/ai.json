@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "AI models and costs",
+  "summary": "The user's own OpenRouter key, their choice of model, and what it costs.",
+  "status": "accepted",
+  "order": 7,
+  "stories": [
+    {
+      "id": "US-12",
+      "as": "someone paying for my own AI usage",
+      "want": "to see what each feature costs me",
+      "soThat": "I can choose a cheaper model where it does just as well",
+      "requirements": ["#AI-3", "#AI-4"]
+    }
+  ],
+  "requirements": [
+    { "id": "AI-1", "text": "Model calls go to OpenRouter with an API key the user supplies, stored only in the local database." },
+    { "id": "AI-2", "text": "The model list is fetched live from OpenRouter, and the picker for the diary agent offers only vision models that support tool calling." },
+    { "id": "AI-3", "text": "Every model request is recorded in a usage ledger under the feature that made it, including those made by the Android check-in worker." },
+    { "id": "AI-4", "text": "The Costs page shows spend in total, by feature, by model and over time." },
+    { "id": "AI-5", "text": "Photos leave the device only as the payload of a request to the model the user chose." }
+  ]
+}

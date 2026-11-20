@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Navigation",
+  "summary": "Every screen has an address, and each tab keeps a stack.",
+  "status": "accepted",
+  "order": 3,
+  "requirements": [
+    { "id": "NAV-1", "text": "Every screen, sheet and conversation has a URL, and what is on screen is decided by the URL." },
+    { "id": "NAV-2", "text": "Each tab keeps a stack: the tab, the pages opened from it, then any open sheets." },
+    { "id": "NAV-3", "text": "Opening a page pushes it onto the current tab's stack, even when the page lives under another tab, and the tab bar keeps the current tab lit." },
+    { "id": "NAV-4", "text": "Opening a page already on the stack pops back to it." },
+    { "id": "NAV-5", "text": "The tab bar and notification taps start their tab afresh with the page on top." },
+    { "id": "NAV-6", "text": "A back button returns to where the user came from, else to the page's usual parent, and is labelled with that place's name." },
+    { "id": "NAV-7", "text": "A page's path starts with its tab's path; the Diary owns every path no other tab claims." }
+  ]
+}

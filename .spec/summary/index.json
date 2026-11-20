@@ -1,0 +1,31 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Summary",
+  "summary": "Exercise and nutrition over a day or a run of days.",
+  "status": "accepted",
+  "order": 2,
+  "description": "The Summary tab answers whether the training and the eating are on track over more than one day.",
+  "stories": [
+    {
+      "id": "US-6",
+      "as": "someone training for endurance",
+      "want": "to see my cardio minutes against a weekly target",
+      "soThat": "I know whether I need another session before the week ends",
+      "requirements": ["#SUM-2", "#SUM-4"]
+    }
+  ],
+  "requirements": [
+    { "id": "SUM-1", "text": "The Summary's period is chosen from `summary.periods`, defaulting to Last 7 days, with navigation between dates." },
+    { "id": "SUM-2", "text": "The 7-day cardio target is `cardio.weekly-target` and can be changed; the 24-day target is four times the 7-day one." },
+    { "id": "SUM-3", "text": "A workout counts its full duration as cardio when its average heart rate is above `cardio.min-avg-hr`; at exactly that value, or with no average, it does not." },
+    { "id": "SUM-4", "text": "A workout's Cardio switch overrides the automatic rule, including after edits and re-syncs, until the user chooses to use the automatic rule again." },
+    { "id": "SUM-5", "text": "Zone 2 minutes are tracked separately from cardio minutes." },
+    { "id": "SUM-6", "text": "Over a multi-day period, nutrition is shown as per-day averages." },
+    { "id": "SUM-7", "text": "Energy and macros are always visible; keto, micronutrients, source filters and other compounds are under Nutrition details." }
+  ],
+  "values": [
+    { "id": "summary.periods", "type": "list", "value": ["Day", "Last 7 days", "Last 24 days"] },
+    { "id": "cardio.weekly-target", "type": "number", "value": 300, "unit": "minutes" },
+    { "id": "cardio.min-avg-hr", "type": "number", "value": 125, "unit": "bpm" }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Experiments",
+  "summary": "A fair test of what works, for one person, before it goes into a manual.",
+  "status": "accepted",
+  "order": 3,
+  "stories": [
+    {
+      "id": "US-11",
+      "as": "someone breaking long fasts",
+      "want": "to find out which way of breaking a fast suits me",
+      "soThat": "I decide from my own results, not my mood on the day",
+      "requirements": ["#EXP-1", "#EXP-2", "#EXP-3"]
+    }
+  ],
+  "requirements": [
+    { "id": "EXP-1", "text": "An experiment compares two to four options." },
+    { "id": "EXP-2", "text": "Unless the user chose to pick, the app picks the next option: the one with the fewest trials." },
+    { "id": "EXP-3", "text": "What counts as better (ratings, diary numbers) is fixed when the experiment is set up." },
+    { "id": "EXP-4", "text": "The rating for a trial is asked for `experiment.rate-after` after it." },
+    { "id": "EXP-5", "text": "A fasting experiment opens a trial by itself when a fast ends." },
+    { "id": "EXP-6", "text": "When enough trials are in, the coach writes up the result and, if it held, carries it into the manual it was about." }
+  ],
+  "values": [
+    { "id": "experiment.rate-after", "type": "duration", "value": "90m" }
+  ]
+}

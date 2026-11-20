@@ -3,6 +3,28 @@
 A Tauri (React + TypeScript + SQLite via drizzle) health/nutrition tracker.
 The frontend lives in `src/`; the Rust shell in `src-tauri/`.
 
+## The spec
+
+What the product is meant to do is written in `.spec/`, in the format of
+https://github.com/madsbuch/better-github/blob/main/spec-llms.txt (read it
+before editing the spec). One JSON file per part of the product, folders as
+the outline; user stories and requirements with ids unique across the spec
+(a prefix per item: `CAP-1`, `SYN-3`), and named values for numbers that more
+than one requirement uses.
+
+- The spec comes first: a change to what the product does starts as a new
+  requirement, a new `version` of one (old text into `history`, with the
+  `reason`), or a deprecation (`status: "deprecated"` plus `deprecation`).
+  Nothing is deleted, renumbered or reused; history is never edited.
+- What isn't decided stays out of the spec — ask instead of guessing.
+- The spec never names code; code names the spec. Code or a test that exists
+  to meet a requirement carries `// Spec: CAP-1` (ids only) on its own line.
+  When a requirement changes, search for its id.
+- Constants in the code follow the spec's named values; change both together.
+- `tests/spec.test.ts` (part of `bun test`) checks the spec: schema, unique
+  ids, references, histories, deprecations, and that every `Spec:` citation
+  names a real requirement.
+
 ## JSON boundary rule
 
 All untrusted JSON — SQLite JSON columns, LLM output, external API responses

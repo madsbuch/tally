@@ -1,0 +1,28 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Calorie target",
+  "summary": "A base daily budget, with corrections to single days.",
+  "status": "accepted",
+  "order": 2,
+  "description": "Settings holds a base budget for every day. A single day can be corrected (\"I overate yesterday, take 200 off today\") so that room moves between days inside a week.",
+  "stories": [
+    {
+      "id": "US-4",
+      "as": "someone who overate on Monday",
+      "want": "to take the difference off the next days",
+      "soThat": "the week still comes out level",
+      "requirements": ["#GOAL-1", "#GOAL-2"]
+    }
+  ],
+  "requirements": [
+    { "id": "GOAL-1", "text": "A day's target is the base budget plus that day's correction; a correction applies to its own day only." },
+    { "id": "GOAL-2", "text": "A multi-day period's target is the base budget times its days; corrections do not change it." },
+    { "id": "GOAL-3", "text": "A correction is at most `goal.max-correction` either way." },
+    { "id": "GOAL-4", "text": "A day's target never falls below `goal.min-target`." },
+    { "id": "GOAL-5", "text": "Tally has no achievements or rewards tied to staying under a daily calorie budget." }
+  ],
+  "values": [
+    { "id": "goal.max-correction", "type": "number", "value": 2000, "unit": "kcal" },
+    { "id": "goal.min-target", "type": "number", "value": 200, "unit": "kcal" }
+  ]
+}

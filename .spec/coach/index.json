@@ -1,0 +1,27 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Coach",
+  "summary": "An AI coach that reads the diary, remembers, and speaks up when it matters.",
+  "status": "accepted",
+  "order": 6,
+  "description": "The coach is a chat on the Coach tab. Its knowledge is kept in separate pieces: the stance the user declares, the memory it keeps, manuals it writes, and a digest of the diary computed fresh every turn.",
+  "stories": [
+    {
+      "id": "US-10",
+      "as": "someone trying to change a habit",
+      "want": "a coach that already knows how my week went",
+      "soThat": "I can ask it a question without explaining myself first",
+      "requirements": ["#COA-3", "#COA-2"]
+    }
+  ],
+  "requirements": [
+    { "id": "COA-1", "text": "The stance (ranked imperatives, tone, subjects never to raise) is set by the user and never edited by the coach." },
+    { "id": "COA-2", "text": "The coach's memory (commitments, preferences, notes) is kept apart from chats: deleting a chat keeps it, and a new chat starts with it." },
+    { "id": "COA-3", "text": "Every coach turn carries a digest of the diary computed at that moment." },
+    { "id": "COA-4", "text": "A conversation has its own address, `/assistant/<chatId>`." },
+    { "id": "COA-5", "text": "An entity id the coach writes in a message shows as a chip with that entity's title, opening its page." },
+    { "id": "COA-6", "text": "Coach tools take ids in TypeID form and also accept the bare UUIDs and numbers older chats quote; an id of the wrong kind is refused with the reason." },
+    { "id": "COA-7", "text": "The coach never reads a bare \"calories\": every calorie figure it can query has one name (eaten, burned_workouts, burned_total, target, net, remaining, energy_balance)." },
+    { "id": "COA-8", "text": "The memory is shown on a page the user can read." }
+  ]
+}

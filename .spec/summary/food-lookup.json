@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Packaged food lookup",
+  "summary": "Label nutrition for branded products from Open Food Facts.",
+  "status": "accepted",
+  "order": 1,
+  "description": "A packaged product has a label; an estimate of it is worse than reading it. Both the diary agent and the coach can look a product up in the free Open Food Facts database.",
+  "requirements": [
+    { "id": "OFF-1", "text": "The diary agent and the coach can search Open Food Facts by product name or barcode." },
+    { "id": "OFF-2", "text": "Only the product name or the barcode is sent to Open Food Facts; never a photo or personal data." },
+    { "id": "OFF-3", "text": "Nutrients missing from the label are estimated by the model." },
+    { "id": "OFF-4", "text": "Label nutrition is mapped onto Tally's nutrient keys, per 100 g and per serving." }
+  ]
+}

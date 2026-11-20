@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Diary",
+  "summary": "The day's timeline of meals, workouts, sleep, readings and observations.",
+  "status": "accepted",
+  "order": 1,
+  "description": "The Diary is the home tab: one day at a time, with what went in, what was burned, and everything else logged that day.",
+  "stories": [
+    {
+      "id": "US-3",
+      "as": "someone watching what they eat",
+      "want": "to see today's entries and where I stand against my calorie budget",
+      "soThat": "I know what room is left for dinner",
+      "requirements": ["#DIA-1", "#DIA-2"]
+    }
+  ],
+  "requirements": [
+    { "id": "DIA-1", "text": "The Diary shows one day's entries in time order, and can step to any other day." },
+    { "id": "DIA-2", "text": "The day's calorie bar shows net calories (eaten minus burned by workouts) against the day's target." },
+    { "id": "DIA-3", "text": "The Diary shows week and month totals; weeks run Monday to Sunday." },
+    { "id": "DIA-4", "text": "Every entry kind (meal, workout, sleep, reading, observation, performance) opens a page of its own at `/entry/<kind>/<id>`." },
+    { "id": "DIA-5", "text": "Supplements are logged as food entries with the nutrients of the amount taken; there is no separate supplement log." }
+  ]
+}

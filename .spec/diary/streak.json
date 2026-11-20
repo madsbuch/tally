@@ -1,0 +1,20 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Streak and achievements",
+  "summary": "A logging streak with freeze tokens, and badges for what was logged.",
+  "status": "accepted",
+  "order": 5,
+  "requirements": [
+    { "id": "STR-1", "text": "The streak counts consecutive days with anything logged; a day inside a multi-day fast counts." },
+    { "id": "STR-2", "text": "Every `streak.freeze-every` straight days earn a freeze token, up to `streak.max-freezes` banked." },
+    { "id": "STR-3", "text": "A banked freeze covers a missed day automatically." },
+    { "id": "STR-4", "text": "The streak is shown in the Diary header and opens the achievements." },
+    { "id": "STR-5", "text": "Achievements are derived from the database, so past history counts and a missed scan loses nothing." },
+    { "id": "STR-6", "text": "Tiers of one counting badge (7, 30, 90 … days) show as a single row climbing to its next tier." }
+  ],
+  "values": [
+    { "id": "streak.freeze-every", "type": "number", "value": 7, "unit": "days" },
+    { "id": "streak.max-freezes", "type": "number", "value": 3, "unit": "tokens" }
+  ],
+  "related": ["#GOAL-5"]
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Engineering rules",
+  "summary": "How Tally is built, where it is decided and has to hold.",
+  "status": "accepted",
+  "order": 10,
+  "description": "A React and TypeScript frontend in a Tauri shell, with SQLite run from Rust. The rules here hold across the whole code base.",
+  "requirements": [
+    { "id": "ENG-1", "text": "The frontend is React and TypeScript in a Tauri 2 shell; SQLite runs in Rust and the frontend queries it through drizzle." },
+    { "id": "ENG-2", "text": "`bun run build` typechecks, lints and bundles, and fails on any lint error." }
+  ]
+}

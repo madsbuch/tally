@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Observations",
+  "summary": "Logging what you notice about yourself, next to what you ate and did.",
+  "status": "accepted",
+  "order": 4,
+  "description": "Feelings, what the body did, urges, thoughts: the half of a day the numbers are usually kept for. With a time on them they can be compared with meals and sleep.",
+  "stories": [
+    {
+      "id": "US-5",
+      "as": "someone who gets bloated some afternoons",
+      "want": "to log it when it happens",
+      "soThat": "I can see whether it follows what I ate",
+      "requirements": ["#OBS-1"]
+    }
+  ],
+  "requirements": [
+    { "id": "OBS-1", "text": "An observation is logged with a time and a category." },
+    { "id": "OBS-2", "text": "Categories are a list the user owns and can add to; a new install starts with three." },
+    { "id": "OBS-3", "text": "A new category's emoji is chosen by the model; without one, 💭 is shown." },
+    { "id": "OBS-4", "text": "Category names match regardless of case and spacing." }
+  ]
+}
