@@ -30,6 +30,6 @@
     { "id": "SYN-13", "text": "Development and release builds never sync with each other." }
   ],
   "values": [
-    { "id": "sync.pairing-lifetime", "type": "duration", "value": "10m" }
+    { "id": "sync.pairing-lifetime", "type": "duration", "value": "10min" }
   ]
 }

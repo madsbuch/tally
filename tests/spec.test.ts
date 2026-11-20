@@ -49,20 +49,41 @@ const Requirement = z.strictObject({
     .optional(),
   deprecation: Deprecation.optional(),
 });
-const ValueHistory = z.array(
-  z.strictObject({ value: z.unknown(), reason: z.string().min(1), date: Day.optional() }),
-);
-const Value = z.strictObject({
+// The value forms are the schema's own patterns, verbatim.
+const Hex = z.string().regex(/^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/);
+const ValueBase = {
   id: Id,
-  type: z.enum(["color", "dimension", "duration", "number", "text", "font", "list"]),
-  value: z.unknown(),
-  dark: z.string().optional(),
-  unit: z.string().optional(),
   description: z.string().optional(),
-  history: ValueHistory.optional(),
   status: Status.optional(),
   deprecation: Deprecation.optional(),
-});
+  history: z
+    .array(
+      z.strictObject({
+        value: z.union([z.string(), z.number(), z.array(z.string())]),
+        dark: z.string().optional(),
+        reason: z.string().min(1),
+        date: Day.optional(),
+      }),
+    )
+    .optional(),
+};
+const Value = z.discriminatedUnion("type", [
+  z.strictObject({ ...ValueBase, type: z.literal("color"), value: Hex, dark: Hex.optional() }),
+  z.strictObject({
+    ...ValueBase,
+    type: z.literal("dimension"),
+    value: z.string().regex(/^-?\d+(?:\.\d+)?(?:px|rem|em|%|pt|dp|vw|vh)$/),
+  }),
+  z.strictObject({
+    ...ValueBase,
+    type: z.literal("duration"),
+    value: z.string().regex(/^\d+(?:\.\d+)?(?:ms|s|min|h|d)$/),
+  }),
+  z.strictObject({ ...ValueBase, type: z.literal("number"), value: z.number(), unit: z.string().min(1).optional() }),
+  z.strictObject({ ...ValueBase, type: z.literal("text"), value: z.string() }),
+  z.strictObject({ ...ValueBase, type: z.literal("font"), value: z.string().min(1) }),
+  z.strictObject({ ...ValueBase, type: z.literal("list"), value: z.array(z.string().min(1)) }),
+]);
 const Item = z.strictObject({
   $schema: z.string().optional(),
   title: z.string().min(1),
@@ -75,21 +96,11 @@ const Item = z.strictObject({
   requirements: z.array(Requirement).optional(),
   values: z.array(Value).optional(),
   figures: z
-    .array(z.strictObject({ src: z.string().min(1), alt: z.string().optional(), caption: z.string().optional() }))
+    .array(z.strictObject({ src: z.string().min(1).regex(/^[^/]/), alt: z.string().optional(), caption: z.string().optional() }))
     .optional(),
   related: z.array(z.string().min(1)).optional(),
 });
 type Item = z.infer<typeof Item>;
-
-const VALUE_FORMS: Record<string, z.ZodType> = {
-  color: z.string().regex(/^#[0-9a-fA-F]{3,8}$/),
-  dimension: z.string().regex(/^-?\d+(\.\d+)?(px|rem|em|%|vh|vw|dp|pt)$/),
-  duration: z.string().regex(/^\d+(\.\d+)?(ms|s|m|h|d)$/),
-  number: z.number(),
-  text: z.string(),
-  font: z.string().min(1),
-  list: z.array(z.string()),
-};
 
 function walk(dir: string, keep: (path: string) => boolean): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -188,11 +199,6 @@ describe("spec", () => {
         const versions = (r.history ?? []).map((h) => h.version);
         const expected = Array.from({ length: (r.version ?? 1) - 1 }, (_, i) => i + 1);
         if (JSON.stringify(versions) !== JSON.stringify(expected)) bad.push(`${where} ${r.id} history`);
-      }
-      for (const v of item.values ?? []) {
-        const form = VALUE_FORMS[v.type];
-        if (form === undefined || !form.safeParse(v.value).success) bad.push(`${where} ${v.id} value`);
-        if (v.dark !== undefined && v.type !== "color") bad.push(`${where} ${v.id} dark`);
       }
     }
     expect(bad).toEqual([]);

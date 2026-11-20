@@ -22,6 +22,6 @@
     { "id": "EXP-6", "text": "When enough trials are in, the coach writes up the result and, if it held, carries it into the manual it was about." }
   ],
   "values": [
-    { "id": "experiment.rate-after", "type": "duration", "value": "90m" }
+    { "id": "experiment.rate-after", "type": "duration", "value": "90min" }
   ]
 }

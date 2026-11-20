@@ -13,6 +13,6 @@
     { "id": "RDG-5", "text": "A reading's page shows a 30-day trend." }
   ],
   "values": [
-    { "id": "reading.pair-window", "type": "duration", "value": "30m" }
+    { "id": "reading.pair-window", "type": "duration", "value": "30min" }
   ]
 }
