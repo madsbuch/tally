@@ -3,7 +3,7 @@
   "title": "Engineering rules",
   "summary": "How Tally is built, where it is decided and has to hold.",
   "order": 10,
-  "description": "A React and TypeScript frontend in a Tauri shell, with SQLite run from Rust. The rules here hold across the whole code base.",
+  "description": "Rules that hold across the whole code base.",
   "requirements": [
     {
       "id": "ENG-1",

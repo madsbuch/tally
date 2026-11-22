@@ -3,7 +3,7 @@
   "title": "Calorie target",
   "summary": "A base daily budget, with corrections to single days.",
   "order": 2,
-  "description": "Settings holds a base budget for every day. A single day can be corrected (\"I overate yesterday, take 200 off today\") so that room moves between days inside a week.",
+  "description": "Settings holds a base budget for every day. A single day can be corrected, so that room moves between days inside a week.",
   "stories": [
     {
       "id": "US-4",
@@ -49,7 +49,16 @@
     },
     {
       "id": "GOAL-4",
-      "text": "A day's target never falls below `goal.min-target`; a multi-day period's target has no floor."
+      "text": "A multi-day period's target has no floor.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "A day's target never falls below `goal.min-target`; a multi-day period's target has no floor.",
+          "reason": "Version 1 restated the day floor, which GOAL-1 states.",
+          "date": "2026-11-22"
+        }
+      ]
     },
     {
       "id": "GOAL-5",

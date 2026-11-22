@@ -1,21 +1,31 @@
 {
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Row ids",
-  "summary": "Every row is keyed by a TypeID that every device agrees on.",
+  "summary": "Entity rows are keyed by TypeIDs that every device agrees on.",
   "order": 5,
   "requirements": [
     {
       "id": "ID-1",
-      "text": "Every entity table (one with a prefix in `ID_PREFIXES`) is keyed by a TypeID: its prefix and a UUID, `meal_01jd4x8m2kf7r9q3vz5w6t0hyc`; other tables use a natural key, and none uses an auto-increment integer.",
-      "version": 2,
+      "text": "Every entity table (one with a prefix in `ID_PREFIXES`) is keyed by a TypeID: its prefix and a UUID, `meal_01jd4x8m2kf7r9q3vz5w6t0hyc`.",
+      "version": 3,
       "history": [
         {
           "version": 1,
           "text": "Every table's key is a TypeID string, the table's prefix and a UUIDv7 (`meal_01jd4x8m2kf7r9q3vz5w6t0hyc`), never an auto-increment integer.",
           "reason": "Version 1 didn't match the product: settings, per-day and sync tables use natural keys, and derived ids are UUIDv8.",
           "date": "2026-11-20"
+        },
+        {
+          "version": 2,
+          "text": "Every entity table (one with a prefix in `ID_PREFIXES`) is keyed by a TypeID: its prefix and a UUID, `meal_01jd4x8m2kf7r9q3vz5w6t0hyc`; other tables use a natural key, and none uses an auto-increment integer.",
+          "reason": "Version 2 held two promises; the other tables' keys is now ID-5.",
+          "date": "2026-11-22"
         }
       ]
+    },
+    {
+      "id": "ID-5",
+      "text": "Tables without a prefix use a natural key, and no table uses an auto-increment integer."
     },
     {
       "id": "ID-2",

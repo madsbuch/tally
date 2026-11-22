@@ -36,14 +36,20 @@
     },
     {
       "id": "MAN-4",
-      "text": "Every edit of a manual's title or body keeps the version it replaced; deleting a manual deletes its history.",
-      "version": 2,
+      "text": "Every edit of a manual's title or body keeps the version it replaced.",
+      "version": 3,
       "history": [
         {
           "version": 1,
           "text": "Every change to a manual keeps the version it replaced.",
           "reason": "Version 1 didn't match the product: changes to which situation a manual applies to are not kept, and deletion removes the history.",
           "date": "2026-11-20"
+        },
+        {
+          "version": 2,
+          "text": "Every edit of a manual's title or body keeps the version it replaced; deleting a manual deletes its history.",
+          "reason": "Version 2 held two promises; what deleting does is now MAN-6.",
+          "date": "2026-11-22"
         }
       ]
     },
@@ -51,6 +57,10 @@
       "id": "MAN-5",
       "text": "The coach is instructed to keep the user's own edits to a manual as written.",
       "level": "should"
+    },
+    {
+      "id": "MAN-6",
+      "text": "Deleting a manual deletes its kept versions with it."
     }
   ]
 }

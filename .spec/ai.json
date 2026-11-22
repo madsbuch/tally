@@ -65,16 +65,26 @@
     },
     {
       "id": "AI-5",
-      "text": "Photos are sent to no third party but OpenRouter, for the model the user chose or the default; they also reach the vault's devices by sync and leave in exports.",
-      "version": 2,
+      "text": "Photos are sent to no third party but OpenRouter, for the model the user chose or the default.",
+      "version": 3,
       "history": [
         {
           "version": 1,
           "text": "Photos leave the device only as the payload of a request to the model the user chose.",
           "reason": "Version 1 didn't match the product: photos sync and are exported, and a default model is used until one is chosen.",
           "date": "2026-11-20"
+        },
+        {
+          "version": 2,
+          "text": "Photos are sent to no third party but OpenRouter, for the model the user chose or the default; they also reach the vault's devices by sync and leave in exports.",
+          "reason": "Version 2 held two promises; that photos sync and are exported is now AI-7.",
+          "date": "2026-11-22"
         }
       ]
+    },
+    {
+      "id": "AI-7",
+      "text": "Photos reach the vault's other devices by sync, and leave a device in exports."
     }
   ]
 }

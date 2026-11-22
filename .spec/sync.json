@@ -13,7 +13,8 @@
       "requirements": [
         "#SYN-1",
         "#SYN-4",
-        "#SYN-5"
+        "#SYN-5",
+        "#SYN-16"
       ]
     }
   ],
@@ -62,7 +63,20 @@
     },
     {
       "id": "SYN-5",
-      "text": "Concurrent changes to a row resolve to the version with the later hybrid-logical clock, and every device reaches the same result whatever order changes arrive in."
+      "text": "Concurrent changes to a row resolve to the version with the later hybrid-logical clock.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "Concurrent changes to a row resolve to the version with the later hybrid-logical clock, and every device reaches the same result whatever order changes arrive in.",
+          "reason": "Version 1 held two promises; convergence is now SYN-16.",
+          "date": "2026-11-22"
+        }
+      ]
+    },
+    {
+      "id": "SYN-16",
+      "text": "Every device reaches the same rows whatever order changes arrive in."
     },
     {
       "id": "SYN-6",

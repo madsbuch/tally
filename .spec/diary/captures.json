@@ -58,7 +58,7 @@
     },
     {
       "id": "CAP-6",
-      "text": "A meal gets an estimate for each tracked nutrient the model can reasonably estimate; the rest are left out.",
+      "text": "The diary agent is told to estimate each tracked nutrient of a meal it can and to leave out the rest.",
       "version": 2,
       "history": [
         {

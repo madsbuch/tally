@@ -21,7 +21,7 @@
       "soThat": "it stays on my devices unless I send it somewhere",
       "requirements": [
         "#TAL-1",
-        "#DATA-1",
+        "#TAL-4",
         "#SYN-1",
         "#AI-5",
         "#OFF-2"
@@ -31,14 +31,20 @@
   "requirements": [
     {
       "id": "TAL-1",
-      "text": "All data lives in a SQLite database on the user's devices; Tally has no server of its own, and data leaves a device only for the AI, food-lookup and Garmin services the user sets up.",
-      "version": 2,
+      "text": "All data lives in a SQLite database on the user's devices, and Tally has no server of its own.",
+      "version": 3,
       "history": [
         {
           "version": 1,
           "text": "All data lives in a SQLite database on the user's devices; Tally has no server of its own.",
           "reason": "Version 1 said nothing of what does leave the device: captures and diary context go to OpenRouter, product names to Open Food Facts.",
           "date": "2026-11-20"
+        },
+        {
+          "version": 2,
+          "text": "All data lives in a SQLite database on the user's devices; Tally has no server of its own, and data leaves a device only for the AI, food-lookup and Garmin services the user sets up.",
+          "reason": "Version 2 held two promises; where data leaves a device is now TAL-4.",
+          "date": "2026-11-22"
         }
       ]
     },
@@ -49,6 +55,10 @@
     {
       "id": "TAL-3",
       "text": "The app has five tabs, in this order: Diary, Summary, Body, Coach, Settings."
+    },
+    {
+      "id": "TAL-4",
+      "text": "Data leaves the vault's devices only for the AI, food-lookup and Garmin services the user sets up, and in exports the user makes."
     }
   ]
 }

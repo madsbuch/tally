@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Document library",
-  "summary": "Blood results, scan reports and letters, read once so the coach can use them.",
+  "summary": "Blood results, scan reports and letters, read when added so the coach can use them.",
   "order": 4,
   "requirements": [
     {
@@ -23,14 +23,20 @@
     },
     {
       "id": "DOC-3",
-      "text": "A document is one photo or a PDF; of a PDF the first `library.max-pdf-pages` pages are read, in order, and the original is kept.",
-      "version": 2,
+      "text": "A document is one photo or a PDF, with its pages in order.",
+      "version": 3,
       "history": [
         {
           "version": 1,
           "text": "A document can be a set of photos or a PDF, with its pages in order.",
           "reason": "Version 1 didn't match the product: a photo document has one page, and PDF reading stops at a cap.",
           "date": "2026-11-20"
+        },
+        {
+          "version": 2,
+          "text": "A document is one photo or a PDF; of a PDF the first `library.max-pdf-pages` pages are read, in order, and the original is kept.",
+          "reason": "Version 2 held two promises; the PDF page cap is now DOC-5.",
+          "date": "2026-11-22"
         }
       ]
     },
@@ -46,6 +52,10 @@
           "date": "2026-11-20"
         }
       ]
+    },
+    {
+      "id": "DOC-5",
+      "text": "Of a PDF, only the first `library.max-pdf-pages` pages are read; the original is kept whole."
     }
   ],
   "values": [

@@ -3,7 +3,7 @@
   "title": "Check-ins",
   "summary": "Messages the coach starts on its own, at most once a day.",
   "order": 1,
-  "description": "A proactive coach that sends a message per rule gets muted. So rules only propose, and one local pass picks at most one to speak; the model is asked only to phrase the winner.",
+  "description": "A proactive coach that sends a message for every rule that fires gets muted, so it speaks at most once a day and only when something wins.",
   "requirements": [
     {
       "id": "CHK-1",

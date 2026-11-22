@@ -19,20 +19,30 @@
     },
     {
       "id": "HC-2",
-      "text": "Health Connect is read on the device, without a network request, and only records written by the Garmin Connect app are read.",
-      "version": 2,
+      "text": "Health Connect is read on the device, without a network request.",
+      "version": 3,
       "history": [
         {
           "version": 1,
           "text": "Health Connect is read entirely on the device; no Garmin account or cloud service is involved.",
           "reason": "Version 1 didn't match the product: only Garmin Connect's records are read.",
           "date": "2026-11-20"
+        },
+        {
+          "version": 2,
+          "text": "Health Connect is read on the device, without a network request, and only records written by the Garmin Connect app are read.",
+          "reason": "Version 2 held two promises; which app's records are read is now HC-4.",
+          "date": "2026-11-22"
         }
       ]
     },
     {
       "id": "HC-3",
       "text": "On desktop, Health Connect is absent and its commands do nothing."
+    },
+    {
+      "id": "HC-4",
+      "text": "Only records written by the Garmin Connect app are read from Health Connect."
     }
   ]
 }

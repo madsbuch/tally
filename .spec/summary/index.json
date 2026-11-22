@@ -20,7 +20,16 @@
   "requirements": [
     {
       "id": "SUM-1",
-      "text": "The Summary's period is chosen from `summary.periods`, defaulting to Last 7 days, with navigation between dates."
+      "text": "The Summary's period is chosen from `summary.periods`, defaulting to Last 7 days, and steps back and forward by its own length, never past today.",
+      "version": 2,
+      "history": [
+        {
+          "version": 1,
+          "text": "The Summary's period is chosen from `summary.periods`, defaulting to Last 7 days, with navigation between dates.",
+          "reason": "Version 1 said only that dates can be navigated, which couldn't be checked.",
+          "date": "2026-11-22"
+        }
+      ]
     },
     {
       "id": "SUM-2",

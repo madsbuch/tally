@@ -32,14 +32,20 @@
     },
     {
       "id": "EXP-2",
-      "text": "Unless the user chose to pick, the app picks the next option: the one with the fewest trials, then the least recently used; a trial opened by a fast always starts on that option and can be switched.",
-      "version": 2,
+      "text": "Unless the user chose to pick, the app picks the next option: the one with the fewest trials, then the least recently used.",
+      "version": 3,
       "history": [
         {
           "version": 1,
           "text": "Unless the user chose to pick, the app picks the next option: the one with the fewest trials.",
           "reason": "Version 1 didn't give the tie-break or what happens for trials a fast opens.",
           "date": "2026-11-20"
+        },
+        {
+          "version": 2,
+          "text": "Unless the user chose to pick, the app picks the next option: the one with the fewest trials, then the least recently used; a trial opened by a fast always starts on that option and can be switched.",
+          "reason": "Version 2 held two promises; trials a fast opens is now EXP-7.",
+          "date": "2026-11-22"
         }
       ]
     },
@@ -84,16 +90,30 @@
     },
     {
       "id": "EXP-6",
-      "text": "When every option has its trials, the coach's prompt says the experiment is ready to conclude; concluding records the result and the manual it went into.",
-      "version": 2,
+      "text": "When every option has its trials, the coach's prompt says the experiment is ready to conclude.",
+      "version": 3,
       "history": [
         {
           "version": 1,
           "text": "When enough trials are in, the coach writes up the result and, if it held, carries it into the manual it was about.",
           "reason": "Version 1 didn't match the product: nothing happens automatically, and carrying the result into the manual is the coach's job.",
           "date": "2026-11-20"
+        },
+        {
+          "version": 2,
+          "text": "When every option has its trials, the coach's prompt says the experiment is ready to conclude; concluding records the result and the manual it went into.",
+          "reason": "Version 1 held two promises; what concluding records is now EXP-8.",
+          "date": "2026-11-22"
         }
       ]
+    },
+    {
+      "id": "EXP-7",
+      "text": "A trial opened by a fast starts on the option the app would pick, whatever the experiment's assignment, and the user can switch it."
+    },
+    {
+      "id": "EXP-8",
+      "text": "Concluding an experiment records its result and the manual it was carried into."
     }
   ],
   "values": [
