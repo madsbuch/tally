@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Experiments",
   "summary": "A fair test of what works, for one person, before it goes into a manual.",
-  "status": "accepted",
   "order": 3,
   "stories": [
     {

@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Check-ins",
   "summary": "Messages the coach starts on its own, at most once a day.",
-  "status": "accepted",
   "order": 1,
   "description": "A proactive coach that sends a message per rule gets muted. So rules only propose, and one local pass picks at most one to speak; the model is asked only to phrase the winner.",
   "requirements": [

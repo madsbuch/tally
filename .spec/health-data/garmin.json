@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Garmin Connect",
   "summary": "Optional direct sync for what Health Connect doesn't carry.",
-  "status": "accepted",
   "order": 2,
   "description": "Garmin Connect has Training Effect, training load, heart-rate zones, power and laps per activity, and Body Battery, stress, sleep score and HRV status per day. Tally reads them through Garmin's official Personal API.",
   "requirements": [

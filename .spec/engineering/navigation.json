@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Navigation",
   "summary": "Every screen has an address, and each tab keeps a stack.",
-  "status": "accepted",
   "order": 3,
   "requirements": [
     {

@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Device sync",
   "summary": "Peer-to-peer sync between the devices of one vault, over the local network.",
-  "status": "accepted",
   "order": 8,
   "description": "A phone and a computer hold the same diary. They sync directly with each other on the local network, without a server.",
   "stories": [

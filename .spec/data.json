@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Your data",
   "summary": "Export, backup and where the data lives.",
-  "status": "accepted",
   "order": 9,
   "requirements": [
     {

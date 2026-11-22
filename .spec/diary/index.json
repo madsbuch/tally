@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Diary",
   "summary": "The day's timeline of meals, workouts, sleep, readings and observations.",
-  "status": "accepted",
   "order": 1,
   "description": "The Diary is the home tab: one day at a time, with what went in, what was burned, and everything else logged that day.",
   "stories": [

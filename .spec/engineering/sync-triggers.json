@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Sync triggers",
   "summary": "Change tracking for sync lives in SQLite triggers kept in step with the schema.",
-  "status": "accepted",
   "order": 7,
   "requirements": [
     {

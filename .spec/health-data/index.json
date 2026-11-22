@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Health data",
   "summary": "Workouts, sleep and day metrics from the watch, through Health Connect and Garmin Connect.",
-  "status": "accepted",
   "order": 5,
   "description": "Health Connect only carries what the Garmin Connect app writes there, so the two are one source arriving twice. Health Connect has data first; Garmin's own numbers are the ones trusted.",
   "stories": [

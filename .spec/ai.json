@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "AI models and costs",
   "summary": "The user's own OpenRouter key, their choice of model, and what it costs.",
-  "status": "accepted",
   "order": 7,
   "stories": [
     {

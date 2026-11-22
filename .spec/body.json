@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Body",
   "summary": "Estimates of what is in the body now, from what was logged.",
-  "status": "accepted",
   "order": 4,
   "description": "Caffeine and alcohol come and go within a day; creatine, vitamin D and other stores build over weeks. The Body tab shows textbook models fed by the diary, to show the shape (is the evening coffee still in you at bedtime) rather than a measurement.",
   "stories": [

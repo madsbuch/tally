@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Document library",
   "summary": "Blood results, scan reports and letters, read once so the coach can use them.",
-  "status": "accepted",
   "order": 4,
   "requirements": [
     {

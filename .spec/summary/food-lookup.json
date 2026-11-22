@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Packaged food lookup",
   "summary": "Label nutrition for branded products from Open Food Facts.",
-  "status": "accepted",
   "order": 1,
   "description": "A packaged product has a label; an estimate of it is worse than reading it. Both the diary agent and the coach can look a product up in the free Open Food Facts database.",
   "requirements": [

@@ -14,15 +14,18 @@ than one requirement uses.
 
 - The spec comes first: a change to what the product does starts as a new
   requirement, a new `version` of one (old text into `history`, with the
-  `reason`), or a deprecation (`status: "deprecated"` plus `deprecation`).
-  Nothing is deleted, renumbered or reused; history is never edited.
+  `reason`), or a deprecation (a `deprecation` record saying why). There is
+  no `status`: everything without a `deprecation` holds. Nothing is deleted,
+  renumbered or reused; history is never edited.
+- Before adding a requirement, look among the deprecated ones for the same
+  idea; don't bring one back without asking.
 - What isn't decided stays out of the spec — ask instead of guessing.
 - The spec never names code; code names the spec. Code or a test that exists
   to meet a requirement carries `// Spec: CAP-1` (ids only) on its own line.
   When a requirement changes, search for its id.
 - Constants in the code follow the spec's named values; change both together.
 - `tests/spec.test.ts` (part of `bun test`) checks the spec: schema, unique
-  ids, references, histories, deprecations, and that every `Spec:` citation
+  ids, references, histories, and that every `Spec:` citation
   names a real requirement. CI doesn't run the test suite, so run it before
   pushing a spec change.
 

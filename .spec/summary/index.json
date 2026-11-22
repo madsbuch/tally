@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Summary",
   "summary": "Exercise and nutrition over a day or a run of days.",
-  "status": "accepted",
   "order": 2,
   "description": "The Summary tab answers whether the training and the eating are on track over more than one day.",
   "stories": [

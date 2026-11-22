@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Coach",
   "summary": "An AI coach that reads the diary, remembers, and speaks up when it matters.",
-  "status": "accepted",
   "order": 6,
   "description": "The coach is a chat on the Coach tab. Its knowledge is kept in separate pieces: the stance the user declares, the memory it keeps, manuals it writes, and a digest of the diary computed fresh every turn.",
   "stories": [

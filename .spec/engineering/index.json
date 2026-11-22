@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Engineering rules",
   "summary": "How Tally is built, where it is decided and has to hold.",
-  "status": "accepted",
   "order": 10,
   "description": "A React and TypeScript frontend in a Tauri shell, with SQLite run from Rust. The rules here hold across the whole code base.",
   "requirements": [

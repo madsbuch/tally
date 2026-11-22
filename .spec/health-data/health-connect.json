@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Health Connect",
   "summary": "Exercise sessions and day metrics read on-device from Android Health Connect.",
-  "status": "accepted",
   "order": 1,
   "requirements": [
     {

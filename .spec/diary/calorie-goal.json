@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Calorie target",
   "summary": "A base daily budget, with corrections to single days.",
-  "status": "accepted",
   "order": 2,
   "description": "Settings holds a base budget for every day. A single day can be corrected (\"I overate yesterday, take 200 off today\") so that room moves between days inside a week.",
   "stories": [

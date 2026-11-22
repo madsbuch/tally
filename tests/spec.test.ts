@@ -1,7 +1,7 @@
 // Checks the product spec in `.spec/` against the spec format
 // (https://github.com/madsbuch/better-github/blob/main/spec-llms.txt):
-// every item fits the schema, every reference resolves, versions and
-// deprecations carry their history, no id is used twice, and every
+// every item fits the schema, every reference resolves, versions carry
+// their history, no id is used twice, and every
 // `Spec: ID` citation in the code names a requirement the spec has.
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -12,7 +12,6 @@ import { parseJson } from "../src/lib/schemas";
 const ROOT = join(import.meta.dir, "..");
 const SPEC = join(ROOT, ".spec");
 
-const Status = z.enum(["draft", "accepted", "deprecated"]);
 const Level = z.enum(["must", "should", "may"]);
 const Id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/);
 const Day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -27,14 +26,12 @@ const Story = z.strictObject({
   want: z.string().min(1),
   soThat: z.string().min(1).optional(),
   requirements: z.array(z.string().min(1)).optional(),
-  status: Status.optional(),
   deprecation: Deprecation.optional(),
 });
 const Requirement = z.strictObject({
   id: Id,
   text: z.string().min(1),
   level: Level.optional(),
-  status: Status.optional(),
   version: z.number().int().min(1).optional(),
   history: z
     .array(
@@ -54,7 +51,6 @@ const Hex = z.string().regex(/^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/);
 const ValueBase = {
   id: Id,
   description: z.string().optional(),
-  status: Status.optional(),
   deprecation: Deprecation.optional(),
   history: z
     .array(
@@ -88,7 +84,6 @@ const Item = z.strictObject({
   $schema: z.string().optional(),
   title: z.string().min(1),
   summary: z.string().optional(),
-  status: Status.optional(),
   deprecation: Deprecation.optional(),
   order: z.number().optional(),
   description: z.string().optional(),
@@ -187,18 +182,13 @@ describe("spec", () => {
     expect(bad).toEqual([]);
   });
 
-  test("versions carry their history, deprecations their record", () => {
+  test("versions carry their history", () => {
     const bad: string[] = [];
     for (const [id, item] of items) {
-      const where = id || "(root)";
-      if ((item.status === "deprecated") !== (item.deprecation !== undefined)) bad.push(`${where} deprecation`);
-      for (const x of [...(item.stories ?? []), ...(item.requirements ?? []), ...(item.values ?? [])]) {
-        if ((x.status === "deprecated") !== (x.deprecation !== undefined)) bad.push(`${where} ${x.id} deprecation`);
-      }
       for (const r of item.requirements ?? []) {
         const versions = (r.history ?? []).map((h) => h.version);
         const expected = Array.from({ length: (r.version ?? 1) - 1 }, (_, i) => i + 1);
-        if (JSON.stringify(versions) !== JSON.stringify(expected)) bad.push(`${where} ${r.id} history`);
+        if (JSON.stringify(versions) !== JSON.stringify(expected)) bad.push(`${id || "(root)"} ${r.id} history`);
       }
     }
     expect(bad).toEqual([]);

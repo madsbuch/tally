@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Observations",
   "summary": "Logging what you notice about yourself, next to what you ate and did.",
-  "status": "accepted",
   "order": 4,
   "description": "Feelings, what the body did, urges, thoughts: the half of a day the numbers are usually kept for. With a time on them they can be compared with meals and sleep.",
   "stories": [

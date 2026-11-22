@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Tally",
   "summary": "A local-first health and nutrition tracker for one person, with an AI coach.",
-  "status": "accepted",
   "description": "Tally keeps a diary of what one person eats, how they train, fast and sleep, and what they notice about themselves, and a coach that reads it. Logging is meant to cost a photo, so the diary actually gets kept.",
   "stories": [
     {

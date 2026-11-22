@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Fasting",
   "summary": "A fasting timer built for multi-day fasts, on the Body tab.",
-  "status": "accepted",
   "order": 3,
   "stories": [
     {

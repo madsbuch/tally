@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Row ids",
   "summary": "Every row is keyed by a TypeID that every device agrees on.",
-  "status": "accepted",
   "order": 5,
   "requirements": [
     {

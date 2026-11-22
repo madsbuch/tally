@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Live data",
   "summary": "Screens show what is in the database now, whoever changed it.",
-  "status": "accepted",
   "order": 4,
   "requirements": [
     {

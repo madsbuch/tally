@@ -2,7 +2,6 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Photo captures",
   "summary": "A photo and an optional note become diary entries, read in the background by the diary agent.",
-  "status": "accepted",
   "order": 1,
   "description": "A capture is a picture plus an optional note such as \"ate this earlier today\". It is saved at once and an agent with tools decides what it shows and logs it, so the user never waits on the model.",
   "requirements": [
