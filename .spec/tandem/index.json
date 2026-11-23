@@ -1,0 +1,57 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Tandem",
+  "summary": "Peer-to-peer sync between the devices of one collection, over the local network.",
+  "shared": {
+    "id": "tandem",
+    "logo": "tandem/logo.png"
+  },
+  "description": "A collection is the data a set of devices share; each product that uses this part says what its collection is. The devices sync directly with each other on the local network, without a server.",
+  "stories": [
+    {
+      "id": "tandem.US-1",
+      "as": "someone who uses the app on more than one device",
+      "want": "the same data on each of them",
+      "soThat": "I can pick up wherever I left off",
+      "requirements": [
+        "#tandem.SYN-1",
+        "#tandem.SYN-2",
+        "#tandem.SYN-11",
+        "#tandem.SYN-12"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "tandem.SYN-1",
+      "text": "Two instances of the app on the same local network can sync their databases with each other."
+    },
+    {
+      "id": "tandem.SYN-4",
+      "text": "No data of the collection passes through a server during sync."
+    },
+    {
+      "id": "tandem.SYN-10",
+      "text": "Every table syncs unless it is explicitly local to the device.",
+      "related": [
+        "tandem/triggers"
+      ]
+    },
+    {
+      "id": "tandem.SYN-15",
+      "text": "Settings that belong to one device (sync bookmarks, caches) are never synced."
+    },
+    {
+      "id": "tandem.SYN-16",
+      "text": "A database restored from an older copy is detected at startup, or at its first sync if its marker was restored with it, and then takes a new device id and syncs from scratch."
+    },
+    {
+      "id": "tandem.SYN-17",
+      "text": "On Android, sync also runs while the app is closed."
+    },
+    {
+      "id": "tandem.SYN-19",
+      "text": "Development and release builds never sync with each other."
+    }
+  ]
+}

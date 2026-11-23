@@ -1,0 +1,31 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Sync triggers",
+  "summary": "Change tracking for sync lives in SQLite triggers kept in step with the schema.",
+  "order": 5,
+  "requirements": [
+    {
+      "id": "tandem.TRG-1",
+      "text": "Every synced table has insert, update and delete triggers that record its changes for sync."
+    },
+    {
+      "id": "tandem.TRG-2",
+      "text": "A migration that adds a column re-creates that table's triggers."
+    },
+    {
+      "id": "tandem.TRG-3",
+      "text": "A migration that rebuilds a table re-creates its triggers."
+    },
+    {
+      "id": "tandem.TRG-4",
+      "text": "Trigger SQL runs on SQLite 3.39, the version on Android 14."
+    },
+    {
+      "id": "tandem.TRG-5",
+      "text": "A test fails when a synced table lacks its triggers or a trigger misses a column."
+    }
+  ],
+  "related": [
+    "#tandem.SYN-10"
+  ]
+}

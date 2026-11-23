@@ -1,0 +1,33 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Discovery",
+  "summary": "How the devices of a collection find each other on the local network.",
+  "order": 1,
+  "requirements": [
+    {
+      "id": "tandem.SYN-5",
+      "text": "Devices find each other: each announces itself on the local network (mDNS, with its sync port and the collection's tag) and looks for the others, and is tried at every address it announced, IPv6 and IPv4, all at once; the UDP broadcast and each peer's last known address are tried too.",
+      "history": [
+        {
+          "version": 1,
+          "text": "Devices find each other by UDP broadcast and by probing each peer's last known address.",
+          "reason": "The author's computer and phone never reached each other this way, while Murmur, which finds its devices by mDNS and tries every address they announce, does on the same devices: Commonplace finds its devices as Murmur does.",
+          "date": "2026-11-23"
+        }
+      ],
+      "version": 2
+    },
+    {
+      "id": "tandem.SYN-6",
+      "text": "A discovery probe names the collection by a short tag derived from its id, never by the id itself."
+    },
+    {
+      "id": "tandem.SYN-25",
+      "text": "A device showing a pairing code announces, beside itself, a tag derived from the code (never the code), so the device that scans it finds it nearby at every address it has, as well as at the addresses the code holds.",
+      "related": [
+        "#tandem.SYN-5",
+        "#tandem.SYN-9"
+      ]
+    }
+  ]
+}
