@@ -7,8 +7,9 @@
 //! TCP port they sync on. Nothing here is trusted: discovery only says where
 //! to knock, and the encrypted handshake decides who's at the door.
 //!
-//! Plain broadcast rather than mDNS: a phone can send one without holding a
-//! multicast lock, and the answer comes back to it directly.
+//! This runs beside mDNS (mdns.rs): a broadcast needs no multicast lock on a
+//! phone, its answer comes straight back, and a network that drops one kind
+//! of search may still carry the other.
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
@@ -74,6 +75,7 @@ pub fn targets(last_addrs: &[String], port: u16) -> Vec<SocketAddr> {
     out
 }
 
+// Spec: tandem.SYN-5
 /// Asks who of the vault `tag` is around, listening for answers for `wait`.
 pub async fn probe(tag: &str, me: &str, targets: &[SocketAddr], wait: Duration) -> Vec<Found> {
     let Ok(socket) = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await else { return vec![] };

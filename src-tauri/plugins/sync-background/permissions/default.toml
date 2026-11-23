@@ -2,4 +2,4 @@
 
 [default]
 description = "Scheduling of the periodic background sync (called from Rust, not the frontend)"
-permissions = ["allow-schedule", "allow-cancel"]
+permissions = ["allow-schedule", "allow-cancel", "allow-hold-multicast-lock"]

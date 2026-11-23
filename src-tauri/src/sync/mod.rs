@@ -4,6 +4,8 @@
 //! - `wire`: the encrypted channel between two devices (Noise over TCP).
 //! - `session`: one sync between two devices, pairing included.
 //! - `discovery`: finding the vault's other devices on the local network.
+//! - `mdns`: the same over mDNS, and a pairing code's device nearby.
+//! - `reach`: dialling every address at once, and why a device can't be reached.
 //! - `service`: the app's side — Tauri commands, the background loop.
 //! - `snapshots`: the computer's daily copies of the database.
 //! - `instance`: noticing a database restored from an older copy.
@@ -13,6 +15,8 @@ pub mod background;
 pub mod discovery;
 pub mod engine;
 pub mod instance;
+pub mod mdns;
+pub mod reach;
 pub mod service;
 pub mod session;
 pub mod snapshots;

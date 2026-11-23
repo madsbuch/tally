@@ -398,9 +398,13 @@ type SyncState<'a> = tauri::State<'a, std::sync::Arc<sync::service::SyncService>
 #[tauri::command]
 async fn sync_start(app: tauri::AppHandle, svc: SyncState<'_>) -> Result<(), String> {
     let pool = db_pool(&app).await?;
+    use tauri_plugin_sync_background::SyncBackgroundExt;
+    // mDNS needs multicast, which Android only delivers under a lock.
+    if let Err(e) = app.sync_background().hold_multicast_lock() {
+        eprintln!("sync: couldn't take the multicast lock: {e}");
+    }
     svc.start(app.clone(), pool).await?;
     // Android also syncs with the app closed, every half hour on Wi-Fi.
-    use tauri_plugin_sync_background::SyncBackgroundExt;
     if let Ok(dir) = app.path().app_config_dir() {
         let db_path = dir.join("tally.db").to_string_lossy().into_owned();
         if let Err(e) = app
@@ -467,6 +471,25 @@ async fn sync_join(
     replace: bool,
 ) -> Result<sync::service::JoinResult, String> {
     svc.join(&app, &code, replace).await
+}
+
+/// Checks the connection to the vault's devices (the Sync page's check).
+#[tauri::command]
+async fn sync_check(svc: SyncState<'_>) -> Result<sync::service::ConnectionCheck, String> {
+    svc.check().await
+}
+
+/// Opens the setting that lets Tally onto the local network (macOS).
+#[tauri::command]
+fn sync_open_network_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(sync::reach::NETWORK_SETTINGS_URL)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -555,6 +578,8 @@ pub fn run() {
             sync_cancel_offer,
             sync_join,
             sync_now,
+            sync_check,
+            sync_open_network_settings,
             sync_remove_device,
             garmin::garmin_status,
             garmin::garmin_set_key,

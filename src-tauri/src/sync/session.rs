@@ -24,6 +24,7 @@
 //! which brings everything over.
 
 use super::engine::{self, ApplyStats, Batch, Digest};
+use super::reach::{self, Failures};
 use super::wire::{self, Channel, PURPOSE_PAIR, PURPOSE_SYNC};
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -33,7 +34,6 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::time::timeout;
 
 pub type Result<T> = std::result::Result<T, String>;
 
@@ -42,7 +42,6 @@ pub const PROTOCOL: u32 = 1;
 /// enough that one transaction never holds the database for long.
 const BATCH_ROWS: i64 = 500;
 const BATCH_BYTES: usize = 4 * 1024 * 1024;
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
 // Spec: tandem.SYN-9
 /// How long a QR code works.
 pub const PAIRING_TTL: Duration = Duration::from_secs(10 * 60);
@@ -555,21 +554,65 @@ fn try_busy(device: &str) -> Option<Busy> {
 /// Syncs with the device at `addr`. `Ok(None)` when a sync is already running
 /// here (it'll come round again).
 pub async fn sync_with(pool: &SqlitePool, addr: SocketAddr) -> Result<Option<Outcome>> {
-    let me = identity(pool).await?;
+    sync_with_any(pool, &[addr]).await.map_err(|e| e.to_string())
+}
+
+/// Why a sync or a join didn't happen.
+#[derive(Debug)]
+pub enum Missed {
+    /// No address answered: how each failed.
+    Unreached(Failures),
+    /// Something answered, and then it failed.
+    Failed(String),
+}
+
+impl std::fmt::Display for Missed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Missed::Unreached(fails) if fails.is_empty() => write!(f, "no address to try"),
+            Missed::Unreached(fails) => {
+                let each: Vec<String> = fails.iter().map(|(a, e)| format!("{a}: {e}")).collect();
+                write!(f, "{}", each.join("; "))
+            }
+            Missed::Failed(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+// Spec: tandem.SYN-5
+/// Syncs with a device that may be at any of `addrs`: all are tried at once,
+/// and the first to answer is used. Whoever answered at an announced address
+/// has to be one of the vault's devices; if it isn't, the others are tried.
+/// `Ok(None)`: one of the two was busy.
+pub async fn sync_with_any(pool: &SqlitePool, addrs: &[SocketAddr]) -> std::result::Result<Option<Outcome>, Missed> {
+    let me = identity(pool).await.map_err(Missed::Failed)?;
     let Some(_guard) = try_busy(&me.device_id) else {
         return Ok(None);
     };
-    let stream = timeout(CONNECT_TIMEOUT, TcpStream::connect(addr))
-        .await
-        .map_err(|_| format!("{addr}: no answer"))?
-        .map_err(|e| format!("{addr}: {e}"))?;
+    let mut left: Vec<SocketAddr> = addrs.to_vec();
+    let mut failed: Option<String> = None;
+    while !left.is_empty() {
+        let (stream, addr) = match reach::connect_first(&left).await {
+            Ok(found) => found,
+            Err(fails) => return Err(failed.map_or(Missed::Unreached(fails), Missed::Failed)),
+        };
+        left.retain(|a| *a != addr);
+        match sync_over(pool, &me, stream, addr).await {
+            Ok(o) => return Ok(o),
+            Err(e) => failed = Some(e),
+        }
+    }
+    Err(failed.map_or(Missed::Unreached(vec![]), Missed::Failed))
+}
+
+async fn sync_over(pool: &SqlitePool, me: &Identity, stream: TcpStream, addr: SocketAddr) -> Result<Option<Outcome>> {
     let mut ch = Channel::initiate(stream, PURPOSE_SYNC, &me.secret, None).await?;
     // Whoever answered at a discovered address has to be one of the vault's
     // devices before this one sends or reads anything more.
     if !key_known(pool, &ch.remote_key).await? {
         return Err(format!("{addr}: answered by a device outside the vault"));
     }
-    let hello = hello(pool, &me).await?;
+    let hello = hello(pool, me).await?;
     match client_session(&mut ch, pool, &hello, Some(addr), None).await {
         // The other side is mid-sync with someone (or just finishing with
         // us): not a failure, just another time.
@@ -669,16 +712,31 @@ pub async fn offer(pool: &SqlitePool, slot: &PairingSlot, addrs: Vec<String>) ->
 /// vault's (the caller saves a copy first — see `service::backup_before_join`).
 /// Ends with everything the host has.
 pub async fn join(pool: &SqlitePool, offer: &PairingOffer, replace: bool) -> Result<Outcome> {
-    let held = engine::data_tables(pool).await?;
+    join_any(pool, offer, &[], replace).await.map_err(|e| match e {
+        Missed::Unreached(_) => format!("couldn't reach {}: {e}", offer.host_name),
+        Missed::Failed(e) => e,
+    })
+}
+
+// Spec: tandem.SYN-25
+/// `join`, also trying `nearby`: where the device showing the code answers
+/// to the code's tag on the local network. Every address is tried at once.
+pub async fn join_any(
+    pool: &SqlitePool,
+    offer: &PairingOffer,
+    nearby: &[SocketAddr],
+    replace: bool,
+) -> std::result::Result<Outcome, Missed> {
+    let held = engine::data_tables(pool).await.map_err(Missed::Failed)?;
     if !held.is_empty() && !replace {
-        return Err(format!(
+        return Err(Missed::Failed(format!(
             "this device already holds data ({}), so it can't join — only an empty device can",
             held.join(", ")
-        ));
+        )));
     }
-    let me = identity(pool).await?;
+    let me = identity(pool).await.map_err(Missed::Failed)?;
     let Some(_guard) = try_busy(&me.device_id) else {
-        return Err("a sync is running; try again in a moment".into());
+        return Err(Missed::Failed("a sync is running; try again in a moment".into()));
     };
     // A fresh key for a fresh member: a device once removed (its key revoked)
     // can be paired again, and a key never outlives the device's place. Kept
@@ -686,41 +744,46 @@ pub async fn join(pool: &SqlitePool, offer: &PairingOffer, replace: bool) -> Res
     // nothing here.
     let (secret, public) = wire::generate_keypair();
     let new_id = super::new_uuid();
-    let mut last_error = String::from("the code holds no address");
-    for addr in &offer.addrs {
-        let Ok(addr) = addr.parse::<SocketAddr>() else { continue };
-        let stream = match timeout(CONNECT_TIMEOUT, TcpStream::connect(addr)).await {
-            Ok(Ok(s)) => s,
-            Ok(Err(e)) => {
-                last_error = format!("{addr}: {e}");
-                continue;
-            }
-            Err(_) => {
-                last_error = format!("{addr}: no answer");
-                continue;
-            }
+    let coded: Vec<SocketAddr> = offer.addrs.iter().filter_map(|a| a.parse().ok()).collect();
+    let mut left = super::mdns::merge(&[&coded, nearby]);
+    let mut failed: Option<String> = None;
+    while !left.is_empty() {
+        let (stream, addr) = match reach::connect_first(&left).await {
+            Ok(found) => found,
+            Err(fails) => return Err(failed.map_or(Missed::Unreached(fails), Missed::Failed)),
         };
+        left.retain(|a| *a != addr);
+        // Anyone can answer to a tag on the network: a device that can't
+        // finish the handshake, or isn't the one that showed the code, is
+        // passed over for the next address.
         let mut ch = match Channel::initiate(stream, PURPOSE_PAIR, &secret, Some(&offer.token)).await {
             Ok(ch) => ch,
-            Err(_) => return Err("the code has expired or was already used; show a new one".into()),
+            Err(_) => {
+                failed = Some("the code has expired or was already used; show a new one".into());
+                continue;
+            }
         };
         if ch.remote_key != offer.host_key {
-            return Err("the device that answered isn't the one that showed the code".into());
+            failed = Some("the device that answered isn't the one that showed the code".into());
+            continue;
         }
         // The host is who the code said. Ask to be let in; only once it has,
         // empty out — a refusal leaves this device exactly as it was.
-        ch.send(&Msg::Join { device_id: new_id.clone(), name: me.name.clone(), platform: me.platform.clone() }).await?;
-        match expect(&mut ch).await? {
-            Msg::Welcome { vault_id } if vault_id == offer.vault_id => {}
-            _ => return Err("the host didn't let this device in".into()),
-        }
-        engine::reset_for_join(pool, &offer.vault_id, &new_id, Some((&secret, &public)), replace).await?;
-        let me = identity(pool).await?;
-        let hello = hello(pool, &me).await?;
-        let host_key = offer.host_key.clone();
-        return client_session(&mut ch, pool, &hello, Some(addr), Some(&host_key)).await;
+        let joined = async {
+            ch.send(&Msg::Join { device_id: new_id.clone(), name: me.name.clone(), platform: me.platform.clone() }).await?;
+            match expect(&mut ch).await? {
+                Msg::Welcome { vault_id } if vault_id == offer.vault_id => {}
+                _ => return Err("the host didn't let this device in".to_string()),
+            }
+            engine::reset_for_join(pool, &offer.vault_id, &new_id, Some((&secret, &public)), replace).await?;
+            let me = identity(pool).await?;
+            let hello = hello(pool, &me).await?;
+            let host_key = offer.host_key.clone();
+            client_session(&mut ch, pool, &hello, Some(addr), Some(&host_key)).await
+        };
+        return joined.await.map_err(Missed::Failed);
     }
-    Err(format!("couldn't reach {}: {last_error}", offer.host_name))
+    Err(failed.map_or(Missed::Unreached(vec![]), Missed::Failed))
 }
 
 // ---------------------------------------------------------------------------
@@ -823,23 +886,45 @@ where
         Err(_) => TcpListener::bind((bind_ip, 0)).await.map_err(|e| e.to_string())?,
     };
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    // Listening on every IPv4 interface means every IPv6 one too, on the
+    // same port: announced IPv6 addresses are dialled as well.
+    let v6 = if bind_ip == "0.0.0.0" { listen_v6_only(port).ok() } else { None };
     let on_outcome = Arc::new(on_outcome);
     let permits = Arc::new(tokio::sync::Semaphore::new(MAX_CONNECTIONS));
-    let handle = tokio::spawn(async move {
-        loop {
-            let Ok((stream, _)) = listener.accept().await else { continue };
-            let Ok(permit) = permits.clone().try_acquire_owned() else {
-                drop(stream);
-                continue;
-            };
-            let (pool, slot, on_outcome) = (pool.clone(), slot.clone(), on_outcome.clone());
-            tokio::spawn(async move {
-                on_outcome(serve(&pool, stream, &slot).await);
-                drop(permit);
-            });
+    let accept = move |listener: TcpListener| {
+        let (pool, slot, on_outcome, permits) = (pool.clone(), slot.clone(), on_outcome.clone(), permits.clone());
+        async move {
+            loop {
+                let Ok((stream, _)) = listener.accept().await else { continue };
+                let Ok(permit) = permits.clone().try_acquire_owned() else {
+                    drop(stream);
+                    continue;
+                };
+                let (pool, slot, on_outcome) = (pool.clone(), slot.clone(), on_outcome.clone());
+                tokio::spawn(async move {
+                    on_outcome(serve(&pool, stream, &slot).await);
+                    drop(permit);
+                });
+            }
         }
-    });
+    };
+    if let Some(v6) = v6 {
+        tokio::spawn(accept(v6));
+    }
+    let handle = tokio::spawn(accept(listener));
     Ok((port, handle))
+}
+
+/// An IPv6-only listener on `port`, beside the IPv4 one on the same port.
+fn listen_v6_only(port: u16) -> std::io::Result<TcpListener> {
+    use socket2::{Domain, Socket, Type};
+    let socket = Socket::new(Domain::IPV6, Type::STREAM, None)?;
+    socket.set_only_v6(true)?;
+    socket.set_reuse_address(true)?;
+    socket.bind(&std::net::SocketAddr::from((std::net::Ipv6Addr::UNSPECIFIED, port)).into())?;
+    socket.listen(128)?;
+    socket.set_nonblocking(true)?;
+    TcpListener::from_std(socket.into())
 }
 
 // Spec: tandem.SYN-4
@@ -864,6 +949,17 @@ pub fn local_addrs(port: u16) -> Vec<String> {
 /// same network ignore each other without learning the vault's id.
 pub fn vault_tag(vault_id: &str) -> String {
     hex::encode(&Sha256::digest(format!("tally-vault:{vault_id}").as_bytes())[..8])
+}
+
+// Spec: tandem.SYN-25
+/// A short tag for a pairing code, announced while the code is on screen:
+/// the device that scans it finds the one showing it, and nobody learns the
+/// code from it.
+pub fn pairing_tag(token: &[u8; 32]) -> String {
+    let mut h = Sha256::new();
+    h.update(b"tally-pair-tag:");
+    h.update(token);
+    hex::encode(&h.finalize()[..8])
 }
 
 #[cfg(test)]

@@ -535,3 +535,81 @@ fn a_hello_from_an_older_version_never_skips() {
     let read: Hello = rmp_serde::from_slice(&bytes).unwrap();
     assert_eq!(read, old);
 }
+
+/// An address nothing listens on: refuses at once.
+fn dead_addr() -> SocketAddr {
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    l.local_addr().unwrap()
+}
+
+// Spec: tandem.SYN-25
+#[tokio::test]
+async fn a_joiner_finds_the_code_s_device_nearby_when_the_code_s_addresses_fail() {
+    let h = host().await;
+    let mut o = offer_from(&h).await;
+    // The code holds only an address that no longer answers (another
+    // network's, say); the device showing it answers nearby to its tag.
+    o.addrs = vec![dead_addr().to_string()];
+    let joiner = device().await;
+    join_any(&joiner.pool, &o, &[h.addr], false).await.unwrap();
+    assert_eq!(identity(&joiner.pool).await.unwrap().vault_id, identity(&h.device.pool).await.unwrap().vault_id);
+}
+
+// Spec: tandem.SYN-25
+#[test]
+fn a_pairing_tag_is_short_stable_and_reveals_nothing_of_the_code() {
+    let token = [7u8; 32];
+    assert_eq!(pairing_tag(&token), pairing_tag(&token));
+    assert_eq!(pairing_tag(&token).len(), 16);
+    assert_ne!(pairing_tag(&token), pairing_tag(&[8u8; 32]));
+    assert!(!pairing_tag(&token).contains(&hex::encode(token)[..8]));
+}
+
+// Spec: tandem.SYN-24
+#[tokio::test]
+async fn a_join_that_reaches_nothing_says_how_each_address_failed() {
+    let h = host().await;
+    let mut o = offer_from(&h).await;
+    o.addrs = vec![dead_addr().to_string()];
+    match join_any(&device().await.pool, &o, &[], false).await {
+        Err(Missed::Unreached(fails)) => {
+            assert_eq!(fails.len(), 1);
+            assert_eq!(fails[0].1, reach::Failure::Io(std::io::ErrorKind::ConnectionRefused));
+        }
+        other => panic!("expected unreached, got {other:?}"),
+    }
+}
+
+// Spec: tandem.SYN-5
+#[tokio::test]
+async fn a_sync_tries_every_address_at_once_and_uses_the_one_that_answers() {
+    let h = host().await;
+    let joiner = device().await;
+    join(&joiner.pool, &offer_from(&h).await, false).await.unwrap();
+    exec(&h.device.pool, "INSERT INTO food_entries (id, eaten_at, title, nutrients) VALUES ('m-new', 'now', 'new', '{}')").await;
+    let mut synced = None;
+    for _ in 0..100 {
+        if let Some(o) = sync_with_any(&joiner.pool, &[dead_addr(), h.addr]).await.unwrap() {
+            synced = Some(o);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(synced.is_some(), "host stayed busy");
+    assert_eq!(count(&joiner.pool, "SELECT count(*) FROM food_entries WHERE id = 'm-new'").await, 1);
+}
+
+// Spec: tandem.SYN-5
+#[tokio::test]
+async fn listening_on_every_interface_answers_on_ipv6_too() {
+    let device = device().await;
+    let slot: PairingSlot = Arc::new(Mutex::new(None));
+    let (port, _) = listen(device.pool.clone(), slot, "0.0.0.0", |_| {}).await.unwrap();
+    let v6: SocketAddr = format!("[::1]:{port}").parse().unwrap();
+    let v4: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+    assert!(TcpStream::connect(v4).await.is_ok());
+    // Not every machine has IPv6 loopback; where it has, it answers.
+    if std::net::TcpListener::bind("[::1]:0").is_ok() {
+        assert!(TcpStream::connect(v6).await.is_ok());
+    }
+}

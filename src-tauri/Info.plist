@@ -6,6 +6,11 @@
 	     macOS silently blocks it (Local Network privacy). -->
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Tally syncs your diary with your phone over your home network.</string>
+	<!-- Finding the phone by mDNS (Bonjour). -->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_tally-sync._tcp</string>
+	</array>
 	<!-- Pairing: scanning the QR code your phone shows. -->
 	<key>NSCameraUsageDescription</key>
 	<string>Tally uses the camera to scan the pairing code shown by your phone.</string>

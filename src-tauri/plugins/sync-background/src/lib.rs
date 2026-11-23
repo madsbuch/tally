@@ -3,6 +3,9 @@
 //! `SyncNative.syncNow`) while the app is closed. Elsewhere it does nothing —
 //! the computer syncs while the app runs.
 //!
+//! It also holds the Wi-Fi multicast lock while the app runs, without which
+//! Android drops the mDNS announcements sync finds devices by.
+//!
 //! Like the coach plugin, this only schedules: Tauri's bridge runs Rust →
 //! Kotlin, and the work itself goes back into Rust through JNI.
 
@@ -45,6 +48,12 @@ mod android {
             self.0.run_mobile_plugin::<serde_json::Value>("cancel", ())?;
             Ok(())
         }
+        /// Takes a Wi-Fi multicast lock for as long as the app runs, so
+        /// mDNS announcements reach it.
+        pub fn hold_multicast_lock(&self) -> Result<()> {
+            self.0.run_mobile_plugin::<serde_json::Value>("holdMulticastLock", ())?;
+            Ok(())
+        }
     }
 }
 
@@ -66,6 +75,9 @@ mod noop {
             Ok(())
         }
         pub fn cancel(&self) -> Result<()> {
+            Ok(())
+        }
+        pub fn hold_multicast_lock(&self) -> Result<()> {
             Ok(())
         }
     }

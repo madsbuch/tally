@@ -8,12 +8,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
   parseCommandString,
+  parseConnectionCheck,
   parseJoinResult,
   parseSyncStatus,
 } from "./schemas";
-import type { JoinResult, SyncDevice, SyncOutcome, SyncStatus } from "./schemas";
+import type { ConnectionCheck, JoinResult, SyncDevice, SyncOutcome, SyncProblem, SyncStatus } from "./schemas";
 
-export type { JoinResult, SyncDevice, SyncOutcome, SyncStatus };
+export type { ConnectionCheck, JoinResult, SyncDevice, SyncOutcome, SyncProblem, SyncStatus };
 
 /** A backup older than this is worth a reminder. */
 export const STALE_BACKUP_MS = 3 * 24 * 3600_000;
@@ -76,6 +77,16 @@ export function describeHeld(held: { table: string; rows: number }[]): string {
   if (other) named.push(`${other} other ${other === 1 ? "record" : "records"}`);
   if (named.length <= 1) return named[0] ?? "nothing";
   return `${named.slice(0, -1).join(", ")} and ${named[named.length - 1]}`;
+}
+
+/** Checks the connection to the vault's devices: what's in the way, and what to do. */
+export async function checkConnection(): Promise<ConnectionCheck> {
+  return parseConnectionCheck(await invoke("sync_check"));
+}
+
+/** Opens the setting that lets Tally onto the local network (macOS). */
+export async function openNetworkSettings(): Promise<void> {
+  await invoke("sync_open_network_settings");
 }
 
 export async function syncNow(): Promise<void> {

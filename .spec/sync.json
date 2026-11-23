@@ -46,7 +46,14 @@
       ],
       "related": [
         "#tandem.SYN-5"
-      ]
+      ],
+      "deprecation": {
+        "reason": "Discovery now follows the shared part Tandem: mDNS on every address, IPv6 and IPv4 at once, beside the broadcast and last-known addresses.",
+        "replacedBy": [
+          "#tandem.SYN-5"
+        ],
+        "date": "2026-11-23"
+      }
     },
     {
       "id": "SYN-14",

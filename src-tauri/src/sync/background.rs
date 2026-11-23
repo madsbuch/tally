@@ -30,7 +30,7 @@ pub async fn run_once(db_path: &str, budget: Duration) -> String {
     } else if let Err(e) = super::instance::check(&pool, std::path::Path::new(db_path)).await {
         format!("couldn't check the database: {e}")
     } else {
-        match tokio::time::timeout(budget, super::service::sync_round(&pool)).await {
+        match tokio::time::timeout(budget, super::service::sync_round(&pool, None)).await {
             Err(_) => "ran out of time; carries on next run".to_string(),
             Ok(round) => {
                 let synced: Vec<String> = round

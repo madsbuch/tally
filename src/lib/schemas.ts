@@ -1519,6 +1519,15 @@ export const SyncDeviceSchema = z.object({
 });
 export type SyncDevice = z.infer<typeof SyncDeviceSchema>;
 
+/** Why a device couldn't be reached, in plain words (sync/reach.rs). */
+export const SyncProblemSchema = z.object({
+  why: z.enum(["notRunning", "blocked", "otherNetwork", "noAnswer", "noAddress", "offline", "notListening"]),
+  message: z.string(),
+  /** There's a setting that fixes it: `openNetworkSettings()`. */
+  hasSetting: z.boolean(),
+});
+export type SyncProblem = z.infer<typeof SyncProblemSchema>;
+
 export const SyncStatusSchema = z.object({
   deviceId: z.string(),
   name: z.string(),
@@ -1532,6 +1541,10 @@ export const SyncStatusSchema = z.object({
   syncing: z.boolean(),
   lastError: z.string().nullable(),
   lastRoundAt: z.string().nullable(),
+  /** The vault's devices the last round couldn't reach, and why. */
+  unreached: z.array(z.object({ deviceId: z.string(), problem: SyncProblemSchema })),
+  /** Why the last join couldn't reach the device that showed the code. */
+  joinProblem: SyncProblemSchema.nullable(),
 });
 export type SyncStatus = z.infer<typeof SyncStatusSchema>;
 
@@ -1562,6 +1575,34 @@ export type JoinResult = z.infer<typeof JoinResultSchema>;
 
 export function parseJoinResult(raw: unknown): JoinResult {
   return JoinResultSchema.parse(raw);
+}
+
+const ConnectionCheckSchema = z.object({
+  /** This device's addresses on the local network, with their interface. */
+  addresses: z.array(z.string()),
+  listening: z.boolean(),
+  port: z.number(),
+  inVault: z.boolean(),
+  /** The vault's devices that answered the search, and how. */
+  answered: z.array(z.object({ deviceId: z.string(), name: z.string(), via: z.array(z.string()) })),
+  /** Each device there's an address for: reached, or why not. */
+  devices: z.array(
+    z.object({
+      deviceId: z.string().nullable(),
+      name: z.string(),
+      joinedCode: z.boolean(),
+      addrs: z.array(z.string()),
+      reachedAt: z.string().nullable(),
+      problem: SyncProblemSchema.nullable(),
+    }),
+  ),
+  /** What stands in the way, each with what to do. */
+  problems: z.array(SyncProblemSchema),
+});
+export type ConnectionCheck = z.infer<typeof ConnectionCheckSchema>;
+
+export function parseConnectionCheck(raw: unknown): ConnectionCheck {
+  return ConnectionCheckSchema.parse(raw);
 }
 
 // ---------------------------------------------------------------------------

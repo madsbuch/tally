@@ -7,17 +7,19 @@ import {
   backupLine,
   backupState,
   cancelPairing,
+  checkConnection,
   createPairingCode,
   getSyncStatus,
   isAndroid,
   joinVault,
   onSyncStatus,
+  openNetworkSettings,
   describeHeld,
   removeDevice,
   setDeviceName,
   syncNow,
 } from "../lib/sync";
-import type { SyncDevice, SyncStatus } from "../lib/sync";
+import type { ConnectionCheck, SyncDevice, SyncProblem, SyncStatus } from "../lib/sync";
 import InfoButton from "../components/InfoButton";
 import { confirmAction } from "../lib/confirm";
 
@@ -90,7 +92,25 @@ function WebcamScanner({ onCode, onError }: { onCode: (c: string) => void; onErr
   );
 }
 
-function DeviceRow({ d, onRemove }: { d: SyncDevice; onRemove: (d: SyncDevice) => void }) {
+// Spec: tandem.SYN-24
+/** A reason in plain words, with the button to the setting that fixes it. */
+function ProblemLine({ p }: { p: SyncProblem }) {
+  return (
+    <p className="small" style={{ margin: "4px 0 0" }}>
+      {p.message}
+      {p.hasSetting && (
+        <>
+          {" "}
+          <button className="btn btn-ghost btn-sm" onClick={() => void openNetworkSettings().catch(() => {})}>
+            Open Local Network settings
+          </button>
+        </>
+      )}
+    </p>
+  );
+}
+
+function DeviceRow({ d, problem, onRemove }: { d: SyncDevice; problem: SyncProblem | undefined; onRemove: (d: SyncDevice) => void }) {
   return (
     <div className="list-row" style={{ marginBottom: 0 }}>
       <div className="row-main">
@@ -102,10 +122,62 @@ function DeviceRow({ d, onRemove }: { d: SyncDevice; onRemove: (d: SyncDevice) =
             ? `Synced ${ago(d.lastSyncAt)}${d.complete ? " · identical" : " · not identical yet"}`
             : "Not synced yet"}
         </div>
+        {problem && <ProblemLine p={problem} />}
       </div>
       <button className="btn btn-ghost btn-sm" onClick={() => onRemove(d)}>
         Remove
       </button>
+    </div>
+  );
+}
+
+// Spec: tandem.SYN-23
+/** Settings → Sync's connection check: what it found, and what's in the way. */
+function CheckReport({ c }: { c: ConnectionCheck }) {
+  return (
+    <div style={{ display: "grid", gap: 10 }}>
+      <div>
+        <div className="row-title">This device</div>
+        <p className="small muted" style={{ margin: "2px 0 0" }}>
+          {c.addresses.length > 0 ? `On the network at ${c.addresses.join(", ")}.` : "Not on a local network."}{" "}
+          {c.listening ? `Sync listens on port ${c.port}.` : "Sync isn't listening."}
+        </p>
+      </div>
+      {c.inVault && (
+        <div>
+          <div className="row-title">Answered the search</div>
+          <p className="small muted" style={{ margin: "2px 0 0" }}>
+            {c.answered.length > 0
+              ? c.answered.map((a) => `${a.name} (${a.via.join(", ")})`).join(", ")
+              : "None of the vault's devices answered."}
+          </p>
+        </div>
+      )}
+      {c.devices.map((d) => (
+        <div key={`${d.deviceId ?? "code"}-${d.name}`}>
+          <div className="row-title">
+            {d.name}
+            {d.joinedCode && <span className="faint small"> · the code last joined</span>}
+          </div>
+          {d.reachedAt ? (
+            <p className="small muted" style={{ margin: "2px 0 0" }}>
+              Reached at {d.reachedAt}.
+            </p>
+          ) : (
+            d.problem && <ProblemLine p={d.problem} />
+          )}
+        </div>
+      ))}
+      <div>
+        <div className="row-title">What's in the way</div>
+        {c.problems.length > 0 ? (
+          c.problems.map((p) => <ProblemLine key={p.message} p={p} />)
+        ) : (
+          <p className="small muted" style={{ margin: "2px 0 0" }}>
+            {c.devices.length > 0 ? "Nothing: every device can be reached." : "Nothing on this device. Pair another to sync with."}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -123,6 +195,17 @@ export default function SyncPage() {
   const [joined, setJoined] = useState<string | null>(null);
   /** The person agreed to replace what this device holds (a copy is saved first). */
   const [replace, setReplace] = useState(false);
+  const [check, setCheck] = useState<ConnectionCheck | "checking" | null>(null);
+
+  async function runCheck() {
+    setCheck("checking");
+    try {
+      setCheck(await checkConnection());
+    } catch (e) {
+      setCheck(null);
+      setError(errMsg(e));
+    }
+  }
 
   const refresh = useCallback(async () => {
     try {
@@ -279,6 +362,7 @@ export default function SyncPage() {
           <p className="small" style={{ margin: 0 }}>
             {error}
           </p>
+          {status?.joinProblem?.hasSetting && <ProblemLine p={status.joinProblem} />}
         </div>
       )}
 
@@ -325,7 +409,12 @@ export default function SyncPage() {
               <div className="section-title">Devices in the vault</div>
               <div className="card" style={{ display: "grid", gap: 8 }}>
                 {others.map((d) => (
-                  <DeviceRow key={d.id} d={d} onRemove={(x) => void remove(x)} />
+                  <DeviceRow
+                    key={d.id}
+                    d={d}
+                    problem={status.unreached.find((u) => u.deviceId === d.id)?.problem}
+                    onRemove={(x) => void remove(x)}
+                  />
                 ))}
               </div>
             </>
@@ -441,6 +530,34 @@ export default function SyncPage() {
                     Join
                   </button>
                 </div>
+              </>
+            )}
+          </div>
+
+          <div className="section-title">Connection</div>
+          <div className="card">
+            {check === null ? (
+              <>
+                <p className="muted small" style={{ margin: "0 0 10px" }}>
+                  When devices don't sync, this finds out why: whether this
+                  device is on the network, which devices answer, and what's
+                  in the way.
+                </p>
+                <button className="btn btn-sm" onClick={() => void runCheck()}>
+                  Check the connection
+                </button>
+              </>
+            ) : check === "checking" ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div className="spinner" />
+                <span className="small muted">Checking…</span>
+              </div>
+            ) : (
+              <>
+                <CheckReport c={check} />
+                <button className="btn btn-ghost btn-sm" style={{ marginTop: 10 }} onClick={() => void runCheck()}>
+                  Check again
+                </button>
               </>
             )}
           </div>
