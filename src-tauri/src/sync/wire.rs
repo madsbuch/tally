@@ -25,6 +25,7 @@ pub type Result<T> = std::result::Result<T, String>;
 pub const PURPOSE_SYNC: u8 = b'S';
 pub const PURPOSE_PAIR: u8 = b'P';
 
+// Spec: tandem.SYN-7
 const SYNC_PARAMS: &str = "Noise_XX_25519_ChaChaPoly_BLAKE2s";
 const PAIR_PARAMS: &str = "Noise_XXpsk3_25519_ChaChaPoly_BLAKE2s";
 /// Plaintext per Noise message: 65535 minus the 16-byte tag, rounded down.

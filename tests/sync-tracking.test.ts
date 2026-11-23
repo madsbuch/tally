@@ -43,6 +43,7 @@ const meal = {
 };
 
 describe("sync tracking", () => {
+  // Spec: tandem.TRG-1, tandem.TRG-3, tandem.TRG-5
   test("every table is either tracked by all three triggers or declared local", () => {
     const tables = rowsOf(NameRow, sqlite.query("SELECT name FROM sqlite_master WHERE type = 'table'").all()).map((t) => t.name);
     const triggers = new Set(rowsOf(NameRow, sqlite.query("SELECT name FROM sqlite_master WHERE type = 'trigger'").all()).map((t) => t.name));
@@ -61,6 +62,7 @@ describe("sync tracking", () => {
     expect(tables.length - LOCAL_TABLES.filter((t) => tables.includes(t)).length).toBeGreaterThan(30);
   });
 
+  // Spec: tandem.TRG-2, tandem.TRG-5
   test("every update trigger watches every column of its table", () => {
     // A column added later (ALTER TABLE … ADD) must be added to the trigger's
     // list too — `bun scripts/sync-triggers.ts --retrigger <table>` — or
@@ -98,6 +100,7 @@ describe("sync tracking", () => {
     expect(v3.hlc > v2.hlc).toBe(true);
   });
 
+  // Spec: tandem.SYN-15
   test("upserts are recorded; device-local settings are not", async () => {
     await setSetting("calorie_target_kcal", "2000");
     const first = must(versionOf(sqlite, "settings", "calorie_target_kcal"), "a sync version");

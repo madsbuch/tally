@@ -80,6 +80,9 @@
           "reason": "A failed capture synced from another device can still be retried by hand here.",
           "date": "2026-11-20"
         }
+      ],
+      "related": [
+        "#tandem.SYN-1"
       ]
     },
     {

@@ -43,6 +43,7 @@ pub const PROTOCOL: u32 = 1;
 const BATCH_ROWS: i64 = 500;
 const BATCH_BYTES: usize = 4 * 1024 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
+// Spec: tandem.SYN-9
 /// How long a QR code works.
 pub const PAIRING_TTL: Duration = Duration::from_secs(10 * 60);
 /// The TCP port tried first; any free one if it's taken.
@@ -81,6 +82,7 @@ pub fn build_kind() -> &'static str {
     }
 }
 
+// Spec: tandem.SYN-19
 /// Whether two builds may sync: a development build never touches the real
 /// app's data, whatever database it was given — unfinished code's mistakes
 /// would otherwise reach every device.
@@ -231,6 +233,7 @@ fn older_version(older: &str, newer: &str) -> String {
     format!("{older} has an older version of Tally than {newer}: update {older} and they'll sync again")
 }
 
+// Spec: tandem.SYN-8
 /// Whether `theirs` may sync with this device: the same vault, the same
 /// schema, a key the vault lists and hasn't revoked — or, while joining (the
 /// device list is still empty here), the key the QR code named.
@@ -839,6 +842,7 @@ where
     Ok((port, handle))
 }
 
+// Spec: tandem.SYN-4
 /// This device's addresses on the local network, for the QR code.
 pub fn local_addrs(port: u16) -> Vec<String> {
     let mut out: Vec<String> = if_addrs::get_if_addrs()
@@ -855,6 +859,7 @@ pub fn local_addrs(port: u16) -> Vec<String> {
     out
 }
 
+// Spec: tandem.SYN-6
 /// A short tag for the vault, for discovery: devices of other vaults on the
 /// same network ignore each other without learning the vault's id.
 pub fn vault_tag(vault_id: &str) -> String {

@@ -6,6 +6,7 @@
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::time::Duration;
 
+// Spec: tandem.SYN-17
 /// One round against the database at `db_path`, given at most `budget`.
 /// Returns a line for the log.
 pub async fn run_once(db_path: &str, budget: Duration) -> String {
@@ -79,6 +80,7 @@ mod tests {
     use crate::sync::session;
     use crate::sync::tests::{device, exec};
 
+    // Spec: tandem.SYN-17
     #[tokio::test]
     async fn a_background_run_syncs_with_a_device_that_answers() {
         // The "computer": a vault, listening, answering discovery on a test port.

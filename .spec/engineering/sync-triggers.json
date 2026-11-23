@@ -43,7 +43,11 @@
       ]
     }
   ],
-  "related": [
-    "#SYN-4"
-  ]
+  "deprecation": {
+    "reason": "Stated by the shared part Tandem, which Tally now uses for sync.",
+    "replacedBy": [
+      "tandem/triggers"
+    ],
+    "date": "2026-11-23"
+  }
 }

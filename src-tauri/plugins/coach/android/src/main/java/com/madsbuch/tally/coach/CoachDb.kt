@@ -227,6 +227,7 @@ internal object CoachDb {
 
     // -- settings -------------------------------------------------------------
 
+    // Spec: tandem.SYN-15
     /**
      * Keys that belong to this device and live in `device_settings` rather
      * than the synced `settings`. Mirrors DEVICE_SETTING_KEYS in

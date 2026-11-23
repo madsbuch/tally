@@ -1,8 +1,10 @@
 // Checks the product spec in `.spec/` against the spec format
 // (https://github.com/madsbuch/better-github/blob/main/spec-llms.txt):
 // every item fits the schema, every reference resolves, versions carry
-// their history, no id is used twice, and every
-// `Spec: ID` citation in the code names a requirement the spec has.
+// their history, no id is used twice, every shared part is an unchanged
+// copy whose ids carry its permanent id, and every `Spec: ID` citation in
+// the code names a requirement the spec has that is neither deprecated nor
+// waived.
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -15,6 +17,7 @@ const SPEC = join(ROOT, ".spec");
 const Level = z.enum(["must", "should", "may"]);
 const Id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/);
 const Day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const Related = z.array(z.string().min(1)).optional();
 const Deprecation = z.strictObject({
   reason: z.string().min(1),
   replacedBy: z.array(z.string().min(1)).optional(),
@@ -27,6 +30,7 @@ const Story = z.strictObject({
   soThat: z.string().min(1).optional(),
   requirements: z.array(z.string().min(1)).optional(),
   deprecation: Deprecation.optional(),
+  related: Related,
 });
 const Requirement = z.strictObject({
   id: Id,
@@ -45,6 +49,7 @@ const Requirement = z.strictObject({
     )
     .optional(),
   deprecation: Deprecation.optional(),
+  related: Related,
 });
 // The value forms are the schema's own patterns, verbatim.
 const Hex = z.string().regex(/^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/);
@@ -52,6 +57,7 @@ const ValueBase = {
   id: Id,
   description: z.string().optional(),
   deprecation: Deprecation.optional(),
+  related: Related,
   history: z
     .array(
       z.strictObject({
@@ -80,6 +86,27 @@ const Value = z.discriminatedUnion("type", [
   z.strictObject({ ...ValueBase, type: z.literal("font"), value: z.string().min(1) }),
   z.strictObject({ ...ValueBase, type: z.literal("list"), value: z.array(z.string().min(1)) }),
 ]);
+const PartId = z.string().regex(/^[a-z][a-z0-9-]{1,30}$/);
+const Sha = z.string().regex(/^[0-9a-f]{40}$/);
+const Import = z.strictObject({
+  id: PartId,
+  at: z.string().regex(/^[^/.](?:.*[^/])?$/),
+  from: z.string().min(1),
+  commit: Sha,
+  tree: Sha,
+  order: z.number().optional(),
+  values: z
+    .array(
+      z.strictObject({
+        id: z.string().min(1),
+        value: z.union([z.string(), z.number(), z.array(z.string())]),
+        dark: z.string().optional(),
+        reason: z.string().min(1),
+      }),
+    )
+    .optional(),
+  waived: z.array(z.strictObject({ ref: z.string().min(1), reason: z.string().min(1) })).optional(),
+});
 const Item = z.strictObject({
   $schema: z.string().optional(),
   title: z.string().min(1),
@@ -93,7 +120,9 @@ const Item = z.strictObject({
   figures: z
     .array(z.strictObject({ src: z.string().min(1).regex(/^[^/]/), alt: z.string().optional(), caption: z.string().optional() }))
     .optional(),
-  related: z.array(z.string().min(1)).optional(),
+  related: Related,
+  shared: z.strictObject({ id: PartId, logo: z.string().min(1).regex(/^[^/]/).optional() }).optional(),
+  imports: z.array(Import).optional(),
 });
 type Item = z.infer<typeof Item>;
 
@@ -133,6 +162,26 @@ for (const item of items.values()) {
 }
 const idSet = new Set(allIds);
 
+/** Every entry of an item and of the folders under it, for whole-item deprecations and waivers. */
+function entriesUnder(prefix: string): string[] {
+  return [...items]
+    .filter(([id]) => id === prefix || id.startsWith(`${prefix}/`))
+    .flatMap(([, item]) => [...(item.stories ?? []), ...(item.requirements ?? [])].map((x) => x.id));
+}
+const deprecated = new Set<string>();
+for (const [id, item] of items) {
+  if (item.deprecation) for (const e of entriesUnder(id)) deprecated.add(e);
+  for (const x of [...(item.stories ?? []), ...(item.requirements ?? [])]) if (x.deprecation) deprecated.add(x.id);
+}
+const imports = items.get("")?.imports ?? [];
+const waived = new Set<string>();
+for (const imp of imports) {
+  for (const w of imp.waived ?? []) {
+    if (w.ref.startsWith("#")) waived.add(w.ref.slice(1));
+    else for (const e of entriesUnder(w.ref)) waived.add(e);
+  }
+}
+
 /** `#ID`, `#ID@2`, `item`, or `item#ID`. */
 function resolves(ref: string): boolean {
   const [item, id] = ref.includes("#") ? ref.split("#", 2) : [ref, undefined];
@@ -163,6 +212,9 @@ describe("spec", () => {
     for (const [id, item] of items) {
       const where = id || "(root)";
       for (const ref of item.related ?? []) if (!resolves(ref)) bad.push(`${where} related ${ref}`);
+      for (const x of [...(item.stories ?? []), ...(item.requirements ?? []), ...(item.values ?? [])]) {
+        for (const ref of x.related ?? []) if (!resolves(ref)) bad.push(`${where} ${x.id} related ${ref}`);
+      }
       for (const s of item.stories ?? []) {
         for (const ref of s.requirements ?? []) {
           if (!ref.startsWith("#") || !requirementIds.has(ref.slice(1).replace(/@\d+$/, ""))) {
@@ -178,6 +230,8 @@ describe("spec", () => {
         for (const ref of d?.replacedBy ?? []) if (!resolves(ref)) bad.push(`${where} replacedBy ${ref}`);
       }
       for (const f of item.figures ?? []) if (!existsSync(join(SPEC, f.src))) bad.push(`${where} figure ${f.src}`);
+      if (item.shared?.logo !== undefined && !existsSync(join(SPEC, item.shared.logo))) bad.push(`${where} logo`);
+      if (id !== "" && item.imports !== undefined) bad.push(`${where} has imports, which only the root may`);
     }
     expect(bad).toEqual([]);
   });
@@ -194,14 +248,49 @@ describe("spec", () => {
     expect(bad).toEqual([]);
   });
 
+  test("every shared part is an unchanged copy, its ids carrying its permanent id", () => {
+    const git = (...args: string[]): string => {
+      const run = Bun.spawnSync(["git", ...args], { cwd: ROOT });
+      return run.success ? run.stdout.toString().trim() : `(git ${args.join(" ")} failed)`;
+    };
+    const bad: string[] = [];
+    for (const imp of imports) {
+      const part = items.get(imp.at);
+      if (part?.shared?.id !== imp.id) {
+        bad.push(`${imp.at} isn't the shared part ${imp.id}`);
+        continue;
+      }
+      if (git("rev-parse", `HEAD:.spec/${imp.at}`) !== imp.tree) bad.push(`${imp.at} differs from ${imp.from}@${imp.commit}`);
+      if (git("status", "--porcelain", "--", `.spec/${imp.at}`) !== "") bad.push(`${imp.at} has uncommitted edits`);
+      for (const [id, item] of items) {
+        if (id !== imp.at && !id.startsWith(`${imp.at}/`)) continue;
+        for (const x of [...(item.stories ?? []), ...(item.requirements ?? []), ...(item.values ?? [])]) {
+          if (!x.id.startsWith(`${imp.id}.`)) bad.push(`${id} ${x.id} lacks the prefix ${imp.id}.`);
+        }
+      }
+      const partValues = new Set(
+        [...items].filter(([id]) => id === imp.at || id.startsWith(`${imp.at}/`)).flatMap(([, i]) => (i.values ?? []).map((v) => v.id)),
+      );
+      for (const v of imp.values ?? []) if (!partValues.has(v.id)) bad.push(`${imp.id} sets ${v.id}, which the part hasn't`);
+      for (const w of imp.waived ?? []) if (!resolves(w.ref)) bad.push(`${imp.id} waives ${w.ref}, which doesn't exist`);
+    }
+    for (const [id, item] of items) {
+      if (item.shared && !imports.some((imp) => imp.at === id)) bad.push(`${id} is shared but not imported`);
+    }
+    expect(bad).toEqual([]);
+  });
+
   test("code cites only requirements the spec has", () => {
-    const sources = [join(ROOT, "src"), join(ROOT, "src-tauri"), join(ROOT, "tests"), join(ROOT, "scripts")];
+    const sources = ["src", "src-tauri", "tests", "scripts", "tools"].map((d) => join(ROOT, d));
     const bad: string[] = [];
     for (const dir of sources) {
       for (const path of walk(dir, (p) => /\.(ts|tsx|rs|kt|mjs|cjs)$/.test(p))) {
         for (const m of readFileSync(path, "utf8").matchAll(/^\s*(?:\/\/|\*|#)\s*Spec:\s*(.+)$/gm)) {
           for (const ref of (m[1] ?? "").split(",").map((s) => s.trim().replace(/@\d+$/, ""))) {
-            if (!requirementIds.has(ref)) bad.push(`${relative(ROOT, path)}: ${ref}`);
+            const where = `${relative(ROOT, path)}: ${ref}`;
+            if (!requirementIds.has(ref)) bad.push(`${where} isn't a requirement`);
+            else if (deprecated.has(ref)) bad.push(`${where} is deprecated`);
+            else if (waived.has(ref)) bad.push(`${where} is waived`);
           }
         }
       }

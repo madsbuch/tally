@@ -207,6 +207,7 @@ impl SyncService {
             .unwrap_or(false)
     }
 
+    // Spec: tandem.SYN-22
     /// Joins the vault behind `code`. With `replace`, a device that already
     /// holds data joins too: a complete copy of its database is saved in the
     /// app's `backups` folder first, and its path returned.
@@ -261,6 +262,7 @@ pub struct Round {
     pub errors: Vec<String>,
 }
 
+// Spec: tandem.SYN-1
 /// One round: probe for the vault's devices, then sync with each one found —
 /// and with any known one that didn't answer, at the address it was last
 /// reached at (a network that drops broadcasts still reaches it).

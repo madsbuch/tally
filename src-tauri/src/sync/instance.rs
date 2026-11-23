@@ -39,6 +39,7 @@ pub enum Check {
     Rotated { old_id: String, new_id: String },
 }
 
+// Spec: tandem.SYN-16
 /// Compares the database's marker with the file beside it, and gives the
 /// database a new device id if it was written elsewhere. Run before anything
 /// is written to it.

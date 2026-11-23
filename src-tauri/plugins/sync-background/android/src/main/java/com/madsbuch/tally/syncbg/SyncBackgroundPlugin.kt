@@ -27,6 +27,7 @@ class ScheduleArgs {
 @TauriPlugin
 class SyncBackgroundPlugin(private val activity: Activity) : Plugin(activity) {
 
+    // Spec: tandem.SYN-17
     @Command
     fun schedule(invoke: Invoke) {
         val args = invoke.parseArgs(ScheduleArgs::class.java)

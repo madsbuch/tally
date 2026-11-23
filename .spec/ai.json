@@ -27,6 +27,9 @@
           "reason": "Version 1 didn't match the product: the key is in the synced settings, not only on one device.",
           "date": "2026-11-20"
         }
+      ],
+      "related": [
+        "#tandem.SYN-1"
       ]
     },
     {
@@ -84,7 +87,10 @@
     },
     {
       "id": "AI-7",
-      "text": "Photos reach the vault's other devices by sync, and leave a device in exports."
+      "text": "Photos reach the vault's other devices by sync, and leave a device in exports.",
+      "related": [
+        "#tandem.SYN-1"
+      ]
     }
   ]
 }

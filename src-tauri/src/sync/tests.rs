@@ -329,6 +329,7 @@ async fn run_history(seed: u64, devices_n: usize, steps: usize) {
     }
 }
 
+// Spec: tandem.SYN-12
 #[tokio::test(flavor = "multi_thread")]
 async fn random_histories_converge_between_two_devices() {
     for seed in 0..25 {
@@ -336,6 +337,7 @@ async fn random_histories_converge_between_two_devices() {
     }
 }
 
+// Spec: tandem.SYN-12
 #[tokio::test(flavor = "multi_thread")]
 async fn random_histories_converge_between_three_devices() {
     for seed in 100..115 {
@@ -357,6 +359,7 @@ async fn name_devices(a: &Device, b: &Device) {
     }
 }
 
+// Spec: SYN-6
 #[tokio::test]
 async fn a_chat_continued_on_both_devices_is_split_in_two() {
     let (a, b) = (device().await, device().await);
@@ -371,6 +374,7 @@ async fn a_chat_continued_on_both_devices_is_split_in_two() {
     settle(&[a, b].map(|d| d)).await;
 }
 
+// Spec: SYN-6
 #[tokio::test]
 async fn a_split_chat_comes_out_the_same_on_both_devices() {
     let (a, b) = (device().await, device().await);
@@ -439,6 +443,7 @@ async fn deletes_reach_the_other_device_and_stay_deleted() {
     assert_eq!(n, 0);
 }
 
+// Spec: tandem.SYN-11
 #[tokio::test]
 async fn concurrent_edits_to_a_row_settle_on_the_later_one_everywhere() {
     let (a, b) = (device().await, device().await);
@@ -454,6 +459,7 @@ async fn concurrent_edits_to_a_row_settle_on_the_later_one_everywhere() {
     assert_eq!(t, "second");
 }
 
+// Spec: tandem.SYN-13
 #[tokio::test]
 async fn the_same_tag_made_on_two_devices_ends_up_as_one() {
     let (a, b) = (device().await, device().await);

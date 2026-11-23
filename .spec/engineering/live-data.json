@@ -6,7 +6,10 @@
   "requirements": [
     {
       "id": "LIVE-1",
-      "text": "A screen that shows data reloads when the tables it shows change, whether the change came from this device, from sync or from a background worker."
+      "text": "A screen that shows data reloads when the tables it shows change, whether the change came from this device, from sync or from a background worker.",
+      "related": [
+        "#tandem.SYN-1"
+      ]
     },
     {
       "id": "LIVE-2",

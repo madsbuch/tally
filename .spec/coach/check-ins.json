@@ -16,6 +16,9 @@
           "reason": "Version 1 didn't match the product: the Settings button can send another one the same day.",
           "date": "2026-11-20"
         }
+      ],
+      "related": [
+        "#tandem.SYN-1"
       ]
     },
     {

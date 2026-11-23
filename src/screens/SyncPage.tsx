@@ -35,6 +35,7 @@ async function scanWithPhone(): Promise<string | null> {
   return r.content || null;
 }
 
+// Spec: tandem.SYN-21
 /** The computer's webcam, read frame by frame until a QR code shows up. */
 function WebcamScanner({ onCode, onError }: { onCode: (c: string) => void; onError: (e: string) => void }) {
   const video = useRef<HTMLVideoElement | null>(null);
@@ -188,6 +189,7 @@ export default function SyncPage() {
     [refresh, replace],
   );
 
+  // Spec: tandem.SYN-22
   async function askToReplace() {
     if (!status) return;
     const what = describeHeld(status.held);

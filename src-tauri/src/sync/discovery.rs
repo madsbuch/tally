@@ -103,6 +103,7 @@ pub async fn probe(tag: &str, me: &str, targets: &[SocketAddr], wait: Duration) 
 mod tests {
     use super::*;
 
+    // Spec: tandem.SYN-6
     #[tokio::test]
     async fn devices_of_the_vault_answer_and_others_do_not() {
         let mut answering = Vec::new();

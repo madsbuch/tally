@@ -25,7 +25,10 @@
     },
     {
       "id": "ID-5",
-      "text": "Tables without a prefix use a natural key, and no table uses an auto-increment integer."
+      "text": "Tables without a prefix use a natural key, and no table uses an auto-increment integer.",
+      "related": [
+        "#tandem.SYN-13"
+      ]
     },
     {
       "id": "ID-2",
@@ -33,7 +36,10 @@
     },
     {
       "id": "ID-3",
-      "text": "A row imported from an external system gets an id derived from the table and its external key, so two devices importing it agree on the id."
+      "text": "A row imported from an external system gets an id derived from the table and its external key, so two devices importing it agree on the id.",
+      "related": [
+        "#tandem.SYN-12"
+      ]
     },
     {
       "id": "ID-4",

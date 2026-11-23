@@ -22,7 +22,7 @@
       "requirements": [
         "#TAL-1",
         "#TAL-4",
-        "#SYN-1",
+        "#tandem.SYN-4",
         "#AI-5",
         "#OFF-2"
       ]
@@ -46,6 +46,9 @@
           "reason": "Version 2 held two promises; where data leaves a device is now TAL-4.",
           "date": "2026-11-22"
         }
+      ],
+      "related": [
+        "#tandem.SYN-4"
       ]
     },
     {
