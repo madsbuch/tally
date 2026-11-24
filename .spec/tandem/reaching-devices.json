@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Reaching devices",
+  "summary": "Saying why a device can't be reached, and what to do about it.",
+  "order": 7,
+  "requirements": [
+    {
+      "id": "tandem.SYN-23",
+      "text": "Settings → Sync can check the connection: it shows this device's addresses on the local network, whether sync listens, which of the collection's devices answer the search, and whether each device there's an address for, the collection's and the one whose code was last joined, can be reached; then what stands in the way, in plain words, and what to do about it."
+    },
+    {
+      "id": "tandem.SYN-24",
+      "text": "A sync or join that can't reach a device says why, and tells apart what it can: the computer keeping the app off the local network (then it leads to the setting that allows it), the device not answering, another network or a VPN, and the device not running the app."
+    }
+  ]
+}

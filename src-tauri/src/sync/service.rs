@@ -6,7 +6,9 @@
 
 use super::discovery;
 use super::engine;
-use super::session::{self, Outcome, PairingOffer, PairingSlot};
+use super::mdns::{self, Mdns};
+use super::reach::{self, Problem, Why};
+use super::session::{self, Missed, Outcome, PairingOffer, PairingSlot};
 use serde::Serialize;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
@@ -35,6 +37,17 @@ pub struct Activity {
     pub syncing: bool,
     pub last_error: Option<String>,
     pub last_round_at: Option<String>,
+    /// The vault's devices the last round couldn't reach, and why.
+    pub unreached: Vec<Unreached>,
+    /// Why the last join couldn't reach the device that showed the code.
+    pub join_problem: Option<Problem>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Unreached {
+    pub device_id: String,
+    pub problem: Problem,
 }
 
 #[derive(Default)]
@@ -47,6 +60,8 @@ pub struct SyncService {
     activity: Mutex<Activity>,
     /// (vault tag, device id) for answering discovery without the database.
     discovery_state: Arc<Mutex<Option<(String, String)>>>,
+    /// Announcing and listening over mDNS, where the network allows it.
+    mdns: OnceCell<Option<Arc<Mdns>>>,
 }
 
 use super::now_iso;
@@ -97,7 +112,8 @@ impl SyncService {
         .await?;
         self.port.store(port, Ordering::SeqCst);
 
-        // Discovery answers.
+        // Discovery: mDNS beside the broadcast answers.
+        let _ = self.mdns.set(Mdns::start());
         if let Ok(socket) = discovery::bind_responder(discovery::PORT).await {
             let state = self.discovery_state.clone();
             tokio::spawn(discovery::respond(socket, move || {
@@ -121,6 +137,14 @@ impl SyncService {
                 let Ok(state) = engine::local_state(&pool).await else { continue };
                 if let (Some(vault), Ok(mut d)) = (&state.vault_id, svc.discovery_state.lock()) {
                     *d = Some((session::vault_tag(vault), state.device_id.clone()));
+                    if let Some(m) = svc.mdns() {
+                        m.announce_device(&session::vault_tag(vault), &state.device_id, port);
+                    }
+                }
+                if !svc.offer_active() {
+                    if let Some(m) = svc.mdns() {
+                        m.stop_pairing();
+                    }
                 }
                 if state.vault_id.is_none() {
                     continue;
@@ -154,9 +178,13 @@ impl SyncService {
     }
 
     /// Finds the vault's devices on the network and syncs with each.
+    fn mdns(&self) -> Option<&Mdns> {
+        self.mdns.get().and_then(|m| m.as_deref())
+    }
+
     async fn round(&self, app: &AppHandle, pool: &SqlitePool) {
         self.set_activity(app, |a| a.syncing = true);
-        let result = sync_round(pool).await;
+        let result = sync_round(pool, self.mdns()).await;
         for o in result.outcomes.iter() {
             self.announce(app, o);
         }
@@ -164,6 +192,7 @@ impl SyncService {
             a.syncing = false;
             a.last_round_at = Some(now_iso());
             a.last_error = result.errors.first().cloned();
+            a.unreached = result.unreached.iter().map(|(id, p)| Unreached { device_id: id.clone(), problem: p.clone() }).collect();
         });
     }
 
@@ -190,6 +219,9 @@ impl SyncService {
             return Err("this device isn't on a local network".into());
         }
         let offer = session::offer(pool, &self.slot, addrs).await?;
+        if let Some(m) = self.mdns() {
+            m.announce_pairing(&session::pairing_tag(&offer.token), &offer.host_id, port);
+        }
         self.kick();
         Ok(offer.encode())
     }
@@ -197,6 +229,9 @@ impl SyncService {
     pub fn cancel_offer(&self) {
         if let Ok(mut s) = self.slot.lock() {
             *s = None;
+        }
+        if let Some(m) = self.mdns() {
+            m.stop_pairing();
         }
     }
 
@@ -207,6 +242,7 @@ impl SyncService {
             .unwrap_or(false)
     }
 
+    // Spec: tandem.SYN-22
     /// Joins the vault behind `code`. With `replace`, a device that already
     /// holds data joins too: a complete copy of its database is saved in the
     /// app's `backups` folder first, and its path returned.
@@ -219,12 +255,24 @@ impl SyncService {
         } else {
             None
         };
+        remember_join(pool, &offer).await;
+        let nearby = self.nearby(&offer).await;
         self.set_activity(app, |a| a.syncing = true);
-        let result = session::join(pool, &offer, replace).await;
+        let result = session::join_any(pool, &offer, &nearby, replace).await;
+        let problem = match &result {
+            Err(Missed::Unreached(fails)) => Some(diagnose(&offer.host_name, fails)),
+            _ => None,
+        };
+        let result = result.map_err(|e| match (&e, &problem) {
+            (_, Some(p)) => format!("Couldn't reach {}. {}", offer.host_name, p.message),
+            (Missed::Failed(e), None) => e.clone(),
+            (e, None) => e.to_string(),
+        });
         self.set_activity(app, |a| {
             a.syncing = false;
             a.last_error = result.as_ref().err().cloned();
             a.last_round_at = Some(now_iso());
+            a.join_problem = problem;
         });
         if let Ok(o) = &result {
             // Everything changed: the frontend reloads whatever it shows.
@@ -232,6 +280,208 @@ impl SyncService {
         }
         result.map(|outcome| JoinResult { outcome, backup })
     }
+
+    /// Where the device showing the code answers to its tag nearby: heard
+    /// already, or within a moment.
+    async fn nearby(&self, offer: &PairingOffer) -> Vec<SocketAddr> {
+        let Some(m) = self.mdns() else { return vec![] };
+        let tag = session::pairing_tag(&offer.token);
+        for _ in 0..6 {
+            let found = m.pairing(&tag);
+            if !found.is_empty() {
+                return found;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+        vec![]
+    }
+
+    // Spec: tandem.SYN-23
+    /// Checks the connection: this device's addresses, whether sync listens,
+    /// which of the vault's devices answer the search, and whether each one
+    /// there's an address for can be reached — the vault's, and the one
+    /// whose code was last joined — then what stands in the way.
+    pub async fn check(&self) -> Result<ConnectionCheck, String> {
+        let pool = self.pool()?;
+        let nets = reach::local_nets();
+        let addresses: Vec<String> = nets
+            .iter()
+            .filter(|n| !matches!(n.ip, std::net::IpAddr::V6(v6) if (v6.segments()[0] & 0xffc0) == 0xfe80))
+            .map(|n| format!("{} ({})", n.ip, n.iface))
+            .collect();
+        let port = self.port();
+        let listening = port != 0
+            && tokio::time::timeout(
+                Duration::from_secs(1),
+                tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port)),
+            )
+            .await
+            .is_ok_and(|r| r.is_ok());
+
+        let me = session::identity(pool).await?;
+        let peers = vault_peers(pool, &me.device_id).await;
+        let (found, heard) = match &me.vault_id {
+            Some(vault) if !peers.is_empty() => {
+                let tag = session::vault_tag(vault);
+                let last: Vec<String> = peers.iter().filter_map(|p| p.last_addr.clone()).collect();
+                let found = discovery::probe(&tag, &me.device_id, &discovery::targets(&last, discovery::PORT), Duration::from_millis(800)).await;
+                let heard = self.mdns().map(|m| m.devices(&tag)).unwrap_or_default();
+                (found, heard)
+            }
+            _ => (vec![], vec![]),
+        };
+
+        let mut answered = Vec::new();
+        let mut devices = Vec::new();
+        for p in &peers {
+            let by_broadcast: Vec<SocketAddr> = found.iter().filter(|f| f.device_id == p.id).map(|f| f.addr).collect();
+            let by_mdns: Vec<SocketAddr> = heard.iter().filter(|(id, _)| *id == p.id).flat_map(|(_, a)| a.clone()).collect();
+            let mut via = Vec::new();
+            if !by_mdns.is_empty() {
+                via.push("mDNS".to_string());
+            }
+            if !by_broadcast.is_empty() {
+                via.push("broadcast".to_string());
+            }
+            if !via.is_empty() {
+                answered.push(Answered { device_id: p.id.clone(), name: p.name.clone(), via });
+            }
+            let last: Vec<SocketAddr> = p.last_addr.iter().filter_map(|a| a.parse().ok()).collect();
+            let addrs = mdns::merge(&[&by_mdns, &by_broadcast, &last]);
+            devices.push(reachability(Some(p.id.clone()), &p.name, false, &addrs).await);
+        }
+        if let Some((host_id, name, addrs)) = last_join(pool).await {
+            if !peers.iter().any(|p| p.id == host_id) {
+                let nearby: Vec<SocketAddr> = self
+                    .mdns()
+                    .map(|m| m.device_addrs(&host_id))
+                    .unwrap_or_default();
+                let addrs = mdns::merge(&[&addrs, &nearby]);
+                devices.push(reachability(None, &name, true, &addrs).await);
+            }
+        }
+
+        let mut problems: Vec<Problem> = Vec::new();
+        if addresses.is_empty() {
+            problems.push(reach::problem("", Why::Offline, false));
+        }
+        if !listening {
+            problems.push(reach::problem("", Why::NotListening, false));
+        }
+        for p in devices.iter().filter_map(|d| d.problem.clone()) {
+            if !problems.iter().any(|q| q.message == p.message) {
+                problems.push(p);
+            }
+        }
+        Ok(ConnectionCheck { addresses, listening, port, in_vault: me.vault_id.is_some(), answered, devices, problems })
+    }
+}
+
+/// The result of checking the connection (the Sync page shows it).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectionCheck {
+    pub addresses: Vec<String>,
+    pub listening: bool,
+    pub port: u16,
+    pub in_vault: bool,
+    pub answered: Vec<Answered>,
+    pub devices: Vec<Reachability>,
+    pub problems: Vec<Problem>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Answered {
+    pub device_id: String,
+    pub name: String,
+    /// How it answered: "mDNS", "broadcast".
+    pub via: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Reachability {
+    /// None for the device whose code was last joined, when it isn't (yet)
+    /// one of the vault's.
+    pub device_id: Option<String>,
+    pub name: String,
+    pub joined_code: bool,
+    pub addrs: Vec<String>,
+    pub reached_at: Option<String>,
+    pub problem: Option<Problem>,
+}
+
+async fn reachability(device_id: Option<String>, name: &str, joined_code: bool, addrs: &[SocketAddr]) -> Reachability {
+    let (reached_at, problem) = if addrs.is_empty() {
+        (None, Some(reach::problem(name, Why::NoAddress, false)))
+    } else {
+        match reach::connect_first(addrs).await {
+            Ok((_, at)) => (Some(at.to_string()), None),
+            Err(fails) => (None, Some(diagnose(name, &fails))),
+        }
+    };
+    Reachability {
+        device_id,
+        name: name.to_string(),
+        joined_code,
+        addrs: addrs.iter().map(|a| a.to_string()).collect(),
+        reached_at,
+        problem,
+    }
+}
+
+// Spec: tandem.SYN-24
+/// Why `name` couldn't be reached, on this device's networks.
+pub fn diagnose(name: &str, fails: &[(SocketAddr, reach::Failure)]) -> Problem {
+    reach::diagnose(name, fails, &reach::local_nets(), cfg!(target_os = "macos"))
+}
+
+/// The device whose code was last joined, kept so the connection check can
+/// try it again: (its device id, name, the addresses the code held).
+async fn remember_join(pool: &SqlitePool, offer: &PairingOffer) {
+    let value = serde_json::json!({ "id": offer.host_id, "name": offer.host_name, "addrs": offer.addrs }).to_string();
+    let _ = sqlx::query(
+        "INSERT INTO device_settings (key, value) VALUES ('sync_last_join', ?)
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+    )
+    .bind(value)
+    .execute(pool)
+    .await;
+}
+
+async fn last_join(pool: &SqlitePool) -> Option<(String, String, Vec<SocketAddr>)> {
+    let (raw,): (String,) = sqlx::query_as("SELECT value FROM device_settings WHERE key = 'sync_last_join'")
+        .fetch_optional(pool)
+        .await
+        .ok()??;
+    #[derive(serde::Deserialize)]
+    struct Joined {
+        id: String,
+        name: String,
+        addrs: Vec<String>,
+    }
+    let j: Joined = serde_json::from_str(&raw).ok()?;
+    Some((j.id, j.name, j.addrs.iter().filter_map(|a| a.parse().ok()).collect()))
+}
+
+struct Peer {
+    id: String,
+    name: String,
+    last_addr: Option<String>,
+}
+
+/// The vault's other devices that haven't been removed.
+async fn vault_peers(pool: &SqlitePool, me: &str) -> Vec<Peer> {
+    let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
+        "SELECT d.id, d.name, p.last_addr FROM vault_devices d LEFT JOIN sync_peers p ON p.device_id = d.id
+         WHERE d.id <> ? AND d.public_key NOT IN (SELECT public_key FROM vault_revocations)",
+    )
+    .bind(me)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+    rows.into_iter().map(|(id, name, last_addr)| Peer { id, name, last_addr }).collect()
 }
 
 #[derive(Debug, Serialize)]
@@ -259,64 +509,44 @@ pub async fn backup_before_join(pool: &SqlitePool, dir: &std::path::Path) -> Res
 pub struct Round {
     pub outcomes: Vec<Outcome>,
     pub errors: Vec<String>,
+    /// The devices that couldn't be reached, and why.
+    pub unreached: Vec<(String, Problem)>,
 }
 
-/// One round: probe for the vault's devices, then sync with each one found —
-/// and with any known one that didn't answer, at the address it was last
-/// reached at (a network that drops broadcasts still reaches it).
-pub async fn sync_round(pool: &SqlitePool) -> Round {
-    let mut round = Round { outcomes: vec![], errors: vec![] };
+// Spec: tandem.SYN-1, tandem.SYN-5
+/// One round: look for the vault's devices (mDNS and broadcast), then sync
+/// with each, trying every address it was found or last reached at, all at
+/// once — a network that drops one kind of search still has the other.
+pub async fn sync_round(pool: &SqlitePool, mdns: Option<&Mdns>) -> Round {
+    let mut round = Round { outcomes: vec![], errors: vec![], unreached: vec![] };
     let Ok(me) = session::identity(pool).await else { return round };
     let Some(vault) = me.vault_id.clone() else { return round };
-    let peers: Vec<(String, Option<String>)> = sqlx::query_as(
-        "SELECT d.id, p.last_addr FROM vault_devices d LEFT JOIN sync_peers p ON p.device_id = d.id
-         WHERE d.id <> ? AND d.public_key NOT IN (SELECT public_key FROM vault_revocations)",
-    )
-    .bind(&me.device_id)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    let peers = vault_peers(pool, &me.device_id).await;
     if peers.is_empty() {
         return round;
     }
-    let last: Vec<String> = peers.iter().filter_map(|(_, a)| a.clone()).collect();
-    let found = discovery::probe(
-        &session::vault_tag(&vault),
-        &me.device_id,
-        &discovery::targets(&last, discovery::PORT),
-        Duration::from_millis(800),
-    )
-    .await;
-    for (id, last_addr) in &peers {
-        // Where discovery says it is, then where it was last reached: an
-        // answer to a probe isn't proof of anything (anyone on the network
-        // can send one), so a failed attempt there doesn't end the search.
-        let mut addrs: Vec<SocketAddr> = found.iter().filter(|f| &f.device_id == id).map(|f| f.addr).collect();
-        if let Some(a) = last_addr.as_ref().and_then(|a| a.parse().ok()) {
-            if !addrs.contains(&a) {
-                addrs.push(a);
-            }
+    let tag = session::vault_tag(&vault);
+    let last: Vec<String> = peers.iter().filter_map(|p| p.last_addr.clone()).collect();
+    let found = discovery::probe(&tag, &me.device_id, &discovery::targets(&last, discovery::PORT), Duration::from_millis(800)).await;
+    let heard = mdns.map(|m| m.devices(&tag)).unwrap_or_default();
+    for p in &peers {
+        // An answer to a search isn't proof of anything (anyone on the
+        // network can send one): the handshake decides, and a device that
+        // fails it at one address is tried at the others.
+        let by_mdns: Vec<SocketAddr> = heard.iter().filter(|(id, _)| *id == p.id).flat_map(|(_, a)| a.clone()).collect();
+        let by_broadcast: Vec<SocketAddr> = found.iter().filter(|f| f.device_id == p.id).map(|f| f.addr).collect();
+        let last: Vec<SocketAddr> = p.last_addr.iter().filter_map(|a| a.parse().ok()).collect();
+        let addrs = mdns::merge(&[&by_mdns, &by_broadcast, &last]);
+        if addrs.is_empty() {
+            round.unreached.push((p.id.clone(), reach::problem(&p.name, Why::NoAddress, false)));
+            continue;
         }
-        let mut last_err = None;
-        for addr in addrs {
-            match session::sync_with(pool, addr).await {
-                Ok(Some(o)) => {
-                    round.outcomes.push(o);
-                    last_err = None;
-                    break;
-                }
-                Ok(None) => {
-                    last_err = None;
-                    break;
-                }
-                Err(e) => last_err = Some(e),
-            }
-        }
-        match last_err {
-            // Not around is normal; anything else is worth showing.
-            Some(e) if e.contains("no answer") || e.contains("refused") || e.contains("unreachable") => {}
-            Some(e) => round.errors.push(e),
-            None => {}
+        match session::sync_with_any(pool, &addrs).await {
+            Ok(Some(o)) => round.outcomes.push(o),
+            Ok(None) => {}
+            // Not around is normal: said per device, not as an error.
+            Err(Missed::Unreached(fails)) => round.unreached.push((p.id.clone(), diagnose(&p.name, &fails))),
+            Err(Missed::Failed(e)) => round.errors.push(e),
         }
     }
     round
@@ -468,4 +698,46 @@ pub async fn remove_device(pool: &SqlitePool, id: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Spec: tandem.SYN-23
+    #[tokio::test]
+    async fn the_check_reaches_a_listening_device_and_explains_one_it_cannot() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let up = listener.local_addr().unwrap();
+        let r = reachability(Some("d1".into()), "Phone", false, &[up]).await;
+        assert_eq!(r.reached_at, Some(up.to_string()));
+        assert!(r.problem.is_none());
+
+        let down = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
+        let r = reachability(Some("d1".into()), "Phone", false, &[down]).await;
+        assert_eq!(r.reached_at, None);
+        assert_eq!(r.problem.map(|p| p.why), Some(Why::NotRunning));
+
+        let r = reachability(None, "Laptop", true, &[]).await;
+        assert_eq!(r.problem.map(|p| p.why), Some(Why::NoAddress));
+    }
+
+    // Spec: tandem.SYN-23
+    #[tokio::test]
+    async fn the_last_joined_code_s_device_is_remembered_for_the_check() {
+        let d = crate::sync::tests::device().await;
+        assert!(last_join(&d.pool).await.is_none());
+        let offer = PairingOffer {
+            vault_id: "v".into(),
+            host_id: "host-1".into(),
+            host_name: "Laptop".into(),
+            host_key: vec![1, 2, 3],
+            token: [0u8; 32],
+            addrs: vec!["192.168.1.7:47822".into()],
+        };
+        remember_join(&d.pool, &offer).await;
+        let (id, name, addrs) = last_join(&d.pool).await.unwrap();
+        assert_eq!((id.as_str(), name.as_str()), ("host-1", "Laptop"));
+        assert_eq!(addrs, vec!["192.168.1.7:47822".parse::<SocketAddr>().unwrap()]);
+    }
 }

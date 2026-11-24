@@ -66,6 +66,7 @@ async fn assert_same(a: &SqlitePool, b: &SqlitePool) {
     }
 }
 
+// Spec: tandem.SYN-1, tandem.SYN-9
 #[tokio::test]
 async fn a_new_device_joins_with_the_code_and_gets_everything() {
     let h = host().await;
@@ -98,6 +99,7 @@ async fn a_new_device_joins_with_the_code_and_gets_everything() {
     assert!(outcome.complete);
 }
 
+// Spec: tandem.SYN-9
 #[tokio::test]
 async fn a_code_works_once() {
     let h = host().await;
@@ -108,6 +110,7 @@ async fn a_code_works_once() {
     assert_eq!(count(&h.device.pool, "SELECT count(*) FROM vault_devices").await, 2);
 }
 
+// Spec: tandem.SYN-9
 #[tokio::test]
 async fn an_expired_code_is_refused() {
     let h = host().await;
@@ -146,6 +149,7 @@ async fn a_device_with_data_cannot_join_and_keeps_its_data() {
     join(&device().await.pool, &o, false).await.unwrap();
 }
 
+// Spec: tandem.SYN-8
 #[tokio::test]
 async fn a_stranger_cannot_sync() {
     let h = host().await;
@@ -198,6 +202,7 @@ async fn different_versions_of_the_app_do_not_sync() {
     assert_eq!(err, "Computer has an older version of Tally than Phone: update Computer and they'll sync again");
 }
 
+// Spec: tandem.SYN-2
 #[tokio::test]
 async fn edits_on_both_sides_meet_in_one_sync() {
     let h = host().await;
@@ -277,6 +282,7 @@ async fn failed_connections_are_reported_by_the_listener() {
     assert!(!h.errors.lock().unwrap().is_empty());
 }
 
+// Spec: tandem.SYN-16
 #[tokio::test]
 async fn a_restored_copy_is_caught_at_the_start_of_a_sync_and_then_catches_up() {
     let h = host().await;
@@ -316,6 +322,7 @@ async fn a_restored_copy_is_caught_at_the_start_of_a_sync_and_then_catches_up() 
     assert_same(&h.device.pool, &restored).await;
 }
 
+// Spec: tandem.SYN-8
 #[tokio::test]
 async fn a_removed_device_is_refused_by_its_key_whatever_id_it_takes() {
     let h = host().await;
@@ -349,6 +356,7 @@ async fn a_busy_host_leaves_the_joiner_untouched_and_the_code_usable() {
     join(&joiner.pool, &o, false).await.unwrap();
 }
 
+// Spec: tandem.SYN-8
 #[tokio::test]
 async fn a_stranger_is_turned_away_before_it_can_send_much() {
     let h = host().await;
@@ -403,6 +411,7 @@ async fn a_device_answering_at_a_spoofed_address_is_not_trusted() {
     assert!(err.contains("outside the vault"), "{err}");
 }
 
+// Spec: tandem.SYN-22
 #[tokio::test]
 async fn a_device_with_data_can_join_by_replacing_it_after_a_copy_is_saved() {
     let h = host().await;
@@ -434,6 +443,7 @@ async fn a_device_with_data_can_join_by_replacing_it_after_a_copy_is_saved() {
     assert!(marker.starts_with("copy:"));
 }
 
+// Spec: tandem.SYN-19
 #[test]
 fn development_and_release_builds_never_sync() {
     assert!(same_build("dev", "dev"));
@@ -446,6 +456,7 @@ fn development_and_release_builds_never_sync() {
     assert_eq!(build_kind(), "dev");
 }
 
+// Spec: tandem.SYN-19
 #[tokio::test]
 async fn a_release_build_is_refused_by_a_development_build() {
     let h = host().await;
@@ -523,4 +534,82 @@ fn a_hello_from_an_older_version_never_skips() {
     .unwrap();
     let read: Hello = rmp_serde::from_slice(&bytes).unwrap();
     assert_eq!(read, old);
+}
+
+/// An address nothing listens on: refuses at once.
+fn dead_addr() -> SocketAddr {
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    l.local_addr().unwrap()
+}
+
+// Spec: tandem.SYN-25
+#[tokio::test]
+async fn a_joiner_finds_the_code_s_device_nearby_when_the_code_s_addresses_fail() {
+    let h = host().await;
+    let mut o = offer_from(&h).await;
+    // The code holds only an address that no longer answers (another
+    // network's, say); the device showing it answers nearby to its tag.
+    o.addrs = vec![dead_addr().to_string()];
+    let joiner = device().await;
+    join_any(&joiner.pool, &o, &[h.addr], false).await.unwrap();
+    assert_eq!(identity(&joiner.pool).await.unwrap().vault_id, identity(&h.device.pool).await.unwrap().vault_id);
+}
+
+// Spec: tandem.SYN-25
+#[test]
+fn a_pairing_tag_is_short_stable_and_reveals_nothing_of_the_code() {
+    let token = [7u8; 32];
+    assert_eq!(pairing_tag(&token), pairing_tag(&token));
+    assert_eq!(pairing_tag(&token).len(), 16);
+    assert_ne!(pairing_tag(&token), pairing_tag(&[8u8; 32]));
+    assert!(!pairing_tag(&token).contains(&hex::encode(token)[..8]));
+}
+
+// Spec: tandem.SYN-24
+#[tokio::test]
+async fn a_join_that_reaches_nothing_says_how_each_address_failed() {
+    let h = host().await;
+    let mut o = offer_from(&h).await;
+    o.addrs = vec![dead_addr().to_string()];
+    match join_any(&device().await.pool, &o, &[], false).await {
+        Err(Missed::Unreached(fails)) => {
+            assert_eq!(fails.len(), 1);
+            assert_eq!(fails[0].1, reach::Failure::Io(std::io::ErrorKind::ConnectionRefused));
+        }
+        other => panic!("expected unreached, got {other:?}"),
+    }
+}
+
+// Spec: tandem.SYN-5
+#[tokio::test]
+async fn a_sync_tries_every_address_at_once_and_uses_the_one_that_answers() {
+    let h = host().await;
+    let joiner = device().await;
+    join(&joiner.pool, &offer_from(&h).await, false).await.unwrap();
+    exec(&h.device.pool, "INSERT INTO food_entries (id, eaten_at, title, nutrients) VALUES ('m-new', 'now', 'new', '{}')").await;
+    let mut synced = None;
+    for _ in 0..100 {
+        if let Some(o) = sync_with_any(&joiner.pool, &[dead_addr(), h.addr]).await.unwrap() {
+            synced = Some(o);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(synced.is_some(), "host stayed busy");
+    assert_eq!(count(&joiner.pool, "SELECT count(*) FROM food_entries WHERE id = 'm-new'").await, 1);
+}
+
+// Spec: tandem.SYN-5
+#[tokio::test]
+async fn listening_on_every_interface_answers_on_ipv6_too() {
+    let device = device().await;
+    let slot: PairingSlot = Arc::new(Mutex::new(None));
+    let (port, _) = listen(device.pool.clone(), slot, "0.0.0.0", |_| {}).await.unwrap();
+    let v6: SocketAddr = format!("[::1]:{port}").parse().unwrap();
+    let v4: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+    assert!(TcpStream::connect(v4).await.is_ok());
+    // Not every machine has IPv6 loopback; where it has, it answers.
+    if std::net::TcpListener::bind("[::1]:0").is_ok() {
+        assert!(TcpStream::connect(v6).await.is_ok());
+    }
 }

@@ -6,6 +6,7 @@
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::time::Duration;
 
+// Spec: tandem.SYN-17
 /// One round against the database at `db_path`, given at most `budget`.
 /// Returns a line for the log.
 pub async fn run_once(db_path: &str, budget: Duration) -> String {
@@ -29,7 +30,7 @@ pub async fn run_once(db_path: &str, budget: Duration) -> String {
     } else if let Err(e) = super::instance::check(&pool, std::path::Path::new(db_path)).await {
         format!("couldn't check the database: {e}")
     } else {
-        match tokio::time::timeout(budget, super::service::sync_round(&pool)).await {
+        match tokio::time::timeout(budget, super::service::sync_round(&pool, None)).await {
             Err(_) => "ran out of time; carries on next run".to_string(),
             Ok(round) => {
                 let synced: Vec<String> = round
@@ -79,6 +80,7 @@ mod tests {
     use crate::sync::session;
     use crate::sync::tests::{device, exec};
 
+    // Spec: tandem.SYN-17
     #[tokio::test]
     async fn a_background_run_syncs_with_a_device_that_answers() {
         // The "computer": a vault, listening, answering discovery on a test port.

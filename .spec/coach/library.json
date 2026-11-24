@@ -51,6 +51,9 @@
           "reason": "A retry by hand runs on whichever device it is pressed on.",
           "date": "2026-11-20"
         }
+      ],
+      "related": [
+        "#tandem.SYN-1"
       ]
     },
     {

@@ -24,6 +24,11 @@ than one requirement uses.
   to meet a requirement carries `// Spec: CAP-1` (ids only) on its own line.
   When a requirement changes, search for its id.
 - Constants in the code follow the spec's named values; change both together.
+- `.spec/tandem` is a copy of the shared part Tandem (device sync), listed in
+  `imports` in `.spec/index.json`: never edit it. Its ids are cited like any
+  other (`// Spec: tandem.SYN-9`); what Tally does differently goes in the
+  import's `values` or `waived`. `tests/shared-values.test.ts` holds the sync
+  constants to its values.
 - `tests/spec.test.ts` (part of `bun test`) checks the spec: schema, unique
   ids, references, histories, and that every `Spec:` citation
   names a real requirement. CI doesn't run the test suite, so run it before

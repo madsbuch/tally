@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Channel",
+  "summary": "Devices talk over an encrypted channel and let in only their own.",
+  "order": 3,
+  "requirements": [
+    {
+      "id": "tandem.SYN-7",
+      "text": "The channel between two devices is encrypted with the Noise protocol over TCP."
+    },
+    {
+      "id": "tandem.SYN-8",
+      "text": "A peer is let in only when the key it proved in the handshake belongs to a device of the collection."
+    }
+  ]
+}

@@ -22,6 +22,8 @@ function status(devices: SyncDevice[], inVault = true): SyncStatus {
     syncing: false,
     lastError: null,
     lastRoundAt: null,
+    unreached: [],
+    joinProblem: null,
   };
 }
 

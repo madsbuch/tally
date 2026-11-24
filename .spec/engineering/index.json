@@ -24,7 +24,11 @@
     },
     {
       "id": "ENG-3",
-      "text": "CI builds the Android and macOS apps and checks sync triggers against SQLite 3.39; it does not run the test suite."
+      "text": "CI builds the Android and macOS apps and checks sync triggers against SQLite 3.39; it does not run the test suite.",
+      "related": [
+        "#tandem.TRG-4",
+        "#tandem.TRG-5"
+      ]
     }
   ]
 }

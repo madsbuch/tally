@@ -636,6 +636,7 @@ export const SETTING_KEYS = {
   glucoseUnit: "glucose_unit",
 } as const;
 
+// Spec: tandem.SYN-15
 /**
  * Settings that belong to this device rather than to the person, kept in
  * `device_settings` so they never travel to the rest of the vault: sync

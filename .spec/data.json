@@ -32,6 +32,9 @@
           "reason": "Version 1 didn't match the product: the backup is a sync to another device, not an export, and the reminder is Android-only.",
           "date": "2026-11-20"
         }
+      ],
+      "related": [
+        "#tandem.SYN-1"
       ]
     },
     {
@@ -45,6 +48,11 @@
           "reason": "Version 1 didn't match the product: the pre-migration backup is not marked.",
           "date": "2026-11-20"
         }
+      ],
+      "related": [
+        "#tandem.SYN-16",
+        "#tandem.SYN-22",
+        "#tandem.SYN-18"
       ]
     },
     {
@@ -60,6 +68,6 @@
     }
   ],
   "related": [
-    "#SYN-9"
+    "#tandem.SYN-16"
   ]
 }

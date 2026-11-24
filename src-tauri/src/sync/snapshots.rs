@@ -33,6 +33,7 @@ pub fn day_number(date: &str) -> Option<i64> {
     Some(era * 146_097 + doe - 719_468)
 }
 
+// Spec: tandem.SYN-18
 /// Which of `dates` to keep, given today: the last [`DAILY`] days, then the
 /// newest of each week (Monday to Sunday) back to [`WEEKLY_UNTIL`] days.
 pub fn keep(dates: &[String], today: &str) -> Vec<String> {
@@ -110,6 +111,7 @@ mod tests {
         }
     }
 
+    // Spec: tandem.SYN-18
     #[test]
     fn a_year_of_daily_snapshots_thins_out_as_promised() {
         let today = day_number("2026-11-16").unwrap();

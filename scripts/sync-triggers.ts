@@ -20,6 +20,7 @@ import { Database } from "bun:sqlite";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 
+// Spec: tandem.SYN-10
 /** Tables that never sync: device-local state and the sync machinery itself. */
 export const LOCAL_TABLES = [
   "_sqlx_migrations",
@@ -64,6 +65,7 @@ export const TICK_SQL = `hlc_counter = CASE WHEN ${NOW_MS} > hlc_ms THEN 0 WHEN 
  */
 const VV_TICK = "hlc_ms * 1000000 + hlc_counter";
 
+// Spec: tandem.TRG-1
 export function triggerSql(table: string, pk: string, columns: string[]): string {
   const record = (ref: "NEW" | "OLD", deleted: 0 | 1) => `
   UPDATE sync_state SET

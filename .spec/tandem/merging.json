@@ -1,0 +1,36 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Merging",
+  "summary": "How the changes of two devices become the same rows on both.",
+  "order": 4,
+  "requirements": [
+    {
+      "id": "tandem.SYN-2",
+      "text": "Sync merges the changes each instance made since they last synced, instead of replacing one database with the other."
+    },
+    {
+      "id": "tandem.SYN-3",
+      "text": "Sync is built on cr-sqlite.",
+      "deprecation": {
+        "reason": "Sync follows Tally's design instead: change tracking in SQLite triggers and per-row conflict resolution by hybrid logical clock.",
+        "replacedBy": [
+          "#tandem.SYN-11",
+          "tandem/triggers"
+        ],
+        "date": "2026-11-22"
+      }
+    },
+    {
+      "id": "tandem.SYN-11",
+      "text": "Concurrent changes to a row resolve to the version with the later hybrid logical clock."
+    },
+    {
+      "id": "tandem.SYN-12",
+      "text": "Every device reaches the same rows whatever order changes arrive in."
+    },
+    {
+      "id": "tandem.SYN-13",
+      "text": "Two rows that collide on a unique column keep the one with the lower id; the other is deleted on every device."
+    }
+  ]
+}

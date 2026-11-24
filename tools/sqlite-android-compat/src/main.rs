@@ -4,6 +4,7 @@
 use rusqlite::Connection;
 use std::fs;
 
+// Spec: tandem.TRG-4
 fn main() {
     let root = std::env::args().nth(1).expect("repo root");
     let conn = Connection::open_in_memory().unwrap();

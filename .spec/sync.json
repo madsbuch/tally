@@ -1,9 +1,9 @@
 {
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Device sync",
-  "summary": "Peer-to-peer sync between the devices of one vault, over the local network.",
+  "summary": "What Tandem's sync means in Tally.",
   "order": 8,
-  "description": "A phone and a computer hold the same diary. They sync directly with each other on the local network, without a server.",
+  "description": "Tally syncs with the shared part Tandem. In Tally the collection is the vault: one person's diary, held by their phone and computer.",
   "stories": [
     {
       "id": "US-13",
@@ -11,17 +11,26 @@
       "want": "both to show the same diary",
       "soThat": "I never wonder which one is right",
       "requirements": [
-        "#SYN-1",
-        "#SYN-4",
-        "#SYN-5",
-        "#SYN-16"
+        "#tandem.SYN-1",
+        "#tandem.SYN-2",
+        "#tandem.SYN-11",
+        "#tandem.SYN-12",
+        "#SYN-6"
       ]
     }
   ],
   "requirements": [
     {
       "id": "SYN-1",
-      "text": "Devices of one vault sync directly over the local network; no data passes through a server."
+      "text": "Devices of one vault sync directly over the local network; no data passes through a server.",
+      "deprecation": {
+        "reason": "Stated by the shared part Tandem, which Tally now uses for sync.",
+        "replacedBy": [
+          "#tandem.SYN-1",
+          "#tandem.SYN-4"
+        ],
+        "date": "2026-11-23"
+      }
     },
     {
       "id": "SYN-2",
@@ -34,11 +43,28 @@
           "reason": "Version 1 held two statements; how the vault is named in a probe is now SYN-14.",
           "date": "2026-11-20"
         }
-      ]
+      ],
+      "related": [
+        "#tandem.SYN-5"
+      ],
+      "deprecation": {
+        "reason": "Discovery now follows the shared part Tandem: mDNS on every address, IPv6 and IPv4 at once, beside the broadcast and last-known addresses.",
+        "replacedBy": [
+          "#tandem.SYN-5"
+        ],
+        "date": "2026-11-23"
+      }
     },
     {
       "id": "SYN-14",
-      "text": "A discovery probe names the vault by a short tag derived from its id, never by the id itself."
+      "text": "A discovery probe names the vault by a short tag derived from its id, never by the id itself.",
+      "deprecation": {
+        "reason": "Stated by the shared part Tandem, which Tally now uses for sync.",
+        "replacedBy": [
+          "#tandem.SYN-6"
+        ],
+        "date": "2026-11-23"
+      }
     },
     {
       "id": "SYN-3",
@@ -51,15 +77,36 @@
           "reason": "Version 1 also said the handshake decides membership; that check comes after it and is now SYN-15.",
           "date": "2026-11-20"
         }
-      ]
+      ],
+      "deprecation": {
+        "reason": "Stated by the shared part Tandem, which Tally now uses for sync.",
+        "replacedBy": [
+          "#tandem.SYN-7"
+        ],
+        "date": "2026-11-23"
+      }
     },
     {
       "id": "SYN-15",
-      "text": "A peer is let in only when the key it proved in the handshake belongs to a device of the vault."
+      "text": "A peer is let in only when the key it proved in the handshake belongs to a device of the vault.",
+      "deprecation": {
+        "reason": "Stated by the shared part Tandem, which Tally now uses for sync.",
+        "replacedBy": [
+          "#tandem.SYN-8"
+        ],
+        "date": "2026-11-23"
+      }
     },
     {
       "id": "SYN-4",
-      "text": "Every table syncs unless it is explicitly local to the device."
+      "text": "Every table syncs unless it is explicitly local to the device.",
+      "deprecation": {
+        "reason": "Stated by the shared part Tandem, which Tally now uses for sync.",
+        "replacedBy": [
+          "#tandem.SYN-10"
+        ],
+        "date": "2026-11-23"
+      }
     },
     {
       "id": "SYN-5",
@@ -72,23 +119,55 @@
           "reason": "Version 1 held two promises; convergence is now SYN-16.",
           "date": "2026-11-22"
         }
-      ]
+      ],
+      "deprecation": {
+        "reason": "Stated by the shared part Tandem, which Tally now uses for sync.",
+        "replacedBy": [
+          "#tandem.SYN-11"
+        ],
+        "date": "2026-11-23"
+      }
     },
     {
       "id": "SYN-16",
-      "text": "Every device reaches the same rows whatever order changes arrive in."
+      "text": "Every device reaches the same rows whatever order changes arrive in.",
+      "deprecation": {
+        "reason": "Stated by the shared part Tandem, which Tally now uses for sync.",
+        "replacedBy": [
+          "#tandem.SYN-12"
+        ],
+        "date": "2026-11-23"
+      }
     },
     {
       "id": "SYN-6",
-      "text": "A chat continued on two devices at once is split, the losing side kept as a new chat, so no turn is lost."
+      "text": "A chat continued on two devices at once is split, the losing side kept as a new chat, so no turn is lost.",
+      "related": [
+        "#tandem.SYN-11",
+        "#tandem.SYN-12"
+      ]
     },
     {
       "id": "SYN-7",
-      "text": "Two rows that collide on a unique column keep the one with the lower id; the other is deleted on every device."
+      "text": "Two rows that collide on a unique column keep the one with the lower id; the other is deleted on every device.",
+      "deprecation": {
+        "reason": "Stated by the shared part Tandem, which Tally now uses for sync.",
+        "replacedBy": [
+          "#tandem.SYN-13"
+        ],
+        "date": "2026-11-23"
+      }
     },
     {
       "id": "SYN-8",
-      "text": "A new device joins by scanning a pairing QR code, which works for one device and for `sync.pairing-lifetime`."
+      "text": "A new device joins by scanning a pairing QR code, which works for one device and for `sync.pairing-lifetime`.",
+      "deprecation": {
+        "reason": "Stated by the shared part Tandem, which Tally now uses for sync.",
+        "replacedBy": [
+          "#tandem.SYN-9"
+        ],
+        "date": "2026-11-23"
+      }
     },
     {
       "id": "SYN-9",
@@ -101,15 +180,36 @@
           "reason": "Version 1 didn't match the product: migrations write before the check, and a restore that brings its marker file along is only caught when syncing.",
           "date": "2026-11-20"
         }
-      ]
+      ],
+      "deprecation": {
+        "reason": "Stated by the shared part Tandem, which Tally now uses for sync.",
+        "replacedBy": [
+          "#tandem.SYN-16"
+        ],
+        "date": "2026-11-23"
+      }
     },
     {
       "id": "SYN-10",
-      "text": "Settings that belong to one device (sync bookmarks, caches, the unread badge) are never synced."
+      "text": "Settings that belong to one device (sync bookmarks, caches, the unread badge) are never synced.",
+      "deprecation": {
+        "reason": "Stated by the shared part Tandem, which Tally now uses for sync.",
+        "replacedBy": [
+          "#tandem.SYN-15"
+        ],
+        "date": "2026-11-23"
+      }
     },
     {
       "id": "SYN-11",
-      "text": "On Android, sync also runs while the app is closed."
+      "text": "On Android, sync also runs while the app is closed.",
+      "deprecation": {
+        "reason": "Stated by the shared part Tandem, which Tally now uses for sync.",
+        "replacedBy": [
+          "#tandem.SYN-17"
+        ],
+        "date": "2026-11-23"
+      }
     },
     {
       "id": "SYN-12",
@@ -122,28 +222,66 @@
           "reason": "Version 1 didn't name the periods or say copies are made only while the app runs.",
           "date": "2026-11-20"
         }
-      ]
+      ],
+      "deprecation": {
+        "reason": "Stated by the shared part Tandem, which Tally now uses for sync.",
+        "replacedBy": [
+          "#tandem.SYN-18"
+        ],
+        "date": "2026-11-23"
+      }
     },
     {
       "id": "SYN-13",
-      "text": "Development and release builds never sync with each other."
+      "text": "Development and release builds never sync with each other.",
+      "deprecation": {
+        "reason": "Stated by the shared part Tandem, which Tally now uses for sync.",
+        "replacedBy": [
+          "#tandem.SYN-19"
+        ],
+        "date": "2026-11-23"
+      }
     }
   ],
   "values": [
     {
       "id": "sync.pairing-lifetime",
       "type": "duration",
-      "value": "10min"
+      "value": "10min",
+      "deprecation": {
+        "reason": "Stated by the shared part Tandem, which Tally now uses for sync.",
+        "replacedBy": [
+          "#tandem.pairing-lifetime"
+        ],
+        "date": "2026-11-23"
+      }
     },
     {
       "id": "sync.snapshot-daily",
       "type": "duration",
-      "value": "14d"
+      "value": "14d",
+      "deprecation": {
+        "reason": "Stated by the shared part Tandem, which Tally now uses for sync.",
+        "replacedBy": [
+          "#tandem.snapshot-daily"
+        ],
+        "date": "2026-11-23"
+      }
     },
     {
       "id": "sync.snapshot-weekly",
       "type": "duration",
-      "value": "91d"
+      "value": "91d",
+      "deprecation": {
+        "reason": "Stated by the shared part Tandem, which Tally now uses for sync.",
+        "replacedBy": [
+          "#tandem.snapshot-weekly"
+        ],
+        "date": "2026-11-23"
+      }
     }
+  ],
+  "related": [
+    "tandem"
   ]
 }

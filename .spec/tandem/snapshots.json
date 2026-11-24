@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
+  "title": "Snapshots",
+  "summary": "Desktop devices keep copies of the database to go back to.",
+  "order": 6,
+  "requirements": [
+    {
+      "id": "tandem.SYN-18",
+      "text": "While the app runs, a desktop device keeps a daily copy of the database for `tandem.snapshot-daily`, then one a week back to `tandem.snapshot-weekly`."
+    }
+  ],
+  "values": [
+    {
+      "id": "tandem.snapshot-daily",
+      "type": "duration",
+      "value": "14d"
+    },
+    {
+      "id": "tandem.snapshot-weekly",
+      "type": "duration",
+      "value": "91d"
+    }
+  ]
+}

@@ -1,6 +1,8 @@
 package com.madsbuch.tally.syncbg
 
 import android.app.Activity
+import android.content.Context
+import android.net.wifi.WifiManager
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
@@ -27,6 +29,7 @@ class ScheduleArgs {
 @TauriPlugin
 class SyncBackgroundPlugin(private val activity: Activity) : Plugin(activity) {
 
+    // Spec: tandem.SYN-17
     @Command
     fun schedule(invoke: Invoke) {
         val args = invoke.parseArgs(ScheduleArgs::class.java)
@@ -51,6 +54,22 @@ class SyncBackgroundPlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun cancel(invoke: Invoke) {
         WorkManager.getInstance(activity.applicationContext).cancelUniqueWork(SyncWorker.NAME)
+        invoke.resolve()
+    }
+
+    private var multicastLock: WifiManager.MulticastLock? = null
+
+    // Spec: tandem.SYN-5
+    /** Holds the Wi-Fi multicast lock while the app runs, so mDNS works. */
+    @Command
+    fun holdMulticastLock(invoke: Invoke) {
+        if (multicastLock?.isHeld != true) {
+            val wifi = activity.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            multicastLock = wifi.createMulticastLock("tally-sync").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        }
         invoke.resolve()
     }
 }

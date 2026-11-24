@@ -107,6 +107,7 @@ pub struct TableInfo {
     pub cascades: Vec<(String, String, String)>,
 }
 
+// Spec: tandem.SYN-10
 /// The synced tables, read from the database itself: a table is synced when
 /// it carries the sync insert trigger (see scripts/sync-triggers.ts).
 pub async fn synced_tables(conn: &mut SqliteConnection) -> Result<BTreeMap<String, TableInfo>> {
@@ -603,6 +604,7 @@ async fn unique_clash(conn: &mut SqliteConnection, t: &TableInfo, pk: &str, data
     Ok(None)
 }
 
+// Spec: tandem.SYN-13
 /// Writes `data` as row `pk`, settling a clash on a unique column by keeping
 /// the lower id. False when the incoming row lost and wasn't written.
 async fn write_settling_clashes(
@@ -640,6 +642,7 @@ fn fork_id(pk: &str, hlc: &str, origin: &str) -> String {
     crate::type_id::type_id("chat", b)
 }
 
+// Spec: SYN-6
 /// Keeps the losing side of a chat continued on two devices as a chat of its
 /// own. Its id, title and version follow from the losing version alone, so
 /// both devices create exactly the same one.
@@ -671,6 +674,7 @@ async fn fork_chat(
     record(conn, &t.name, &id, loser_hlc, loser_origin, false, loser_vv, None).await
 }
 
+// Spec: tandem.SYN-11, tandem.SYN-12
 async fn apply_one(
     conn: &mut SqliteConnection,
     tables: &BTreeMap<String, TableInfo>,
@@ -828,6 +832,7 @@ pub async fn pulled_from(pool: &SqlitePool, peer: &str) -> Result<i64> {
         .unwrap_or(0))
 }
 
+// Spec: tandem.SYN-2
 /// Pulls everything `from` has that `into` hasn't, batch by batch. Used by
 /// the tests directly and by the transport over the wire.
 pub async fn pull_all(into: &SqlitePool, from: &SqlitePool, batch_rows: i64, batch_bytes: usize) -> Result<ApplyStats> {

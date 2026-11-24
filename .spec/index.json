@@ -22,7 +22,7 @@
       "requirements": [
         "#TAL-1",
         "#TAL-4",
-        "#SYN-1",
+        "#tandem.SYN-4",
         "#AI-5",
         "#OFF-2"
       ]
@@ -46,6 +46,9 @@
           "reason": "Version 2 held two promises; where data leaves a device is now TAL-4.",
           "date": "2026-11-22"
         }
+      ],
+      "related": [
+        "#tandem.SYN-4"
       ]
     },
     {
@@ -59,6 +62,15 @@
     {
       "id": "TAL-4",
       "text": "Data leaves the vault's devices only for the AI, food-lookup and Garmin services the user sets up, and in exports the user makes."
+    }
+  ],
+  "imports": [
+    {
+      "id": "tandem",
+      "at": "tandem",
+      "from": "madsbuch/spec-repo",
+      "commit": "4b867c69cb29461ee89e9b4b4de5c46062889d60",
+      "tree": "ef45a0a59dfe1638f9a255ea3040fd5392fb6a70"
     }
   ]
 }
