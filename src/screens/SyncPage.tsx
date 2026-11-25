@@ -93,6 +93,7 @@ function WebcamScanner({ onCode, onError }: { onCode: (c: string) => void; onErr
 }
 
 // Spec: tandem.SYN-24
+// Spec: tandem.SYN-29
 /** The button to the setting that lets the app onto the local network. */
 function NetworkSettingsButton() {
   return (
@@ -140,6 +141,7 @@ function DeviceRow({ d, problem, onRemove }: { d: SyncDevice; problem: SyncProbl
 }
 
 // Spec: tandem.SYN-23
+// Spec: tandem.SYN-29
 /** Settings → Sync's connection check: what it found, and what's in the way. */
 function CheckReport({ c }: { c: ConnectionCheck }) {
   return (

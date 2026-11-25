@@ -52,6 +52,13 @@
     {
       "id": "tandem.SYN-19",
       "text": "Development and release builds never sync with each other."
+    },
+    {
+      "id": "tandem.SYN-26",
+      "text": "On macOS the app is code-signed, ad hoc at the least, so macOS asks before letting it onto the local network instead of keeping it off without asking.",
+      "related": [
+        "#tandem.SYN-24"
+      ]
     }
   ]
 }

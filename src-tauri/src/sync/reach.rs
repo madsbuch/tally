@@ -167,6 +167,7 @@ fn broadcasts(nets: &[LocalNet], port: u16) -> Vec<SocketAddr> {
     out
 }
 
+// Spec: tandem.SYN-27
 /// Whether this computer is keeping the app off the local network.
 ///
 /// macOS's Local Network privacy refuses the app's packets to the local
@@ -285,7 +286,7 @@ mod tests {
         assert_eq!(diagnose("Phone", &[], &nets, false).why, Why::NoAddress);
     }
 
-    // Spec: tandem.SYN-24
+    // Spec: tandem.SYN-27
     #[test]
     fn no_route_to_a_device_is_a_block_only_when_a_broadcast_was_refused_too() {
         // A phone asleep, or gone from its old address, fails the same way

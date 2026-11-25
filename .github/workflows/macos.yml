@@ -27,7 +27,7 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
-      # Spec: ENG-4
+      # Spec: tandem.SYN-26
       # Signed ad hoc (bundle.macOS.signingIdentity "-" in tauri.conf.json):
       # an unsigned app is kept off the local network without macOS asking.
       # Not notarized: Gatekeeper asks the user to allow it on first launch

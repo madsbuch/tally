@@ -11,6 +11,28 @@
     {
       "id": "tandem.SYN-24",
       "text": "A sync or join that can't reach a device says why, and tells apart what it can: the computer keeping the app off the local network (then it leads to the setting that allows it), the device not answering, another network or a VPN, and the device not running the app."
+    },
+    {
+      "id": "tandem.SYN-27",
+      "text": "The app says the computer is keeping it off the local network only when the computer refuses something a block alone would refuse, never from a failure that a device asleep or gone from its address also causes.",
+      "related": [
+        "#tandem.SYN-24"
+      ]
+    },
+    {
+      "id": "tandem.SYN-28",
+      "text": "The connection check also shows when each of the collection's devices last reached this one, so a device that can be reached only one way round is seen.",
+      "related": [
+        "#tandem.SYN-23"
+      ]
+    },
+    {
+      "id": "tandem.SYN-29",
+      "text": "Each reason a device can't be reached is said once wherever it shows, beside the way to fix it.",
+      "related": [
+        "#tandem.SYN-23",
+        "#tandem.SYN-24"
+      ]
     }
   ]
 }

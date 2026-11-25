@@ -35,7 +35,14 @@
       "text": "The macOS app is signed (ad hoc while there's no certificate), so macOS asks before letting it onto the local network instead of keeping it off without asking.",
       "related": [
         "#tandem.SYN-24"
-      ]
+      ],
+      "deprecation": {
+        "reason": "Stated by the shared part Tandem, which every app that syncs with it needs on macOS.",
+        "replacedBy": [
+          "#tandem.SYN-26"
+        ],
+        "date": "2026-11-25"
+      }
     }
   ]
 }
