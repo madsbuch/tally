@@ -260,7 +260,7 @@ impl SyncService {
         self.set_activity(app, |a| a.syncing = true);
         let result = session::join_any(pool, &offer, &nearby, replace).await;
         let problem = match &result {
-            Err(Missed::Unreached(fails)) => Some(diagnose(&offer.host_name, fails)),
+            Err(Missed::Unreached(fails)) => Some(diagnose(&offer.host_name, fails).await),
             _ => None,
         };
         let result = result.map_err(|e| match (&e, &problem) {
@@ -368,6 +368,9 @@ impl SyncService {
         if !listening {
             problems.push(reach::problem("", Why::NotListening, false));
         }
+        if !addresses.is_empty() && reach::held_off(&nets, discovery::PORT).await {
+            problems.push(reach::problem("", Why::Blocked, false));
+        }
         for p in devices.iter().filter_map(|d| d.problem.clone()) {
             if !problems.iter().any(|q| q.message == p.message) {
                 problems.push(p);
@@ -418,7 +421,7 @@ async fn reachability(device_id: Option<String>, name: &str, joined_code: bool, 
     } else {
         match reach::connect_first(addrs).await {
             Ok((_, at)) => (Some(at.to_string()), None),
-            Err(fails) => (None, Some(diagnose(name, &fails))),
+            Err(fails) => (None, Some(diagnose(name, &fails).await)),
         }
     };
     Reachability {
@@ -433,8 +436,10 @@ async fn reachability(device_id: Option<String>, name: &str, joined_code: bool, 
 
 // Spec: tandem.SYN-24
 /// Why `name` couldn't be reached, on this device's networks.
-pub fn diagnose(name: &str, fails: &[(SocketAddr, reach::Failure)]) -> Problem {
-    reach::diagnose(name, fails, &reach::local_nets(), cfg!(target_os = "macos"))
+pub async fn diagnose(name: &str, fails: &[(SocketAddr, reach::Failure)]) -> Problem {
+    let nets = reach::local_nets();
+    let held_off = reach::held_off(&nets, discovery::PORT).await;
+    reach::diagnose(name, fails, &nets, held_off)
 }
 
 /// The device whose code was last joined, kept so the connection check can
@@ -545,7 +550,7 @@ pub async fn sync_round(pool: &SqlitePool, mdns: Option<&Mdns>) -> Round {
             Ok(Some(o)) => round.outcomes.push(o),
             Ok(None) => {}
             // Not around is normal: said per device, not as an error.
-            Err(Missed::Unreached(fails)) => round.unreached.push((p.id.clone(), diagnose(&p.name, &fails))),
+            Err(Missed::Unreached(fails)) => round.unreached.push((p.id.clone(), diagnose(&p.name, &fails).await)),
             Err(Missed::Failed(e)) => round.errors.push(e),
         }
     }

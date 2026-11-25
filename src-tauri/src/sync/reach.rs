@@ -8,9 +8,9 @@
 
 use serde::Serialize;
 use std::io::ErrorKind;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
-use tokio::net::TcpStream;
+use tokio::net::{TcpStream, UdpSocket};
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 
@@ -149,16 +149,64 @@ pub fn vpn_up(nets: &[LocalNet]) -> bool {
     })
 }
 
-/// Why one address failed.
-fn why_one(addr: SocketAddr, failure: &Failure, nets: &[LocalNet], macos: bool) -> Why {
+/// Where a broadcast on each of this device's IPv4 networks goes, and the
+/// broadcast address that stands for all of them.
+fn broadcasts(nets: &[LocalNet], port: u16) -> Vec<SocketAddr> {
+    let mut out = vec![SocketAddr::new(IpAddr::V4(Ipv4Addr::BROADCAST), port)];
+    for n in nets {
+        if let (IpAddr::V4(ip), IpAddr::V4(mask)) = (n.ip, n.mask) {
+            if ip.is_link_local() || mask == Ipv4Addr::UNSPECIFIED {
+                continue;
+            }
+            let b = SocketAddr::new(IpAddr::V4(Ipv4Addr::from(u32::from(ip) | !u32::from(mask))), port);
+            if !out.contains(&b) {
+                out.push(b);
+            }
+        }
+    }
+    out
+}
+
+/// Whether this computer is keeping the app off the local network.
+///
+/// macOS's Local Network privacy refuses the app's packets to the local
+/// network with "no route to host". A connection to a device that's asleep,
+/// gone, or no longer at its old address fails with the same words, so that
+/// failure alone doesn't tell the two apart. A broadcast does: it waits for
+/// no answer and needs no address looked up, so sending one fails only when
+/// the network is held back. It goes to discovery's port, where a device
+/// ignores anything that isn't a query. Elsewhere nothing holds the app back.
+pub async fn held_off(nets: &[LocalNet], port: u16) -> bool {
+    if !cfg!(target_os = "macos") {
+        return false;
+    }
+    let Ok(socket) = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await else { return false };
+    if socket.set_broadcast(true).is_err() {
+        return false;
+    }
+    for to in broadcasts(nets, port) {
+        if let Err(e) = socket.send_to(&[], to).await {
+            if matches!(e.kind(), ErrorKind::HostUnreachable | ErrorKind::PermissionDenied) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Why one address failed; `held_off` is whether this computer keeps the
+/// app off the local network (see [`held_off`]).
+fn why_one(addr: SocketAddr, failure: &Failure, nets: &[LocalNet], held_off: bool) -> Why {
     let ip = addr.ip();
     let on_our_network = link_local(ip) || nets.iter().any(|n| n.contains(ip));
     match failure {
         Failure::Io(ErrorKind::ConnectionRefused) => Why::NotRunning,
         Failure::Io(ErrorKind::PermissionDenied) => Why::Blocked,
         // macOS answers a denied Local Network permission with "no route to
-        // host", even for a device right there on the Wi-Fi.
-        Failure::Io(ErrorKind::HostUnreachable) if macos && on_our_network => Why::Blocked,
+        // host", even for a device right there on the Wi-Fi; but it answers
+        // a device that's asleep or gone the same way, so it's only taken
+        // for a block when a broadcast was refused too.
+        Failure::Io(ErrorKind::HostUnreachable) if held_off && on_our_network => Why::Blocked,
         Failure::Io(ErrorKind::NetworkUnreachable) => Why::OtherNetwork,
         _ if !on_our_network => Why::OtherNetwork,
         _ => Why::NoAnswer,
@@ -167,10 +215,10 @@ fn why_one(addr: SocketAddr, failure: &Failure, nets: &[LocalNet], macos: bool) 
 
 /// One reason a device (`name`) couldn't be reached, from how each of its
 /// addresses failed.
-pub fn diagnose(name: &str, failures: &[(SocketAddr, Failure)], nets: &[LocalNet], macos: bool) -> Problem {
+pub fn diagnose(name: &str, failures: &[(SocketAddr, Failure)], nets: &[LocalNet], held_off: bool) -> Problem {
     let why = failures
         .iter()
-        .map(|(a, f)| why_one(*a, f, nets, macos))
+        .map(|(a, f)| why_one(*a, f, nets, held_off))
         .min()
         .unwrap_or(Why::NoAddress);
     problem(name, why, vpn_up(nets))
@@ -210,7 +258,7 @@ pub const NETWORK_SETTINGS_URL: &str = "x-apple.systempreferences:com.apple.pref
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::net::Ipv6Addr;
 
     fn home() -> Vec<LocalNet> {
         vec![LocalNet {
@@ -227,7 +275,7 @@ mod tests {
     #[test]
     fn each_cause_is_told_apart() {
         let nets = home();
-        let d = |f: Failure, ip: [u8; 4], mac: bool| diagnose("Phone", &[(at(ip), f)], &nets, mac).why;
+        let d = |f: Failure, ip: [u8; 4], held_off: bool| diagnose("Phone", &[(at(ip), f)], &nets, held_off).why;
         assert_eq!(d(Failure::Io(ErrorKind::ConnectionRefused), [192, 168, 1, 30], false), Why::NotRunning);
         assert_eq!(d(Failure::Timeout, [192, 168, 1, 30], false), Why::NoAnswer);
         assert_eq!(d(Failure::Io(ErrorKind::HostUnreachable), [192, 168, 1, 30], true), Why::Blocked);
@@ -235,6 +283,28 @@ mod tests {
         assert_eq!(d(Failure::Timeout, [10, 0, 0, 5], false), Why::OtherNetwork);
         assert_eq!(d(Failure::Io(ErrorKind::NetworkUnreachable), [192, 168, 1, 30], false), Why::OtherNetwork);
         assert_eq!(diagnose("Phone", &[], &nets, false).why, Why::NoAddress);
+    }
+
+    // Spec: tandem.SYN-24
+    #[test]
+    fn no_route_to_a_device_is_a_block_only_when_a_broadcast_was_refused_too() {
+        // A phone asleep, or gone from its old address, fails the same way
+        // a block does; with the network let through, it simply doesn't answer.
+        let nets = home();
+        let unreachable = [(at([192, 168, 1, 30]), Failure::Io(ErrorKind::HostUnreachable))];
+        let allowed = diagnose("Phone", &unreachable, &nets, false);
+        assert_eq!(allowed.why, Why::NoAnswer);
+        assert!(!allowed.has_setting);
+        assert_eq!(diagnose("Phone", &unreachable, &nets, true).why, Why::Blocked);
+    }
+
+    #[test]
+    fn a_broadcast_goes_everywhere_and_to_each_network() {
+        let mut nets = home();
+        nets.push(LocalNet { ip: IpAddr::V4(Ipv4Addr::new(169, 254, 3, 4)), mask: IpAddr::V4(Ipv4Addr::new(255, 255, 0, 0)), iface: "en5".into() });
+        nets.push(LocalNet { ip: IpAddr::V6(Ipv6Addr::new(0xfd12, 0, 0, 0, 0, 0, 0, 1)), mask: IpAddr::V6(Ipv6Addr::UNSPECIFIED), iface: "en0".into() });
+        let to: Vec<String> = broadcasts(&nets, 47821).iter().map(|a| a.to_string()).collect();
+        assert_eq!(to, ["255.255.255.255:47821", "192.168.1.255:47821"]);
     }
 
     // Spec: tandem.SYN-24

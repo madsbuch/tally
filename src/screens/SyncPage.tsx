@@ -93,6 +93,16 @@ function WebcamScanner({ onCode, onError }: { onCode: (c: string) => void; onErr
 }
 
 // Spec: tandem.SYN-24
+/** The button to the setting that lets the app onto the local network. */
+function NetworkSettingsButton() {
+  return (
+    <button className="btn btn-ghost btn-sm" onClick={() => void openNetworkSettings().catch(() => {})}>
+      Open Local Network settings
+    </button>
+  );
+}
+
+// Spec: tandem.SYN-24
 /** A reason in plain words, with the button to the setting that fixes it. */
 function ProblemLine({ p }: { p: SyncProblem }) {
   return (
@@ -101,9 +111,7 @@ function ProblemLine({ p }: { p: SyncProblem }) {
       {p.hasSetting && (
         <>
           {" "}
-          <button className="btn btn-ghost btn-sm" onClick={() => void openNetworkSettings().catch(() => {})}>
-            Open Local Network settings
-          </button>
+          <NetworkSettingsButton />
         </>
       )}
     </p>
@@ -159,13 +167,14 @@ function CheckReport({ c }: { c: ConnectionCheck }) {
             {d.name}
             {d.joinedCode && <span className="faint small"> · the code last joined</span>}
           </div>
-          {d.reachedAt ? (
-            <p className="small muted" style={{ margin: "2px 0 0" }}>
-              Reached at {d.reachedAt}.
-            </p>
-          ) : (
-            d.problem && <ProblemLine p={d.problem} />
-          )}
+          {/* Why it wasn't reached is said once, under "What's in the way". */}
+          <p className="small muted" style={{ margin: "2px 0 0" }}>
+            {d.reachedAt
+              ? `Reached at ${d.reachedAt}.`
+              : d.addrs.length > 0
+                ? `Not reached at ${d.addrs.join(", ")}.`
+                : "No address for it yet."}
+          </p>
         </div>
       ))}
       <div>
@@ -362,7 +371,12 @@ export default function SyncPage() {
           <p className="small" style={{ margin: 0 }}>
             {error}
           </p>
-          {status?.joinProblem?.hasSetting && <ProblemLine p={status.joinProblem} />}
+          {/* The error already says why; this adds only the way to fix it. */}
+          {status?.joinProblem?.hasSetting && (
+            <p className="small" style={{ margin: "4px 0 0" }}>
+              <NetworkSettingsButton />
+            </p>
+          )}
         </div>
       )}
 
