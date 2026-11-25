@@ -27,9 +27,12 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
-      # Unsigned: macOS Gatekeeper will ask the user to allow it on first launch
+      # Spec: ENG-4
+      # Signed ad hoc (bundle.macOS.signingIdentity "-" in tauri.conf.json):
+      # an unsigned app is kept off the local network without macOS asking.
+      # Not notarized: Gatekeeper asks the user to allow it on first launch
       # (right-click → Open). Add APPLE_CERTIFICATE / APPLE_ID secrets and the
-      # matching env vars here to sign and notarize.
+      # matching env vars here to sign with a certificate and notarize.
       - name: Build app
         run: bun run tauri build --target universal-apple-darwin --bundles app,dmg
 

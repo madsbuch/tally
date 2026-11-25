@@ -35,6 +35,10 @@
     ],
     "android": {
       "debugApplicationIdSuffix": ".dev"
+    },
+    "macOS": {
+      "signingIdentity": "-",
+      "hardenedRuntime": false
     }
   }
 }

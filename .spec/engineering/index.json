@@ -29,6 +29,13 @@
         "#tandem.TRG-4",
         "#tandem.TRG-5"
       ]
+    },
+    {
+      "id": "ENG-4",
+      "text": "The macOS app is signed (ad hoc while there's no certificate), so macOS asks before letting it onto the local network instead of keeping it off without asking.",
+      "related": [
+        "#tandem.SYN-24"
+      ]
     }
   ]
 }
