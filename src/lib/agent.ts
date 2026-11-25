@@ -1022,7 +1022,7 @@ async function barcodeParts(dataUrl: string): Promise<ContentPart[]> {
 async function runCapture(capture: Capture): Promise<void> {
   const apiKey = await getSetting(SETTING_KEYS.openrouterApiKey);
   if (!apiKey) {
-    throw new Error("Add your OpenRouter API key in Settings first");
+    throw new Error("Add your OpenRouter API key in Settings → AI first");
   }
   const model = (await getSetting(SETTING_KEYS.visionModel)) || DEFAULT_VISION_MODEL;
   const [diary, region] = await Promise.all([

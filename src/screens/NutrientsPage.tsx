@@ -514,7 +514,7 @@ export default function NutrientsPage() {
                   </p>
                   <p>
                     Most people stay in ketosis under {carbLimit} g a day with fat
-                    around 70–80% of their energy. Your limit is in Settings.
+                    around 70–80% of their energy. Your limit is in Settings → Goals.
                   </p>
                 </InfoButton>
               </div>

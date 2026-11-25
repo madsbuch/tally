@@ -12,7 +12,7 @@ const OPTIONS: { value: ThemePref; label: string }[] = [
   { value: "dark", label: "Dark" },
 ];
 
-/** Settings → Appearance: follow the phone, or pin light or dark. */
+/** Settings → General: follow the phone, or pin light or dark. */
 export default function ThemeSetting() {
   const pref = useSyncExternalStore(subscribeThemePref, currentThemePref);
   return (

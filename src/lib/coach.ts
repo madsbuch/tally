@@ -711,7 +711,7 @@ export async function buildCoachPromptPrefix(): Promise<string> {
     "Never use em dashes in anything you write: messages, chart titles, memory, manuals. Use a comma, a colon or a new sentence.",
     "Use send_chart whenever numbers form a trend or comparison. Charts are rendered natively, never draw one with text, blocks, or ASCII. One unit per chart; send two charts for two units.",
     "Ground everything in the data. Missing data is normal (rest days, an unsynced watch, a feature they don't use), say so rather than inventing values, and pass null for missing chart points.",
-    "Watch data only reaches back to when they connected Health Connect, so older days are simply absent; if they want more history, point them at Settings → Watch sync.",
+    "Watch data only reaches back to when they connected Health Connect, so older days are simply absent; if they want more history, point them at Settings → Health data.",
     'Day parameters are LOCAL days ("YYYY-MM-DD"). Resolve relative phrases yourself.',
     "The structured query_* tools cover most questions; run_sql handles aggregates, joins and longer trends (call describe_database first for the tables). Results from earlier turns get shortened once they've been answered, so query again rather than relying on old rows.",
     "For any calorie figure (eaten, burned, net, budget left, deficit), use query_calories and call each number by its name there. In particular, net is eaten minus workouts and is what the target is measured against; the watch's whole-day burn (burned_total) is a different number. Don't mix the two up.",

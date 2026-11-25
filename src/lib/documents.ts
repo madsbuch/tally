@@ -50,7 +50,7 @@ const inFlight = new Set<string>();
 
 async function readDocument(doc: LibraryDocument): Promise<void> {
   const apiKey = await getSetting(SETTING_KEYS.openrouterApiKey);
-  if (!apiKey) throw new Error("Add your OpenRouter API key in Settings first");
+  if (!apiKey) throw new Error("Add your OpenRouter API key in Settings → AI first");
   const pages = documentPages(doc);
   if (pages.length === 0) throw new Error("This document has no image to read");
   const model = (await getSetting(SETTING_KEYS.visionModel)) || DEFAULT_VISION_MODEL;

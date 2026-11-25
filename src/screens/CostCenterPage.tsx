@@ -126,8 +126,10 @@ function GroupRow({
  * photo diary, logged with what it was for and what it cost.
  */
 export default function CostCenterPage() {
-  const up = useUp();
-  const upLabel = useUpLabel("Settings");
+  // Spec: SET-1
+  // Its folder is Settings → AI.
+  const up = useUp("/settings/ai");
+  const upLabel = useUpLabel("AI", "/settings/ai");
   const [period, setPeriod] = useState<Period>(30);
   const [rows, setRows] = useState<UsageRow[] | null>(null);
   const [firstDay, setFirstDay] = useState<string | null>(null);

@@ -203,6 +203,11 @@ export function placeName(path: string): string {
   if (first === "settings") {
     if (second === "sync") return "Sync";
     if (second === "costs") return "Costs";
+    if (second === "goals") return "Goals";
+    if (second === "coach") return "Coach settings";
+    if (second === "health") return "Health data";
+    if (second === "ai") return "AI";
+    if (second === "general") return "General";
     return "Settings";
   }
   return "Diary";

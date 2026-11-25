@@ -168,7 +168,7 @@ function setBars(mode: "light" | "dark"): void {
 const listeners = new Set<() => void>();
 
 /**
- * Pick a theme (Settings → Appearance). `from` is where it was picked — the
+ * Pick a theme (Settings → General). `from` is where it was picked — the
  * middle of the button — for the new theme to grow from.
  */
 export function setThemePref(pref: ThemePref, from?: Origin): void {

@@ -208,7 +208,7 @@ export default function CoachSettings() {
   return (
     <>
       <div className="section-title" style={{ display: "flex", justifyContent: "space-between" }}>
-        <span>Coach</span>
+        <span>How it coaches</span>
         {saved && <span className="chip chip-accent">Saved</span>}
       </div>
 

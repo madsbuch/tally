@@ -433,7 +433,7 @@ export async function readCalories(
     (figures.includes("burned_total") || figures.includes("energy_balance"))
   ) {
     notes.push(
-      "No watch total in this range, so there is no burned_total or energy_balance. It needs Health Connect sync (Settings → Watch sync).",
+      "No watch total in this range, so there is no burned_total or energy_balance. It needs Health Connect sync (Settings → Health data).",
     );
   }
 

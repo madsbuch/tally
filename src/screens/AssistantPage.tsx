@@ -277,8 +277,8 @@ export default function AssistantPage() {
         <div className="card">
           <h2 className="card-title">Set up first</h2>
           <p className="muted small" style={{ margin: 0 }}>
-            The coach needs an OpenRouter API key. Add one under Settings →
-            OpenRouter, then come back.
+            The coach needs an OpenRouter API key. Add one under Settings → AI,
+            then come back.
           </p>
         </div>
       )}

@@ -1551,7 +1551,7 @@ export default function DiaryPage() {
                     />
                   </div>
                   <div className="faint small" style={{ margin: "8px 2px 0" }}>
-                    Set a daily calorie target in Settings to track your budget here.
+                    Set a daily calorie target in Settings → Goals to track your budget here.
                   </div>
                 </>
               )}

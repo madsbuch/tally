@@ -1876,7 +1876,7 @@ export async function runAssistantTurn(
   opts: AssistantTurnOptions = {},
 ): Promise<void> {
   const apiKey = await getSetting(SETTING_KEYS.openrouterApiKey);
-  if (!apiKey) throw new Error("Add your OpenRouter API key in Settings first.");
+  if (!apiKey) throw new Error("Add your OpenRouter API key in Settings → AI first.");
   const [model, reasoning] = await Promise.all([
     coachModelFor(opts.purpose ?? "chat"),
     coachReasoning(),

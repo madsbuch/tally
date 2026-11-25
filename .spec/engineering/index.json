@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/madsbuch/better-github/main/schema/spec.schema.json",
   "title": "Engineering rules",
   "summary": "How Tally is built, where it is decided and has to hold.",
-  "order": 10,
+  "order": 11,
   "description": "Rules that hold across the whole code base.",
   "requirements": [
     {

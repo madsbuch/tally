@@ -18,7 +18,12 @@ export type Path =
   | `/nutrients`
   | `/nutrients/progress`
   | `/settings`
+  | `/settings/ai`
+  | `/settings/coach`
   | `/settings/costs`
+  | `/settings/general`
+  | `/settings/goals`
+  | `/settings/health`
   | `/settings/sync`
 
 export type Params = {
