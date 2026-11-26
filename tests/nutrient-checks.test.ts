@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { parseNutrientChecks } from "../src/lib/schemas";
-import { CHECKABLE_NUTRIENTS } from "../src/lib/nutrients";
 
-// Spec: SUM-8
+const { nutrientChecksMet } = await import("../src/lib/goals");
+
+// Spec: GOAL-6
 describe("nutrient checks setting", () => {
   test("reads the picked nutrients and their daily amounts", () => {
     expect(parseNutrientChecks('{"vitamin_d_ug":50,"creatine_g":5}')).toEqual({
@@ -20,14 +21,28 @@ describe("nutrient checks setting", () => {
     expect(() => parseNutrientChecks('{"creatine_g":"lots"}')).toThrow();
     expect(() => parseNutrientChecks("[5]")).toThrow();
   });
+});
 
-  test("only nutrients with a Summary row can be picked", () => {
-    const keys = CHECKABLE_NUTRIENTS.map((d) => d.key);
-    expect(keys).toContain("vitamin_d_ug");
-    expect(keys).toContain("creatine_g");
-    expect(keys).toContain("epa_dha_g");
-    expect(keys).toContain("magnesium_mg");
-    expect(keys).not.toContain("calories");
-    expect(keys).not.toContain("trans_fat_g");
+// Spec: GOAL-7
+describe("checking nutrients off", () => {
+  const checks = { vitamin_d_ug: 50, creatine_g: 5 };
+
+  test("a day: met once the amount is reached, not before", () => {
+    expect(nutrientChecksMet(checks, { vitamin_d_ug: 50, creatine_g: 4.9 }, 1)).toEqual([
+      { key: "vitamin_d_ug", amount: 50, met: true },
+      { key: "creatine_g", amount: 5, met: false },
+    ]);
+  });
+
+  test("nothing logged is not met; nothing picked lists nothing", () => {
+    expect(nutrientChecksMet({ creatine_g: 5 }, {}, 1)).toEqual([
+      { key: "creatine_g", amount: 5, met: false },
+    ]);
+    expect(nutrientChecksMet({}, { creatine_g: 5 }, 1)).toEqual([]);
+  });
+
+  test("a period needs the daily amount times its days", () => {
+    expect(nutrientChecksMet({ creatine_g: 5 }, { creatine_g: 34 }, 7)[0]?.met).toBe(false);
+    expect(nutrientChecksMet({ creatine_g: 5 }, { creatine_g: 35 }, 7)[0]?.met).toBe(true);
   });
 });

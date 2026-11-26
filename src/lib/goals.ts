@@ -26,7 +26,8 @@ import {
   DEFAULT_PROTEIN_TARGET_G,
   SETTING_KEYS,
 } from "./types";
-import type { Nutrients } from "./types";
+import type { NutrientKey, Nutrients } from "./types";
+import { NUTRIENT_DEFS } from "./nutrients";
 
 /** Largest per-day correction accepted, either way. */
 export const MAX_MANUAL_ADJUSTMENT = 2000;
@@ -85,7 +86,7 @@ export async function getProteinTarget(): Promise<number> {
   return isFinite(n) && n > 0 ? n : DEFAULT_PROTEIN_TARGET_G;
 }
 
-// Spec: SUM-8
+// Spec: GOAL-6
 /**
  * The nutrients to check off each day and the daily amount for each; empty
  * until the user picks some. Throws on a corrupt setting, so it surfaces.
@@ -98,6 +99,23 @@ export async function getNutrientChecks(): Promise<Nutrients> {
 export async function saveNutrientChecks(checks: Nutrients): Promise<void> {
   if (Object.keys(checks).length === 0) await deleteSetting(SETTING_KEYS.nutrientChecks);
   else await setSetting(SETTING_KEYS.nutrientChecks, JSON.stringify(checks));
+}
+
+// Spec: GOAL-7
+/**
+ * Each picked nutrient, in `NUTRIENT_DEFS` order, and whether `intake` (the
+ * total over `days` days) reaches its daily amount times those days.
+ */
+export function nutrientChecksMet(
+  checks: Nutrients,
+  intake: Nutrients,
+  days: number,
+): { key: NutrientKey; amount: number; met: boolean }[] {
+  return NUTRIENT_DEFS.flatMap((d) => {
+    const amount = checks[d.key];
+    if (amount == null) return [];
+    return [{ key: d.key, amount, met: (intake[d.key] ?? 0) >= amount * days }];
+  });
 }
 
 /** Cardio goal in minutes per 7 days: the stored one, else the default. */

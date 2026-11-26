@@ -96,6 +96,7 @@ import {
 import type { DayGoal, PeriodGoal } from "../lib/goals";
 import { CARDIO_MIN_AVG_HR } from "../lib/exerciseGoals";
 import BackupReminder from "../components/BackupReminder";
+import DiaryNutrientChecks from "../components/DiaryNutrientChecks";
 import { confirmAction } from "../lib/confirm";
 import { DIARY_TABLES, onTablesChanged } from "../lib/live";
 
@@ -1505,6 +1506,11 @@ export default function DiaryPage() {
                     burned={burned}
                     watchBurn={watchBurn}
                     ruled
+                  />
+                  <DiaryNutrientChecks
+                    entries={scopeEntries}
+                    suppLogs={scopeSuppLogs}
+                    days={period === "day" ? 1 : daysInPeriod}
                   />
                   {dayGoal && dayGoal.manual !== 0 && (
                     <div className="faint small" style={{ marginTop: 8 }}>

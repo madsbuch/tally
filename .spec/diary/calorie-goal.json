@@ -14,6 +14,16 @@
         "#GOAL-1",
         "#GOAL-2"
       ]
+    },
+    {
+      "id": "US-14",
+      "as": "someone taking supplements every day",
+      "want": "a checkmark on the nutrients I aim for next to my calorie target",
+      "soThat": "I can see at a glance whether I have had enough of them",
+      "requirements": [
+        "#GOAL-6",
+        "#GOAL-7"
+      ]
     }
   ],
   "requirements": [
@@ -63,6 +73,17 @@
     {
       "id": "GOAL-5",
       "text": "Tally has no achievements or rewards tied to staying under a daily calorie budget."
+    },
+    {
+      "id": "GOAL-6",
+      "text": "In Settings → Goals the user picks the nutrients to check off, each with a daily amount of their own; none are picked until they do."
+    },
+    {
+      "id": "GOAL-7",
+      "text": "The Calorie target card lists each picked nutrient with a checkmark when what was taken in over the shown period, food and supplements together, reaches its daily amount times the period's days, and an empty mark when it doesn't.",
+      "related": [
+        "#GOAL-2"
+      ]
     }
   ],
   "values": [

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getNutrientChecks, saveNutrientChecks } from "../lib/goals";
-import { CHECKABLE_NUTRIENTS, REFERENCE_INTAKES, nutrientDef } from "../lib/nutrients";
+import { NUTRIENT_DEFS, REFERENCE_INTAKES, nutrientDef } from "../lib/nutrients";
 import type { NutrientKey, Nutrients } from "../lib/types";
 
 /** A picked nutrient as typed: the amount stays a string while it's edited. */
@@ -19,11 +19,15 @@ function toChecks(rows: Row[]): Nutrients {
   return out;
 }
 
-// Spec: SUM-8
+/** Calories have the calorie target; everything else can be checked off. */
+const PICKABLE = NUTRIENT_DEFS.filter((d) => d.key !== "calories");
+
+// Spec: GOAL-6
 /**
  * Settings → Goals: the nutrients to check off each day, each with the user's
- * own daily amount. The Summary marks a picked nutrient's row once that amount
- * is reached. A row without a valid amount yet is kept here but not saved.
+ * own daily amount. The Diary's Calorie target card checks each one off once
+ * that amount is reached. A row without a valid amount yet is kept here but
+ * not saved.
  */
 export default function NutrientChecksSetting() {
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -38,7 +42,7 @@ export default function NutrientChecksSetting() {
       .then((checks) => {
         lastSaved.current = JSON.stringify(checks);
         setRows(
-          CHECKABLE_NUTRIENTS.flatMap((d) => {
+          PICKABLE.flatMap((d) => {
             const amount = checks[d.key];
             return amount != null ? [{ key: d.key, amount: String(amount) }] : [];
           }),
@@ -65,7 +69,7 @@ export default function NutrientChecksSetting() {
   }
 
   function add(value: string) {
-    const def = CHECKABLE_NUTRIENTS.find((d) => d.key === value);
+    const def = PICKABLE.find((d) => d.key === value);
     if (!def || !rows) return;
     setRows([...rows, { key: def.key, amount: "" }]);
   }
@@ -77,7 +81,7 @@ export default function NutrientChecksSetting() {
     commit(next);
   }
 
-  const unpicked = CHECKABLE_NUTRIENTS.filter((d) => !rows?.some((r) => r.key === d.key));
+  const unpicked = PICKABLE.filter((d) => !rows?.some((r) => r.key === d.key));
 
   return (
     <div className="card">
@@ -146,9 +150,9 @@ export default function NutrientChecksSetting() {
             ))}
           </select>
           <p className="muted small" style={{ margin: "8px 2px 0" }}>
-            The Summary puts a checkmark on each of these once you&apos;ve had
-            your daily amount: supplements and food together. Over several days
-            it compares the average per day.
+            The Calorie target card on the Diary checks each of these off once
+            you&apos;ve had your daily amount, food and supplements together.
+            Over a week or a month it&apos;s that amount times the days.
           </p>
         </>
       )}
