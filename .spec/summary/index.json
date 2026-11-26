@@ -15,6 +15,16 @@
         "#SUM-3",
         "#SUM-4"
       ]
+    },
+    {
+      "id": "US-14",
+      "as": "someone taking supplements every day",
+      "want": "a checkmark on the nutrients I aim for",
+      "soThat": "I can see at a glance whether I have had enough of them",
+      "requirements": [
+        "#SUM-8",
+        "#SUM-9"
+      ]
     }
   ],
   "requirements": [
@@ -89,6 +99,17 @@
           "reason": "Version 1 didn't match the product: there is no Nutrition details section and no source filter.",
           "date": "2026-11-20"
         }
+      ]
+    },
+    {
+      "id": "SUM-8",
+      "text": "In Settings → Goals the user picks the nutrients to check off, each with a daily amount of their own; none are picked until they do."
+    },
+    {
+      "id": "SUM-9",
+      "text": "On the Summary, each picked nutrient's row shows a checkmark when the amount shown reaches its daily amount, and an empty mark when it doesn't; over a multi-day period the amount shown is the per-day average.",
+      "related": [
+        "#SUM-6"
       ]
     }
   ],

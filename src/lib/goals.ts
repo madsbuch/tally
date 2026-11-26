@@ -18,13 +18,15 @@
  * target — and leave the week showing 1000 over after it had been paid back.
  * A correction moves room between days inside the period, nothing more.
  */
-import { getSetting, listDayGoalAdjustments, todayStr } from "./db";
+import { deleteSetting, getSetting, listDayGoalAdjustments, setSetting, todayStr } from "./db";
+import { parseNutrientChecks } from "./schemas";
 import { countsAsCardio } from "./exerciseGoals";
 import {
   DEFAULT_CARDIO_TARGET_MIN,
   DEFAULT_PROTEIN_TARGET_G,
   SETTING_KEYS,
 } from "./types";
+import type { Nutrients } from "./types";
 
 /** Largest per-day correction accepted, either way. */
 export const MAX_MANUAL_ADJUSTMENT = 2000;
@@ -81,6 +83,21 @@ export async function getProteinTarget(): Promise<number> {
   const raw = await getSetting(SETTING_KEYS.proteinTarget).catch(() => null);
   const n = raw != null ? parseFloat(raw) : NaN;
   return isFinite(n) && n > 0 ? n : DEFAULT_PROTEIN_TARGET_G;
+}
+
+// Spec: SUM-8
+/**
+ * The nutrients to check off each day and the daily amount for each; empty
+ * until the user picks some. Throws on a corrupt setting, so it surfaces.
+ */
+export async function getNutrientChecks(): Promise<Nutrients> {
+  const raw = await getSetting(SETTING_KEYS.nutrientChecks);
+  return raw ? parseNutrientChecks(raw) : {};
+}
+
+export async function saveNutrientChecks(checks: Nutrients): Promise<void> {
+  if (Object.keys(checks).length === 0) await deleteSetting(SETTING_KEYS.nutrientChecks);
+  else await setSetting(SETTING_KEYS.nutrientChecks, JSON.stringify(checks));
 }
 
 /** Cardio goal in minutes per 7 days: the stored one, else the default. */

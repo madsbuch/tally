@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { deleteSetting, getSetting, setSetting } from "../lib/db";
 import { DEFAULT_FAST_HOURS, DEFAULT_KETO_NET_CARB_LIMIT_G, SETTING_KEYS } from "../lib/types";
 import SettingsFolder from "../components/SettingsFolder";
+import NutrientChecksSetting from "../components/NutrientChecksSetting";
 
 // Spec: SET-1
-/** Settings → Goals: the calorie target, the usual fast and the keto carb limit. */
+/** Settings → Goals: the calorie target, the usual fast, the keto carb limit and the daily nutrients. */
 export default function SettingsGoalsPage() {
   const [loading, setLoading] = useState(true);
 
@@ -238,6 +239,8 @@ export default function SettingsGoalsPage() {
           </p>
         </div>
       </div>
+
+      <NutrientChecksSetting />
     </SettingsFolder>
   );
 }

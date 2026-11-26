@@ -3,7 +3,7 @@
   "title": "Settings",
   "summary": "The Settings tab: a short list of folders, each holding the settings of one kind.",
   "order": 10,
-  "description": "Goals holds the calorie target, the usual fast's length and the keto carb limit. Coach holds what the coach is for, how it talks, what it never brings up, when it checks in, and its model. Health data holds Health Connect and Garmin. AI holds the OpenRouter key, the model that reads photos, product lookups and the cost center. Sync & backup holds the vault's devices and backups. General holds the theme, the database export and what the app is.",
+  "description": "Goals holds the calorie target, the usual fast's length, the keto carb limit and the nutrients to check off each day. Coach holds what the coach is for, how it talks, what it never brings up, when it checks in, and its model. Health data holds Health Connect and Garmin. AI holds the OpenRouter key, the model that reads photos, product lookups and the cost center. Sync & backup holds the vault's devices and backups. General holds the theme, the database export and what the app is.",
   "requirements": [
     {
       "id": "SET-1",

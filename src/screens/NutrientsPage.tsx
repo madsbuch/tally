@@ -8,11 +8,13 @@ import {
 } from "../lib/db";
 import { onAppResume } from "../lib/appLifecycle";
 import SummaryGoals from "../components/SummaryGoals";
+import { getNutrientChecks } from "../lib/goals";
 import { Link } from "../router";
 import InfoButton from "../components/InfoButton";
 import {
   NUTRIENT_DEFS,
   REFERENCE_INTAKES,
+  SUMMARY_MACRO_KEYS,
   formatAmount,
   netCarbs,
   nutrientDef,
@@ -76,18 +78,6 @@ const SPAN_OPTIONS: { value: Span; label: string }[] = [
 ];
 
 const CARB_ROW_KEYS: readonly NutrientKey[] = ["carbs_g", "fiber_g", "sugar_g"];
-const MACRO_ROW_KEYS: NutrientKey[] = [
-  "protein_g",
-  "carbs_g",
-  "fat_g",
-  "saturated_fat_g",
-  "fiber_g",
-  "sugar_g",
-  "omega3_g",
-  "epa_dha_g",
-  "omega6_g",
-  "alcohol_g",
-];
 
 const MACRO_SPLIT: { key: NutrientKey; label: string; kcalPerG: number }[] = [
   { key: "protein_g", label: "Protein", kcalPerG: 4 },
@@ -130,16 +120,44 @@ function MeterBar({ pct, warn }: { pct: number; warn?: boolean }) {
 }
 
 // ---------------------------------------------------------------------------
+// Check mark — a nutrient picked in Settings → Goals, reached or not
+// ---------------------------------------------------------------------------
+
+// Spec: SUM-9
+function CheckMark({ nutrient, value, goal }: { nutrient: NutrientKey; value: number | undefined; goal: number | undefined }) {
+  if (goal == null) return null;
+  const done = (value ?? 0) >= goal;
+  const label = `${done ? "Reached" : "Not yet"}: ${formatAmount(nutrient, goal)} a day`;
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      style={{
+        marginLeft: 6,
+        fontWeight: 700,
+        color: done ? "var(--accent)" : "var(--faint)",
+      }}
+    >
+      {done ? "✓" : "○"}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Reference row — amount plus a meter against the daily reference, if any
 // ---------------------------------------------------------------------------
 
 function RefRow({
   def,
   value,
+  goal,
   last,
 }: {
   def: NutrientDef;
   value: number | undefined;
+  /** The user's daily amount, when this nutrient is checked off (SUM-9). */
+  goal: number | undefined;
   last: boolean;
 }) {
   const ref = REFERENCE_INTAKES[def.key];
@@ -155,7 +173,10 @@ function RefRow({
           fontSize: 13,
         }}
       >
-        <span style={{ color: "var(--muted)" }}>{def.label}</span>
+        <span style={{ color: "var(--muted)" }}>
+          {def.label}
+          <CheckMark nutrient={def.key} value={value} goal={goal} />
+        </span>
         <span
           style={{
             fontWeight: 650,
@@ -210,6 +231,7 @@ export default function NutrientsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [carbLimit, setCarbLimit] = useState(DEFAULT_KETO_NET_CARB_LIMIT_G);
+  const [checks, setChecks] = useState<Nutrients>({});
 
   const spanDays = SPAN_DAYS[span];
   const multi = spanDays > 1;
@@ -234,12 +256,18 @@ export default function NutrientsPage() {
       listFoodEntriesForRange(start, day),
       listSupplementLogsForRange(start, day),
       listWorkoutsForRange(start, day),
+      // A broken setting costs the check marks, not the page.
+      getNutrientChecks().catch((e: unknown): Nutrients => {
+        console.warn("nutrient checks:", e);
+        return {};
+      }),
     ])
-      .then(([food, logs, wos]) => {
+      .then(([food, logs, wos, picked]) => {
         if (cancelled) return;
         setEntries(food);
         setSuppLogs(logs);
         setWorkouts(wos);
+        setChecks(picked);
       })
       .catch((e) => {
         if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e));
@@ -603,12 +631,15 @@ export default function NutrientsPage() {
               )}
             </div>
             <div className="nutrient-grid">
-              {MACRO_ROW_KEYS.map((key) => {
+              {SUMMARY_MACRO_KEYS.map((key) => {
                 const def = nutrientDef(key);
                 const value = shown[key];
                 return (
                   <div key={key} className="nutrient-row">
-                    <span className="n-label">{def.label}</span>
+                    <span className="n-label">
+                      {def.label}
+                      <CheckMark nutrient={key} value={value} goal={checks[key]} />
+                    </span>
                     <span className="n-value">
                       {value != null ? formatAmount(key, value) : "–"}
                     </span>
@@ -642,6 +673,7 @@ export default function NutrientsPage() {
                 key={def.key}
                 def={def}
                 value={shown[def.key]}
+                goal={checks[def.key]}
                 last={i === microDefs.length - 1}
               />
             ))}
@@ -666,6 +698,7 @@ export default function NutrientsPage() {
                 key={def.key}
                 def={def}
                 value={shown[def.key]}
+                goal={checks[def.key]}
                 last={i === otherDefs.length - 1}
               />
             ))}

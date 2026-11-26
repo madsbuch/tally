@@ -143,6 +143,25 @@ export function sanitizeNutrients(raw: unknown): Nutrients {
   return out;
 }
 
+/** The macros the Summary's Macros card lists, in order. */
+export const SUMMARY_MACRO_KEYS: readonly NutrientKey[] = [
+  "protein_g",
+  "carbs_g",
+  "fat_g",
+  "saturated_fat_g",
+  "fiber_g",
+  "sugar_g",
+  "omega3_g",
+  "epa_dha_g",
+  "omega6_g",
+  "alcohol_g",
+];
+
+/** Nutrients with a row of their own on the Summary: the ones it can check off. */
+export const CHECKABLE_NUTRIENTS = NUTRIENT_DEFS.filter(
+  (d) => d.group !== "macro" || SUMMARY_MACRO_KEYS.includes(d.key),
+);
+
 /** Format an amount for display, e.g. `formatAmount("sodium_mg", 1234)` → "1234 mg". */
 export function formatAmount(key: NutrientKey, value: number): string {
   const def = nutrientDef(key);

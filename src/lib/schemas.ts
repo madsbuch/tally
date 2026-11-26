@@ -12,7 +12,7 @@
  */
 import { z } from "zod";
 import { sanitizeNutrients } from "./nutrients";
-import type { FoodEntry, Workout } from "./types";
+import type { FoodEntry, Nutrients, Workout } from "./types";
 import { isOneOf } from "./guards";
 
 /**
@@ -844,6 +844,19 @@ export const RecapSeenSchema = z.object({
   week: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   month: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
 });
+
+/**
+ * The nutrients to check off each day, with the user's daily amount for each
+ * (see lib/goals.ts). Ours, so strict: anything but a positive amount fails.
+ * A key that is no longer a nutrient is dropped rather than failing.
+ */
+export const NutrientChecksSchema = z
+  .record(z.string(), z.number().positive().finite())
+  .transform((v) => sanitizeNutrients(v));
+
+export function parseNutrientChecks(raw: string): Nutrients {
+  return NutrientChecksSchema.parse(parseJson(raw));
+}
 
 /** Streak-freeze bookkeeping (see lib/streak.ts). Tolerant: junk fields reset. */
 export const StreakStateSchema = z.object({

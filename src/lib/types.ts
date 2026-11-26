@@ -582,6 +582,8 @@ export const SETTING_KEYS = {
   cardioWeeklyTarget: "cardio_weekly_target_min",
   /** Daily protein goal in grams (DEFAULT_PROTEIN_TARGET_G when absent). */
   proteinTarget: "protein_target_g",
+  /** Nutrients to check off each day, JSON `{ nutrient key: daily amount }` (absent = none). */
+  nutrientChecks: "nutrient_checks",
   healthConnectLastSyncAt: "health_connect_last_sync_at",
   /** Set once a sync ran WITH history permission — gates the one-time backfill. */
   healthConnectHistorySynced: "health_connect_history_synced",
